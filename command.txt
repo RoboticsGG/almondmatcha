@@ -9,30 +9,30 @@ ssh curry@192.168.1.1
 
 cd Almond/ros2-rover-ws/
 source install/setup.bash
-ros2 run pkg_poseproc node_gnss
+ros2 run pkg_gnss_navigation node_gnss_spresense
 
 cd Almond/ros2-rover-ws/
 source install/setup.bash
-ros2 run pkg_poseproc node_poseproc
+ros2 run pkg_gnss_navigation node_gnss_mission_monitor
 
 cd Almond/ros2-rover-ws/
 source install/setup.bash
-ros2 run pkg_rocon node_rocon2
+ros2 run pkg_chassis_control node_chassis_controller
 
 export ROS_DOMAIN_ID=5
 cd Almond/ros2-rover-ws/
 source install/setup.bash
-ros2 run pkg_sensdata node_imudata
+ros2 run pkg_chassis_sensors node_chassis_imu
 
 export ROS_DOMAIN_ID=6
 cd Almond/ros2-rover-ws/
 source install/setup.bash
-ros2 run pkg_sensdata node_sensdata
+ros2 run pkg_chassis_sensors node_chassis_sensors
 
 export ROS_DOMAIN_ID=5
 cd Almond/ros2-rover-ws/
 source install/setup.bash
-ros2 run pkg_rocon node_dbridge
+ros2 run pkg_chassis_control node_domain_bridge
 -----------------------------------------------------
 // Jetson //
 ssh yupi@192.168.1.5

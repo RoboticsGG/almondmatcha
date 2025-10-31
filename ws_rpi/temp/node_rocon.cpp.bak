@@ -29,18 +29,20 @@ public:
             std::bind(&Node_Rovercontrol::handle_spd_request, this, std::placeholders::_1, std::placeholders::_2)
         );
 
+        topic_direct_sub_ = sub_node_->create_subscription<std_msgs::msg::Float32MultiArray>(
+            "topic_direction", 10,
+            std::bind(&Node_Rovercontrol::topic_direct_callback, this, std::placeholders::_1)
+        );
 
         topic_cc_rcon_sub_ = sub_node_->create_subscription<std_msgs::msg::Bool>(
-            "cc_rcon", 10,
+            "tpc_gnss_mission_active", 10,
             std::bind(&Node_Rovercontrol::topic_cc_rcon_callback, this, std::placeholders::_1)
         );
 
-         fmctl_sub_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
-            "tpc_rover_fmctl", 10,
-            std::bind(&Node_Rovercontrol::fmctl_callback, this, std::placeholders::_1));
-
         topic_rocon_pub_d2 = sub_node_->create_publisher<msgs_ifaces::msg::MainRocon>("pub_rovercontrol_d2", 10);
         
+
+
 
         // Initialize context for publisher (Domain ID 5)
         rclcpp::InitOptions init_options_pub;
@@ -71,25 +73,40 @@ private:
     rclcpp::Node::SharedPtr sub_node_;
     rclcpp::Node::SharedPtr pub_node_;
     rclcpp::Service<services_ifaces::srv::SpdLimit>::SharedPtr spd_service_;
-    //rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr topic_direct_sub_;
+    rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr topic_direct_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr topic_cc_rcon_sub_;
-    rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr fmctl_sub_;
     rclcpp::Publisher<msgs_ifaces::msg::MainRocon>::SharedPtr topic_rocon_pub_;
     rclcpp::Publisher<msgs_ifaces::msg::MainRocon>::SharedPtr topic_rocon_pub_d2;
     rclcpp::executors::MultiThreadedExecutor executor_;
-    rclcpp::Time detect_zero_start_time_;
     std::thread executor_thread_;
 
     float ro_ctrl_msg1_;
     float ro_ctrl_msg2_;
 
-    float steer_msg_;
-    float detect_msg_;
-
+    //float objblock_msg_;
     uint8_t spd_msg_;
-    bool cc_rcon_msg_ = true;
+    bool cc_rcon_msg_;
 
     std::mutex data_lock_;
+
+    void topic_direct_callback(const std_msgs::msg::Float32MultiArray::SharedPtr msg) {
+    if (msg->data.size() >= 2) {
+        std::lock_guard<std::mutex> lock(data_lock_);
+        if (msg->data[0] != ro_ctrl_msg1_ || msg->data[1] != ro_ctrl_msg2_) {
+            ro_ctrl_msg1_ = msg->data[0];
+            ro_ctrl_msg2_ = msg->data[1];
+            //objblock_msg_ = msg->data[2];
+
+            //RCLCPP_INFO(this->get_logger(), "Received on topic_direction: x = %.2f, y = %.2f", ro_ctrl_msg1_, ro_ctrl_msg2_);
+        }
+        
+        } else {
+            RCLCPP_WARN(this->get_logger(), "Received insufficient data on topic_direction.");
+            }
+        
+        Node_Rovercontrol::timer_callback();
+    
+    }
 
     void topic_cc_rcon_callback(const std_msgs::msg::Bool::SharedPtr msg) {
         std::lock_guard<std::mutex> lock(data_lock_);
@@ -107,82 +124,40 @@ private:
         RCLCPP_INFO(this->get_logger(), "Speed Limit set to %d", request->rover_spd);
     }
 
-    void fmctl_callback(const std_msgs::msg::Float32MultiArray::SharedPtr msg) {
-        if (msg->data.size() >= 2) {
-            std::lock_guard<std::mutex> lock(data_lock_);
-            steer_msg_ = msg->data[0];
-            detect_msg_ = msg->data[1];
-        } else {
-            RCLCPP_WARN(this->get_logger(), "Received insufficient data on tpc_rover_fmctl.");
-        }
-        Node_Rovercontrol::fmctl_callback2();
-    }
 
-    bool detect_zero_active_ = false;
-    void fmctl_callback2() {
+    void timer_callback() {
         auto subrocon = msgs_ifaces::msg::SubRocon();
         auto mainrocon = msgs_ifaces::msg::MainRocon();
         
         {
             std::lock_guard<std::mutex> lock(data_lock_);
 
-            if (cc_rcon_msg_ == true) {
-                // --- Override: stop everything ---
+            if (cc_rcon_msg_ == true || spd_msg_ == 0) {
                 subrocon.fdr_msg = 2;
-                subrocon.ro_ctrl_msg = 0.0;
+                subrocon.ro_ctrl_msg = 0;
                 subrocon.spd_msg = 0;
-                subrocon.bdr_msg = 0;
+                subrocon.bdr_msg = 0; // 1 = fw, 2 = bw, 0 = stop.
             } else {
-                // --- Steering logic ---
-                if (steer_msg_ > 0.0) {
-                    subrocon.fdr_msg = 1;
-                    subrocon.ro_ctrl_msg = std::fabs(steer_msg_);
-                } else if (steer_msg_ < 0.0) {
-                    subrocon.fdr_msg = 3;
-                    subrocon.ro_ctrl_msg = std::fabs(steer_msg_);
-                } else {
-                    subrocon.fdr_msg = 2;
-                    subrocon.ro_ctrl_msg = 0.0;
-                }
-
-                // --- Detection / Speed logic ---
-                if (detect_msg_ == 0.0) {
-                    if (!detect_zero_active_) {
-                        // First time detect_msg_ == 0
-                        detect_zero_start_time_ = this->now();
-                        detect_zero_active_ = true;
-                    }
-
-                    auto elapsed = (this->now() - detect_zero_start_time_).seconds();
-
-                    if (elapsed >= 10.0) {
-                        subrocon.spd_msg = 0;
-                    } else {
-                        subrocon.spd_msg = spd_msg_ / 2;
-                    }
-                } else {
-                    // Reset timer
-                    detect_zero_active_ = false;
-                    subrocon.spd_msg = spd_msg_;
-                }
-
-                // --- Always forward when active ---
+                subrocon.fdr_msg = static_cast<uint8_t>(ro_ctrl_msg1_);
+                subrocon.ro_ctrl_msg = ro_ctrl_msg2_;
+                subrocon.spd_msg = spd_msg_;
                 subrocon.bdr_msg = 1;
             }
-
-            // Wrap and publish
             mainrocon.mainrocon_msg = subrocon;
             topic_rocon_pub_->publish(mainrocon);
             topic_rocon_pub_d2->publish(mainrocon);
         }
 
+        
+
+        
         RCLCPP_INFO(this->get_logger(), "Publishing to pub_rovercontrol: [%d, %.2f, %d, %d]", 
                     mainrocon.mainrocon_msg.fdr_msg, 
                     mainrocon.mainrocon_msg.ro_ctrl_msg, 
                     mainrocon.mainrocon_msg.spd_msg, 
                     mainrocon.mainrocon_msg.bdr_msg);
         RCLCPP_INFO(this->get_logger(), "################################################");
-    }
+  }
 
 };
 

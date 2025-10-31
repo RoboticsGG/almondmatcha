@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>pkg_roverctl</name>
+  <name>pkg_chassis_control</name>
   <version>0.0.0</version>
-  <description>Rover control package - chassis low-level controller</description>
+  <description>Chassis Control Package - Low-level motor control and domain bridging</description>
   <maintainer email="viewjirapat@gmail.com">yupi</maintainer>
   <license>Apache-2.0</license>
 

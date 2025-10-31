@@ -10,22 +10,22 @@ class NodeMonitoring : public rclcpp::Node {
 public:
     NodeMonitoring() : Node("topic_subscriber") {
         sub_cc_rcon_ = this->create_subscription<std_msgs::msg::Bool>(
-            "/cc_rcon", 10, 
+            "/tpc_gnss_mission_active", 10, 
             std::bind(&NodeMonitoring::cc_rcon_callback, this, std::placeholders::_1)
         );
         
         sub_dis_remain_ = this->create_subscription<std_msgs::msg::Float64>(
-            "/dis_remain", 10, 
+            "/tpc_gnss_mission_remain_dist", 10, 
             std::bind(&NodeMonitoring::dis_remain_callback, this, std::placeholders::_1)
         );
         
         sub_gnss_data_ = this->create_subscription<msgs_ifaces::msg::GnssData>(
-            "/gnss_data", 10, 
+            "/tpc_gnss_spresense", 10, 
             std::bind(&NodeMonitoring::gnss_data_callback, this, std::placeholders::_1)
         );
         
         sub_pub_despose_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
-            "/pub_despose", 10, 
+            "/tpc_rover_dest_coordinate", 10, 
             std::bind(&NodeMonitoring::pub_despose_callback, this, std::placeholders::_1)
         );
         

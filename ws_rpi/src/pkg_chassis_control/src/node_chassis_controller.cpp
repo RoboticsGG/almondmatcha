@@ -107,9 +107,9 @@ private:
                      this, std::placeholders::_1, std::placeholders::_2)
         );
         
-        // Create cruise control subscription
+        // Create mission active subscription
         topic_cc_rcon_sub_ = sub_node_->create_subscription<std_msgs::msg::Bool>(
-            "cc_rcon", 10,
+            "tpc_gnss_mission_active", 10,
             std::bind(&ChassisController::cruiseControlCallback, 
                      this, std::placeholders::_1)
         );

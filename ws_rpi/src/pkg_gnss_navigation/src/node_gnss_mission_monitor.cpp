@@ -9,42 +9,42 @@
 #include <action_ifaces/action/des_data.hpp>
 #include <cmath>
 
-class PoseProcessor : public rclcpp::Node {
+class GNSSMissionMonitor : public rclcpp::Node {
 public:
     using DesData = action_ifaces::action::DesData;
     using GoalHandleDesData = rclcpp_action::ServerGoalHandle<DesData>;
 
-    PoseProcessor() : Node("pose_processor"), des_lat_(0.0), des_long_(0.0) {
+    GNSSMissionMonitor() : Node("gnss_mission_monitor"), des_lat_(0.0), des_long_(0.0) {
         action_server_ = rclcpp_action::create_server<DesData>(
             this, "des_data",
-            std::bind(&PoseProcessor::handle_goal, this, std::placeholders::_1, std::placeholders::_2),
-            std::bind(&PoseProcessor::handle_cancel, this, std::placeholders::_1),
-            std::bind(&PoseProcessor::handle_accepted, this, std::placeholders::_1)
+            std::bind(&GNSSMissionMonitor::handle_goal, this, std::placeholders::_1, std::placeholders::_2),
+            std::bind(&GNSSMissionMonitor::handle_cancel, this, std::placeholders::_1),
+            std::bind(&GNSSMissionMonitor::handle_accepted, this, std::placeholders::_1)
         );
 
-        cur_pose_sub_ = this->create_subscription<msgs_ifaces::msg::SpresenseGNSS>(
-            "gnss_data", 10,
-            std::bind(&PoseProcessor::topic_cur_callback, this, std::placeholders::_1)
+        sub_current_position_ = this->create_subscription<msgs_ifaces::msg::SpresenseGNSS>(
+            "tpc_gnss_spresense", 10,
+            std::bind(&GNSSMissionMonitor::topic_cur_callback, this, std::placeholders::_1)
         );
 
-        cc_rcon_pub_ = this->create_publisher<std_msgs::msg::Bool>("cc_rcon", 10);
+        pub_mission_active_ = this->create_publisher<std_msgs::msg::Bool>("tpc_gnss_mission_active", 10);
 
-        dis_remain_ = this->create_publisher<std_msgs::msg::Float64>("dis_remain", 10);
+        pub_distance_remaining_ = this->create_publisher<std_msgs::msg::Float64>("tpc_gnss_mission_remain_dist", 10);
 
-        topic_despose_pub = this->create_publisher<std_msgs::msg::Float64MultiArray>("pub_despose", 10);
+        pub_destination_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("tpc_rover_dest_coordinate", 10);
 
-        RCLCPP_INFO(this->get_logger(), "PoseProcessor Action Server Initialized.");
+        RCLCPP_INFO(this->get_logger(), "GNSS Mission Monitor Action Server Initialized.");
         RCLCPP_INFO(this->get_logger(), "Waiting for goals...");
     }
 
 private:
     rclcpp_action::Server<DesData>::SharedPtr action_server_;
-    rclcpp::Subscription<msgs_ifaces::msg::SpresenseGNSS>::SharedPtr cur_pose_sub_;
-    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr cc_rcon_pub_;
-    rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr dis_remain_;
-    rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr topic_despose_pub;
+    rclcpp::Subscription<msgs_ifaces::msg::SpresenseGNSS>::SharedPtr sub_current_position_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr pub_mission_active_;
+    rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr pub_distance_remaining_;
+    rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr pub_destination_;
     
-    msgs_ifaces::msg::SpresenseGNSS cur_pose_msg_;
+    msgs_ifaces::msg::SpresenseGNSS current_position_;
 
     float des_lat_;
     float des_long_;
@@ -64,33 +64,28 @@ private:
         des_lat_ = 0.0; 
         des_long_ = 0.0;
 
-        std_msgs::msg::Bool cc_rcon_msg;
-        cc_rcon_msg.data = true;
-        cc_rcon_pub_->publish(cc_rcon_msg);
-        RCLCPP_INFO(this->get_logger(), "cc_rcon published: true");
+        std_msgs::msg::Bool mission_active_msg;
+        mission_active_msg.data = true;
+        pub_mission_active_->publish(mission_active_msg);
+        RCLCPP_INFO(this->get_logger(), "mission_active published: true");
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
     void handle_accepted(const std::shared_ptr<GoalHandleDesData> goal_handle) {
-        std::thread{std::bind(&PoseProcessor::execute, this, goal_handle)}.detach();
+        std::thread{std::bind(&GNSSMissionMonitor::execute, this, goal_handle)}.detach();
     }
 
     void topic_cur_callback(const msgs_ifaces::msg::SpresenseGNSS::SharedPtr msg) {
-        auto despose_msgs = std_msgs::msg::Float64MultiArray();
-        despose_msgs.data = {des_lat_, des_long_};
-        topic_despose_pub->publish(despose_msgs);
+        auto destination_msg = std_msgs::msg::Float64MultiArray();
+        destination_msg.data = {des_lat_, des_long_};
+        pub_destination_->publish(destination_msg);
         
-        cur_pose_msg_.date = msg->date;
-        cur_pose_msg_.time = msg->time;
-        cur_pose_msg_.num_satellites = msg->num_satellites;
-        cur_pose_msg_.fix = msg->fix;
-        cur_pose_msg_.latitude = msg->latitude;
-        cur_pose_msg_.longitude = msg->longitude;
-
-        //RCLCPP_INFO(this->get_logger(), "Received GNSS Data: Date=%s, Time=%s, Sat=%d, Fix=%d, Lat=%f, Lon=%f",
-                    //cur_pose_msg_.date.c_str(), cur_pose_msg_.time.c_str(), cur_pose_msg_.num_satellites, cur_pose_msg_.fix, cur_pose_msg_.latitude, cur_pose_msg_.longitude);
-
-        
+        current_position_.date = msg->date;
+        current_position_.time = msg->time;
+        current_position_.num_satellites = msg->num_satellites;
+        current_position_.fix = msg->fix;
+        current_position_.latitude = msg->latitude;
+        current_position_.longitude = msg->longitude;
     }
 
     double haversine_distance(double lat1, double lon1, double lat2, double lon2) {
@@ -109,34 +104,31 @@ private:
 
     void execute(const std::shared_ptr<GoalHandleDesData> goal_handle) {
         auto feedback = std::make_shared<DesData::Feedback>();
-        std_msgs::msg::Bool cc_rcon_msg;
+        std_msgs::msg::Bool mission_active_msg;
 
         while (rclcpp::ok()) {
-            if (cur_pose_msg_.latitude == 0.0 && cur_pose_msg_.longitude == 0.0) {
-                // RCLCPP_WARN(this->get_logger(), "Waiting for GNSS Data..."); // rattachai
-                cc_rcon_msg.data = true;
-                //std::this_thread::sleep_for(std::chrono::seconds(2));
+            if (current_position_.latitude == 0.0 && current_position_.longitude == 0.0) {
+                mission_active_msg.data = true;
                 continue;
             } else if (des_lat_ == 0.0 && des_long_ == 0.0) {
                 RCLCPP_WARN(this->get_logger(), "Waiting for Destination Data...");
-                cc_rcon_msg.data = true;
-                //std::this_thread::sleep_for(std::chrono::seconds(2));
+                mission_active_msg.data = true;
                 continue;
             }
             else{
 
-                    double distance = haversine_distance(cur_pose_msg_.latitude, cur_pose_msg_.longitude, des_lat_, des_long_);
+                    double distance = haversine_distance(current_position_.latitude, current_position_.longitude, des_lat_, des_long_);
                     feedback->dis_remain = distance;
 
-                    std_msgs::msg::Float64 disremain_msg_;
-                    disremain_msg_.data = distance;
-                    dis_remain_->publish(disremain_msg_);
+                    std_msgs::msg::Float64 distance_remaining_msg;
+                    distance_remaining_msg.data = distance;
+                    pub_distance_remaining_->publish(distance_remaining_msg);
 
                     goal_handle->publish_feedback(feedback);
                     RCLCPP_INFO(this->get_logger(), "Distance Remaining: %.2f km", feedback->dis_remain);
 
                     if (distance < 0.02) {
-                        cc_rcon_msg.data = true;
+                        mission_active_msg.data = true;
 
                         if (!goal_reached_){
                             auto result = std::make_shared<DesData::Result>();
@@ -146,14 +138,11 @@ private:
                             goal_reached_ = true;
                         }
                     } else {
-                        cc_rcon_msg.data = false;
+                        mission_active_msg.data = false;
                     }
-                    // cc_rcon_pub_->publish(cc_rcon_msg);
-                    // RCLCPP_INFO(this->get_logger(), "cc_rcon published: %s", cc_rcon_msg.data ? "true" : "false");
-                    //std::this_thread::sleep_for(std::chrono::seconds(2));
             }
-            cc_rcon_pub_->publish(cc_rcon_msg);
-            RCLCPP_INFO(this->get_logger(), "cc_rcon published: %s", cc_rcon_msg.data ? "true" : "false");
+            pub_mission_active_->publish(mission_active_msg);
+            RCLCPP_INFO(this->get_logger(), "mission_active published: %s", mission_active_msg.data ? "true" : "false");
             std::this_thread::sleep_for(std::chrono::seconds(2));
         }
     }
@@ -161,7 +150,7 @@ private:
 
 int main(int argc, char *argv[]) {
     rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<PoseProcessor>());
+    rclcpp::spin(std::make_shared<GNSSMissionMonitor>());
     rclcpp::shutdown();
     return 0;
 }

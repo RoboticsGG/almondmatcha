@@ -14,78 +14,78 @@ set_custom_log_dir = SetEnvironmentVariable(
 
 def generate_launch_description():
 
-    # 1. Group for nodes running on ROS_DOMAIN_ID=2 (Pose Processing & Rocon2)
+    # 1. Group for nodes running on ROS_DOMAIN_ID=2 (GNSS & Navigation)
     domain_2_group = GroupAction(
         actions=[
             # Manual Command Equivalent: export ROS_DOMAIN_ID=2
             SetEnvironmentVariable(name='ROS_DOMAIN_ID', value='2'),
 
-            # Command: ros2 run pkg_poseproc node_gnss
+            # Command: ros2 run pkg_gnss_navigation node_gnss_spresense
             Node(
-                package='pkg_poseproc', 
-                executable='node_gnss',
-                name='gnss_node',
+                package='pkg_gnss_navigation', 
+                executable='node_gnss_spresense',
+                name='spresense_gnss_node',
                 output='log',
                 emulate_tty=True
             ),
 
-            # Command: ros2 run pkg_poseproc node_poseproc
+            # Command: ros2 run pkg_gnss_navigation node_gnss_mission_monitor
             Node(
-                package='pkg_poseproc',
-                executable='node_poseproc',
-                name='poseproc_node',
+                package='pkg_gnss_navigation',
+                executable='node_gnss_mission_monitor',
+                name='gnss_mission_monitor_node',
                 output='log',
                 emulate_tty=True
             ),
 
-            # Command: ros2 run pkg_rocon node_rocon2
+            # Command: ros2 run pkg_chassis_control node_chassis_controller
             Node(
-                package='pkg_rocon',
-                executable='node_rocon2',
-                name='rocon2_node',
+                package='pkg_chassis_control',
+                executable='node_chassis_controller',
+                name='chassis_controller_node',
                 output='log',
                 emulate_tty=True
             ),
         ]
     )
 
-    # 2. Group for nodes running on ROS_DOMAIN_ID=5 (IMU Data & DBridge)
+    # 2. Group for nodes running on ROS_DOMAIN_ID=5 (IMU Data & Domain Bridge)
     domain_5_group = GroupAction(
         actions=[
             # Manual Command Equivalent: export ROS_DOMAIN_ID=5
             SetEnvironmentVariable(name='ROS_DOMAIN_ID', value='5'),
 
-            # Command: ros2 run pkg_sensdata node_imudata
+            # Command: ros2 run pkg_chassis_sensors node_chassis_imu
             Node(
-                package='pkg_sensdata',
-                executable='node_imudata',
-                name='imudata_node',
+                package='pkg_chassis_sensors',
+                executable='node_chassis_imu',
+                name='chassis_imu_node',
                 output='log',
                 emulate_tty=True
             ),
 
-            # Command: ros2 run pkg_rocon node_dbridge
+            # Command: ros2 run pkg_chassis_control node_domain_bridge
             Node(
-                package='pkg_rocon',
-                executable='node_dbridge',
-                name='dbridge_node',
+                package='pkg_chassis_control',
+                executable='node_domain_bridge',
+                name='domain_bridge_node',
                 output='log',
                 emulate_tty=True
             ),
         ]
     )
 
-    # 3. Group for node running on ROS_DOMAIN_ID=6 (Sensor Data)
+    # 3. Group for node running on ROS_DOMAIN_ID=6 (Chassis Sensors)
     domain_6_group = GroupAction(
         actions=[
             # Manual Command Equivalent: export ROS_DOMAIN_ID=6
             SetEnvironmentVariable(name='ROS_DOMAIN_ID', value='6'),
 
-            # Command: ros2 run pkg_sensdata node_sensdata
+            # Command: ros2 run pkg_chassis_sensors node_chassis_sensors
             Node(
-                package='pkg_sensdata',
-                executable='node_sensdata',
-                name='sensdata_node',
+                package='pkg_chassis_sensors',
+                executable='node_chassis_sensors',
+                name='chassis_sensors_node',
                 output='log',
                 emulate_tty=True
             ),

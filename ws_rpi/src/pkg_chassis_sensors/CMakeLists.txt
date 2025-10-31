@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(pkg_sensdata)
+project(pkg_chassis_sensors)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -13,30 +13,27 @@ find_package(rclcpp_components REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(std_srvs)
 find_package(msgs_ifaces REQUIRED)
-# uncomment the following section in order to fill in
-# further dependencies manually.
-# find_package(<dependency> REQUIRED)
 
-add_executable(node_sensdata src/node_sensdata.cpp)
-ament_target_dependencies(node_sensdata rclcpp geometry_msgs std_msgs msgs_ifaces)
+add_executable(node_chassis_sensors src/node_chassis_sensors.cpp)
+ament_target_dependencies(node_chassis_sensors rclcpp geometry_msgs std_msgs msgs_ifaces)
 
-target_include_directories(node_sensdata PUBLIC
+target_include_directories(node_chassis_sensors PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
-target_compile_features(node_sensdata PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
+target_compile_features(node_chassis_sensors PUBLIC c_std_99 cxx_std_17)
 
-install(TARGETS node_sensdata
+install(TARGETS node_chassis_sensors
   DESTINATION lib/${PROJECT_NAME})
 
-add_executable(node_imudata src/node_imudata.cpp)
-ament_target_dependencies(node_imudata rclcpp geometry_msgs std_msgs msgs_ifaces)
+add_executable(node_chassis_imu src/node_chassis_imu.cpp)
+ament_target_dependencies(node_chassis_imu rclcpp geometry_msgs std_msgs msgs_ifaces)
 
-target_include_directories(node_imudata PUBLIC
+target_include_directories(node_chassis_imu PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
-target_compile_features(node_imudata PUBLIC c_std_99 cxx_std_17)
+target_compile_features(node_chassis_imu PUBLIC c_std_99 cxx_std_17)
 
-install(TARGETS node_imudata
+install(TARGETS node_chassis_imu
   DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)

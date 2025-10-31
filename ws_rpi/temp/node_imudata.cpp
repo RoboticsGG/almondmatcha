@@ -11,9 +11,11 @@
 
 using namespace std::chrono_literals;
 
-class Node_ImuData : public rclcpp::Node {
+const std::string LOG_DIR = "/home/curry/almondmatcha/runs/logs/";
+
+class ChassisIMUNode : public rclcpp::Node {
 public:
-    Node_ImuData() : Node("node_imudata") {
+    ChassisIMUNode() : Node("chassis_imu_node") {
         // QoS to match mROS2 publisher (sensor data)
         rclcpp::QoS qos_profile(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_sensor_data));
         qos_profile.best_effort();
@@ -21,15 +23,14 @@ public:
 
         subscription_ = this->create_subscription<msgs_ifaces::msg::ChassisIMU>(
             "/tp_imu_data_d5", qos_profile,
-            std::bind(&Node_ImuData::imuCallback, this, std::placeholders::_1)
+            std::bind(&ChassisIMUNode::imuCallback, this, std::placeholders::_1)
         );
         RCLCPP_INFO(this->get_logger(), "Subscribed to /tp_imu_data_d5");
 
-        std::string log_dir = "/home/curry/Almond/Datalog";
-        if (!std::filesystem::exists(log_dir)) {
+        if (!std::filesystem::exists(LOG_DIR)) {
             try {
-                std::filesystem::create_directories(log_dir);
-                RCLCPP_INFO(this->get_logger(), "Created log directory: %s", log_dir.c_str());
+                std::filesystem::create_directories(LOG_DIR);
+                RCLCPP_INFO(this->get_logger(), "Created log directory: %s", LOG_DIR.c_str());
             } catch (const std::exception &e) {
                 RCLCPP_ERROR(this->get_logger(), "Failed to create log directory: %s", e.what());
             }
@@ -38,9 +39,9 @@ public:
         auto now = std::chrono::system_clock::now();
         std::time_t now_c = std::chrono::system_clock::to_time_t(now);
         char datetime_buf[30];
-        std::strftime(datetime_buf, sizeof(datetime_buf), "%Y-%m-%d_%H-%M-%S", std::localtime(&now_c));
+        std::strftime(datetime_buf, sizeof(datetime_buf), "%Y%m%d_%H%M%S", std::localtime(&now_c));
 
-        std::string filename = log_dir + "/imu_data_log_" + datetime_buf + ".csv";
+        std::string filename = LOG_DIR + "imu_" + datetime_buf + ".csv";
         bool file_exists = std::filesystem::exists(filename);
 
         csv_file_.open(filename, std::ios::app);
@@ -49,41 +50,41 @@ public:
         } else if (!file_exists) {
             csv_file_ << "timestamp,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z\n";
         }
-        // Timer to write CSV periodically
-        timer_ = this->create_wall_timer(1s, std::bind(&Node_ImuData::writeToCSV, this));
+
+        timer_ = this->create_wall_timer(1s, std::bind(&ChassisIMUNode::writeToCSV, this));
     }
 
-    ~Node_ImuData() {
+    ~ChassisIMUNode() {
         if (csv_file_.is_open()) {
             csv_file_.close();
         }
     }
 
 private:
-    rclcpp::Subscription<msgs_ifaces::msg::ChassisIMU>::SharedPtr subscription_;
+    rclcpp::Subscription<msgs_ifaces::msg::ChassisIMU>::SharedPtr sub_chassis_imu_;
     rclcpp::TimerBase::SharedPtr timer_;
-    msgs_ifaces::msg::ChassisIMU latest_msg_;
-    bool has_msg_ = false;
+    msgs_ifaces::msg::ChassisIMU latest_imu_data_;
+    bool has_data_ = false;
     std::ofstream csv_file_;
 
     void imuCallback(const msgs_ifaces::msg::ChassisIMU::SharedPtr msg) {
-        latest_msg_ = *msg;
-        has_msg_ = true;
+        latest_imu_data_ = *msg;
+        has_data_ = true;
 
         RCLCPP_INFO(this->get_logger(),
-                    "Received -> Accel: X=%d Y=%d Z=%d | Gyro: X=%d Y=%d Z=%d",
+                    "Chassis IMU - Accel: X=%d Y=%d Z=%d | Gyro: X=%d Y=%d Z=%d",
                     msg->accel_x, msg->accel_y, msg->accel_z,
                     msg->gyro_x, msg->gyro_y, msg->gyro_z);
     }
 
     void writeToCSV() {
-        if (has_msg_ && csv_file_.is_open()) {
+        if (has_data_ && csv_file_.is_open()) {
             auto now = std::chrono::system_clock::now();
             std::time_t now_c = std::chrono::system_clock::to_time_t(now);
             char buf[100];
             std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&now_c));
 
-            const auto &chassis_imu = latest_msg_;
+            const auto &chassis_imu = latest_imu_data_;
             csv_file_ << buf << ","
                       << chassis_imu.accel_x << ","
                       << chassis_imu.accel_y << ","
@@ -98,7 +99,7 @@ private:
 
 int main(int argc, char ** argv) {
     rclcpp::init(argc, argv);
-    auto node = std::make_shared<Node_ImuData>();
+    auto node = std::make_shared<ChassisIMUNode>();
     rclcpp::spin(node);
     rclcpp::shutdown();
     return 0;

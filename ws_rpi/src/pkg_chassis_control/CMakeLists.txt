@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(pkg_poseproc)
+project(pkg_chassis_control)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -8,47 +8,44 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(rclcpp_action REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(std_msgs REQUIRED)
-find_package(jsoncpp REQUIRED)
-find_package(action_ifaces REQUIRED)
+find_package(std_srvs)
 find_package(msgs_ifaces REQUIRED)
+find_package(services_ifaces REQUIRED)
 
-include_directories(/usr/include/jsoncpp)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
 
-#------------------------------------------------------------------------------------#
+#-------------------chassis_controller-------------------
 
+add_executable(node_chassis_controller src/node_chassis_controller.cpp)
+ament_target_dependencies(node_chassis_controller rclcpp geometry_msgs std_msgs msgs_ifaces services_ifaces)
 
-add_executable(node_poseproc src/node_poseproc.cpp)
-ament_target_dependencies(node_poseproc rclcpp rclcpp_action rclcpp_components std_msgs action_ifaces msgs_ifaces)
-target_include_directories(node_poseproc PUBLIC
+target_include_directories(node_chassis_controller PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
-target_compile_features(node_poseproc PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
+target_compile_features(node_chassis_controller PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
 
-install(TARGETS node_poseproc
+install(TARGETS node_chassis_controller
   DESTINATION lib/${PROJECT_NAME})
 
-#------------------------------------------------------------------------------------#
+#-------------------domain_bridge-------------------
 
-add_executable(node_gnss src/node_gnss.cpp)
-ament_target_dependencies(node_gnss rclcpp std_msgs jsoncpp msgs_ifaces)
+add_executable(node_domain_bridge src/node_domain_bridge.cpp)
+ament_target_dependencies(node_domain_bridge rclcpp msgs_ifaces)
 
-target_link_libraries(node_gnss jsoncpp)
-
-target_include_directories(node_gnss PUBLIC
+target_include_directories(node_domain_bridge PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
+target_compile_features(node_domain_bridge PUBLIC c_std_99 cxx_std_17)
 
-install(TARGETS node_gnss
+install(TARGETS node_domain_bridge
   DESTINATION lib/${PROJECT_NAME})
-
+  
 #------------------------------------------------------------------------------------#
-
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
