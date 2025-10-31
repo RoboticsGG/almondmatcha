@@ -1,0 +1,7 @@
+node_commands:
+  ros__parameters:
+    rover_spd: 10
+    des_lat: 500.0 #7.007286
+    des_long: 500.0 #100.50203 
+
+#

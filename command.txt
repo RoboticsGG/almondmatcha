@@ -1,0 +1,69 @@
+192.168.1.1 = RPI4
+192.168.1.2 = mros2 ชั้น 2
+192.168.1.5 = Jetson Nano
+192.168.1.6 = mros2 ชั้น 5
+
+// Rover //
+ssh curry@192.168.1.1
+แล้วใช้คำสั่งตามลำดับ (หลัง ssh ก็อปวางได้เลย [6 terminal])
+
+cd Almond/ros2-rover-ws/
+source install/setup.bash
+ros2 run pkg_poseproc node_gnss
+
+cd Almond/ros2-rover-ws/
+source install/setup.bash
+ros2 run pkg_poseproc node_poseproc
+
+cd Almond/ros2-rover-ws/
+source install/setup.bash
+ros2 run pkg_rocon node_rocon2
+
+export ROS_DOMAIN_ID=5
+cd Almond/ros2-rover-ws/
+source install/setup.bash
+ros2 run pkg_sensdata node_imudata
+
+export ROS_DOMAIN_ID=6
+cd Almond/ros2-rover-ws/
+source install/setup.bash
+ros2 run pkg_sensdata node_sensdata
+
+export ROS_DOMAIN_ID=5
+cd Almond/ros2-rover-ws/
+source install/setup.bash
+ros2 run pkg_rocon node_dbridge
+-----------------------------------------------------
+// Jetson //
+ssh yupi@192.168.1.5
+แล้วใช้คำสั่งตามลำดับ (หลัง ssh ก็อปวางได้เลย [3 terminal])
+
+cd Almond/ros2-jetson-ws
+source install/setup.bash
+ros2 run pkg_imagproc node_cam_stream
+
+cd Almond/ros2-jetson-ws
+source install/setup.bash
+ros2 run pkg_imagproc node_cam_stream --ros-args -p video_path:="/home/yupi/Almond/ros2-jetson-ws/001.mp4" -p open_cam:=True
+
+cd Almond/ros2-jetson-ws
+source install/setup.bash
+ros2 run pkg_imagproc node_nav_process
+
+cd Almond/ros2-jetson-ws
+source install/setup.bash
+ros2 run pkg_imagproc node_roctl
+
+------------------------------------------------
+// Base // คอมพิวเตอร์ wsl
+. ~/ros2_humble/install/local_setup.bash
+
+export ROS_DOMAIN_ID=2
+cd Alomnd/ros2-base-ws/
+source install/setup.bash
+cd src/pkg_commands/config/
+ros2 run pkg_commands node_commands --ros-args --params-file ./params.yaml
+//แก้ไขความเร็ว/พิกัดในไฟล์ params.yaml
+
+
+ไฟล์ .cvd อยู่ใน Almond/Datalog/ บน RPI4

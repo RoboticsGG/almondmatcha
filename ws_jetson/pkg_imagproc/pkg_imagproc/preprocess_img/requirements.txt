@@ -1,0 +1,25 @@
+
+# YOLO Object Remover Requirements
+# Core dependencies จำเป็นสำหรับ code ที่ให้มา
+
+# Computer Vision & Image Processing
+opencv-python==4.8.1.78
+numpy>=1.21.0
+
+# Deep Learning Framework
+torch>=1.9.0
+torchvision>=0.10.0
+
+# YOLOv5 Dependencies
+ultralytics>=8.0.0
+pandas>=1.3.0
+pillow>=8.3.0
+
+# Utility Libraries
+pyyaml>=5.4.0
+requests>=2.25.0
+tqdm>=4.62.0
+
+# Optional: For better compatibility
+matplotlib>=3.3.0
+seaborn>=0.11.0

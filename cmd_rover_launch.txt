@@ -1,0 +1,7 @@
+# launch all nodes in curry
+cd ~/Almond/ros2-rover-ws
+source install/setup.bash
+ros2 launch rover_launch_system rover_startup.launch.py
+
+# build individual package
+colcon build --packages-select rover_launch_system

@@ -1,0 +1,16 @@
+cd ~/Almond/ros2-jetson-ws/
+source install/setup.bash
+
+ros2 launch jetson_launch_system jetson_startup.launch.py
+
+# controller in
+
+/home/yupi/Almond/ros2-jetson-ws/pkg_imagproc/pkg_imagproc/node_rover_ctl.py
+
+# enable GDM
+# manually start/stop GDM
+sudo systemctl start gdm3
+sudo systemctl stop gdm3
+
+# reset GDM enable when restart
+sudo systemctl set-default graphical.target
