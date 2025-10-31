@@ -1,5 +1,5 @@
 # launch all nodes in curry
-cd ~/Almond/ros2-rover-ws
+cd ~/almondmatcha/ws_rpi
 source install/setup.bash
 ros2 launch rover_launch_system rover_startup.launch.py
 

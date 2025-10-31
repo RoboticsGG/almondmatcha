@@ -22,7 +22,18 @@ The system uses multiple ROS2 domains to isolate communication between different
 
 ## Package Overview
 
-### 📡 pkg_gnss_navigation
+| Package | Purpose | Domain(s) |
+|---------|---------|-----------|
+| `pkg_gnss_navigation` | GNSS-based waypoint navigation system | 2 |
+| `pkg_chassis_sensors` | Chassis sensor data collection and logging | 5, 6 |
+| `pkg_chassis_control` | Low-level chassis control and domain bridging | 2, 5 |
+| `rover_launch_system` | System-wide launch configuration | All |
+
+---
+
+## Package Details
+
+### pkg_gnss_navigation
 **Purpose:** GNSS-based waypoint navigation system
 
 **Nodes:**
@@ -30,16 +41,19 @@ The system uses multiple ROS2 domains to isolate communication between different
 - `node_gnss_mission_monitor` - Monitors mission progress, calculates distance to waypoint, manages mission state
 
 **Key Topics:**
-- `/tpc_gnss_spresense` (publish) - Current GPS position
-- `/tpc_gnss_mission_active` (publish) - Mission active status
-- `/tpc_gnss_mission_remain_dist` (publish) - Remaining distance to waypoint
-- `/tpc_rover_dest_coordinate` (publish) - Destination coordinates
+
+| Topic | Direction | Description |
+|-------|-----------|-------------|
+| `/tpc_gnss_spresense` | Publish | Current GPS position |
+| `/tpc_gnss_mission_active` | Publish | Mission active status |
+| `/tpc_gnss_mission_remain_dist` | Publish | Remaining distance to waypoint |
+| `/tpc_rover_dest_coordinate` | Publish | Destination coordinates |
 
 **Domain:** 2
 
 ---
 
-### 🔌 pkg_chassis_sensors
+### pkg_chassis_sensors
 **Purpose:** Chassis sensor data collection and logging
 
 **Nodes:**
@@ -47,19 +61,22 @@ The system uses multiple ROS2 domains to isolate communication between different
 - `node_chassis_sensors` - Subscribes to chassis sensors from mROS2, logs motor encoders, system current, and voltage to CSV
 
 **Key Topics:**
-- `/tp_imu_data_d5` (subscribe) - IMU data (accel, gyro)
-- `/tp_sensdata_d5` (subscribe) - Chassis sensors (encoders, current, voltage)
+
+| Topic | Direction | Description |
+|-------|-----------|-------------|
+| `/tp_imu_data_d5` | Subscribe | IMU data (accel, gyro) |
+| `/tp_sensdata_d5` | Subscribe | Chassis sensors (encoders, current, voltage) |
 
 **Logging:**
-- All sensor data is logged to `/home/curry/almondmatcha/runs/logs/`
-- CSV files: `chassis_imu_YYYYMMDD_HHMMSS.csv`, `chassis_sensors_YYYYMMDD_HHMMSS.csv`
-- Logging rate: 1 Hz
+- Directory: `/home/curry/almondmatcha/runs/logs/`
+- Files: `chassis_imu_YYYYMMDD_HHMMSS.csv`, `chassis_sensors_YYYYMMDD_HHMMSS.csv`
+- Rate: 1 Hz
 
 **Domains:** 5 (IMU), 6 (Chassis Sensors)
 
 ---
 
-### 🎮 pkg_chassis_control
+### pkg_chassis_control
 **Purpose:** Low-level chassis control and domain bridging
 
 **Nodes:**
@@ -67,14 +84,16 @@ The system uses multiple ROS2 domains to isolate communication between different
 - `node_domain_bridge` - Bridges messages between Domain 2 and Domain 5 for cross-domain communication
 
 **Key Topics:**
-- `/tpc_gnss_mission_active` (subscribe) - Mission status for cruise control
-- Motor control topics (domain-specific)
+
+| Topic | Direction | Description |
+|-------|-----------|-------------|
+| `/tpc_gnss_mission_active` | Subscribe | Mission status for cruise control |
 
 **Domains:** 2 (Controller), 5 (Bridge)
 
 ---
 
-### 🚀 rover_launch_system
+### rover_launch_system
 **Purpose:** System-wide launch configuration
 
 **Launch Files:**
@@ -82,7 +101,7 @@ The system uses multiple ROS2 domains to isolate communication between different
 
 **Usage:**
 ```bash
-cd ~/Almond/ros2-rover-ws/
+cd ~/almondmatcha/ws_rpi/
 source install/setup.bash
 ros2 launch rover_launch_system rover_startup.launch.py
 ```
@@ -91,17 +110,11 @@ ros2 launch rover_launch_system rover_startup.launch.py
 
 ## Interface Packages
 
-### msgs_ifaces
-Custom message definitions shared across all packages:
-- `SpresenseGNSS.msg` - GNSS data structure
-- `ChassisIMU.msg` - IMU data structure
-- `ChassisSensors.msg` - Chassis sensor data structure
-
-### action_ifaces
-Action definitions for mission control
-
-### services_ifaces
-Service definitions for rover control
+| Package | Purpose |
+|---------|---------|
+| `msgs_ifaces` | Custom message definitions (SpresenseGNSS, ChassisIMU, ChassisSensors) |
+| `action_ifaces` | Action definitions for mission control |
+| `services_ifaces` | Service definitions for rover control |
 
 ---
 
@@ -136,19 +149,19 @@ colcon build --packages-select rover_launch_system
 ### GNSS Navigation (Domain 2)
 ```bash
 # Terminal 1: GNSS Data Reader
-cd ~/Almond/ros2-rover-ws/
+cd ~/almondmatcha/ws_rpi/
 source install/setup.bash
 ros2 run pkg_gnss_navigation node_gnss_spresense
 
 # Terminal 2: Mission Monitor
-cd ~/Almond/ros2-rover-ws/
+cd ~/almondmatcha/ws_rpi/
 source install/setup.bash
 ros2 run pkg_gnss_navigation node_gnss_mission_monitor
 ```
 
 ### Chassis Control (Domain 2)
 ```bash
-cd ~/Almond/ros2-rover-ws/
+cd ~/almondmatcha/ws_rpi/
 source install/setup.bash
 ros2 run pkg_chassis_control node_chassis_controller
 ```
@@ -156,7 +169,7 @@ ros2 run pkg_chassis_control node_chassis_controller
 ### Sensor Logging (Domain 5)
 ```bash
 export ROS_DOMAIN_ID=5
-cd ~/Almond/ros2-rover-ws/
+cd ~/almondmatcha/ws_rpi/
 source install/setup.bash
 ros2 run pkg_chassis_sensors node_chassis_imu
 ```
@@ -164,7 +177,7 @@ ros2 run pkg_chassis_sensors node_chassis_imu
 ### Sensor Logging (Domain 6)
 ```bash
 export ROS_DOMAIN_ID=6
-cd ~/Almond/ros2-rover-ws/
+cd ~/almondmatcha/ws_rpi/
 source install/setup.bash
 ros2 run pkg_chassis_sensors node_chassis_sensors
 ```
@@ -172,7 +185,7 @@ ros2 run pkg_chassis_sensors node_chassis_sensors
 ### Domain Bridge (Domain 5)
 ```bash
 export ROS_DOMAIN_ID=5
-cd ~/Almond/ros2-rover-ws/
+cd ~/almondmatcha/ws_rpi/
 source install/setup.bash
 ros2 run pkg_chassis_control node_domain_bridge
 ```
@@ -182,22 +195,34 @@ ros2 run pkg_chassis_control node_domain_bridge
 ## Design Principles
 
 ### 1. Separation by Function
-Packages are organized by functional subsystem rather than by hardware or deployment location:
-- **Navigation** - All GNSS-related functionality
-- **Sensors** - All sensor data collection
-- **Control** - All control logic
+Packages are organized by functional subsystem rather than by hardware or deployment location.
+
+| Principle | Implementation |
+|-----------|----------------|
+| Navigation | All GNSS-related functionality in one package |
+| Sensors | All sensor data collection in one package |
+| Control | All control logic in one package |
 
 ### 2. Sensor-Specific Naming
-Package names indicate the sensor/input source (e.g., `pkg_gnss_navigation` vs future `pkg_vision_navigation` on Jetson)
+Package names indicate the sensor/input source to support multiple navigation systems.
+
+| Current | Future (Jetson) |
+|---------|-----------------|
+| `pkg_gnss_navigation` | `pkg_vision_navigation` |
+| GPS-based waypoints | Camera-based obstacle avoidance |
 
 ### 3. Consistent Naming Convention
-- **Packages:** `pkg_<subsystem>_<function>`
-- **Nodes:** `node_<descriptive_name>` (all executables prefixed with `node_`)
-- **Topics:** `tpc_<descriptive_name>` (all topics prefixed with `tpc_`)
-- **Variables:** `pub_` for publishers, `sub_` for subscribers
+
+| Element | Convention | Example |
+|---------|-----------|---------|
+| Packages | `pkg_<subsystem>_<function>` | `pkg_gnss_navigation` |
+| Nodes | `node_<descriptive_name>` | `node_gnss_spresense` |
+| Topics | `tpc_<descriptive_name>` | `tpc_gnss_mission_active` |
+| Publishers | `pub_<name>` | `pub_mission_active_` |
+| Subscribers | `sub_<name>` | `sub_chassis_imu_` |
 
 ### 4. Domain Independence
-Packages can span multiple domains as needed - domain assignment is a deployment concern, not a code organization concern
+Packages can span multiple domains as needed - domain assignment is a deployment concern, not a code organization concern.
 
 ### 5. Scalability
 Structure supports future expansion:

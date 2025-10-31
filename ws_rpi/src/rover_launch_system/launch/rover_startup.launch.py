@@ -3,13 +3,13 @@ from launch.actions import GroupAction, SetEnvironmentVariable
 from launch_ros.actions import Node
 import datetime
 
-# cd Almond/ros2-rover-ws/
+# cd ~/almondmatcha/ws_rpi/
 # source install/setup.bash
 # ros2 launch rover_launch_system rover_startup.launch.py
 
 set_custom_log_dir = SetEnvironmentVariable(
     name='ROS_LOG_DIR', 
-    value=f'/home/curry/Almond/ros2-rover-ws/run_logs/{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}'
+    value=f'/home/curry/almondmatcha/runs/ros_logs/{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}'
 )
 
 def generate_launch_description():

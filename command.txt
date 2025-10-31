@@ -7,30 +7,30 @@
 ssh curry@192.168.1.1
 แล้วใช้คำสั่งตามลำดับ (หลัง ssh ก็อปวางได้เลย [6 terminal])
 
-cd Almond/ros2-rover-ws/
+cd almondmatcha/ws_rpi/
 source install/setup.bash
 ros2 run pkg_gnss_navigation node_gnss_spresense
 
-cd Almond/ros2-rover-ws/
+cd almondmatcha/ws_rpi/
 source install/setup.bash
 ros2 run pkg_gnss_navigation node_gnss_mission_monitor
 
-cd Almond/ros2-rover-ws/
+cd almondmatcha/ws_rpi/
 source install/setup.bash
 ros2 run pkg_chassis_control node_chassis_controller
 
 export ROS_DOMAIN_ID=5
-cd Almond/ros2-rover-ws/
+cd almondmatcha/ws_rpi/
 source install/setup.bash
 ros2 run pkg_chassis_sensors node_chassis_imu
 
 export ROS_DOMAIN_ID=6
-cd Almond/ros2-rover-ws/
+cd almondmatcha/ws_rpi/
 source install/setup.bash
 ros2 run pkg_chassis_sensors node_chassis_sensors
 
 export ROS_DOMAIN_ID=5
-cd Almond/ros2-rover-ws/
+cd almondmatcha/ws_rpi/
 source install/setup.bash
 ros2 run pkg_chassis_control node_domain_bridge
 -----------------------------------------------------
@@ -38,19 +38,19 @@ ros2 run pkg_chassis_control node_domain_bridge
 ssh yupi@192.168.1.5
 แล้วใช้คำสั่งตามลำดับ (หลัง ssh ก็อปวางได้เลย [3 terminal])
 
-cd Almond/ros2-jetson-ws
+cd almondmatcha/ws_jetson
 source install/setup.bash
 ros2 run pkg_imagproc node_cam_stream
 
-cd Almond/ros2-jetson-ws
+cd almondmatcha/ws_jetson
 source install/setup.bash
-ros2 run pkg_imagproc node_cam_stream --ros-args -p video_path:="/home/yupi/Almond/ros2-jetson-ws/001.mp4" -p open_cam:=True
+ros2 run pkg_imagproc node_cam_stream --ros-args -p video_path:="/home/yupi/almondmatcha/ws_jetson/001.mp4" -p open_cam:=True
 
-cd Almond/ros2-jetson-ws
+cd almondmatcha/ws_jetson
 source install/setup.bash
 ros2 run pkg_imagproc node_nav_process
 
-cd Almond/ros2-jetson-ws
+cd almondmatcha/ws_jetson
 source install/setup.bash
 ros2 run pkg_imagproc node_roctl
 
@@ -59,11 +59,11 @@ ros2 run pkg_imagproc node_roctl
 . ~/ros2_humble/install/local_setup.bash
 
 export ROS_DOMAIN_ID=2
-cd Alomnd/ros2-base-ws/
+cd almondmatcha/ws_base/
 source install/setup.bash
 cd src/pkg_commands/config/
 ros2 run pkg_commands node_commands --ros-args --params-file ./params.yaml
 //แก้ไขความเร็ว/พิกัดในไฟล์ params.yaml
 
 
-ไฟล์ .cvd อยู่ใน Almond/Datalog/ บน RPI4
+ไฟล์ .csv อยู่ใน almondmatcha/runs/logs/ บน RPI4
