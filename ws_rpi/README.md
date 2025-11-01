@@ -120,14 +120,49 @@ ros2 launch rover_launch_system rover_startup.launch.py
 
 ## Building the Workspace
 
-### Build All Packages
+### Quick Build (Recommended)
+
+Use the automated build script that handles proper dependency ordering:
+
 ```bash
 cd ~/almondmatcha/ws_rpi
-colcon build
+
+# Normal build (incremental)
+./build.sh
+
+# Clean rebuild (removes all artifacts)
+./build.sh clean
+
+# After building, source the environment
+source install/setup.bash
+```
+
+For more detailed build instructions, see [BUILD.md](BUILD.md).
+
+### Manual Build
+
+If you prefer manual control:
+
+```bash
+cd ~/almondmatcha/ws_rpi
+
+# Step 1: Build interface packages first
+colcon build --packages-select action_ifaces msgs_ifaces services_ifaces
+
+# Step 2: Source the environment
+source install/setup.bash
+
+# Step 3: Build application packages
+colcon build --packages-select pkg_chassis_control pkg_chassis_sensors pkg_gnss_navigation rover_launch_system
+
+# Step 4: Source again
 source install/setup.bash
 ```
 
 ### Build Specific Packages
+
+After interfaces are built and sourced:
+
 ```bash
 # Build navigation package
 colcon build --packages-select pkg_gnss_navigation
