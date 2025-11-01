@@ -17,7 +17,7 @@ const std::string LOG_DIR = "/home/curry/almondmatcha/runs/logs/";
 class SpresenseGNSSNode : public rclcpp::Node {
 public:
     SpresenseGNSSNode() : Node("spresense_gnss_node") {
-        publisher_ = this->create_publisher<msgs_ifaces::msg::SpresenseGNSS>("tpc_gnss_spresense", 10);
+        pub_gnss_spresense_ = this->create_publisher<msgs_ifaces::msg::SpresenseGNSS>("tpc_gnss_spresense", 10);
 
         if (!rcpputils::fs::exists(LOG_DIR)) {
             try {
@@ -59,7 +59,7 @@ public:
     }
 
 private:
-    rclcpp::Publisher<msgs_ifaces::msg::SpresenseGNSS>::SharedPtr publisher_;
+    rclcpp::Publisher<msgs_ifaces::msg::SpresenseGNSS>::SharedPtr pub_gnss_spresense_;
     rclcpp::TimerBase::SharedPtr timer_;
     int serial_port_;
     std::ofstream csv_file_;
@@ -135,7 +135,7 @@ private:
         msg.longitude = longitude;
         msg.altitude = altitude;
 
-        publisher_->publish(msg);
+        pub_gnss_spresense_->publish(msg);
         RCLCPP_INFO(this->get_logger(), "Spresense GNSS - Date=%s, Time=%s, Sat=%d, Fix=%d, Lat=%f, Lon=%f, Alt=%f",
                     msg.date.c_str(), msg.time.c_str(), msg.num_satellites, msg.fix, msg.latitude, msg.longitude, msg.altitude);
 

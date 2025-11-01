@@ -22,12 +22,12 @@ class DomainBridge : public rclcpp::Node {
 public:
     DomainBridge() : Node("domain_bridge") {
         // Publisher to Domain ID 2
-        domain2_publisher_ = this->create_publisher<msgs_ifaces::msg::ChassisCtrl>(
+        pub_chassis_ctrl_d2_ = this->create_publisher<msgs_ifaces::msg::ChassisCtrl>(
             "pub_rovercontrol", 10
         );
 
         // Subscriber from Domain ID 5
-        domain5_subscriber_ = this->create_subscription<msgs_ifaces::msg::ChassisCtrl>(
+        sub_chassis_ctrl_d5_ = this->create_subscription<msgs_ifaces::msg::ChassisCtrl>(
             "pub_rovercontrol_d5", 10, 
             std::bind(&DomainBridge::onDomain5MessageReceived, this, std::placeholders::_1)
         );
@@ -47,8 +47,8 @@ private:
     static constexpr int BRIDGE_PERIOD_MS = 20;  // 50Hz bridge rate
     
     // === ROS2 Communication ===
-    rclcpp::Publisher<msgs_ifaces::msg::ChassisCtrl>::SharedPtr domain2_publisher_;
-    rclcpp::Subscription<msgs_ifaces::msg::ChassisCtrl>::SharedPtr domain5_subscriber_;
+    rclcpp::Publisher<msgs_ifaces::msg::ChassisCtrl>::SharedPtr pub_chassis_ctrl_d2_;
+    rclcpp::Subscription<msgs_ifaces::msg::ChassisCtrl>::SharedPtr sub_chassis_ctrl_d5_;
     rclcpp::TimerBase::SharedPtr bridge_timer_;
     
     // === State Variables ===
@@ -93,7 +93,7 @@ private:
         }
 
         // Bridge latest control message to Domain 2
-        domain2_publisher_->publish(latest_control_message_);
+        pub_chassis_ctrl_d2_->publish(latest_control_message_);
 
         RCLCPP_INFO(this->get_logger(), 
                    "Bridged to Domain 2 [Dir:%d, Steer:%.2f, Speed:%d, Back:%d]",

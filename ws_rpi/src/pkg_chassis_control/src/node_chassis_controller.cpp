@@ -56,15 +56,15 @@ private:
     rclcpp::Node::SharedPtr pub_node_;  // Domain ID 5
     
     // === Services ===
-    rclcpp::Service<services_ifaces::srv::SpdLimit>::SharedPtr spd_service_;
+    rclcpp::Service<services_ifaces::srv::SpdLimit>::SharedPtr srv_spd_limit_;
     
     // === Subscribers ===
-    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr topic_cc_rcon_sub_;
-    rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr fmctl_sub_;
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_cc_rcon_;
+    rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr sub_fmctl_;
     
     // === Publishers ===
-    rclcpp::Publisher<msgs_ifaces::msg::ChassisCtrl>::SharedPtr topic_rocon_pub_d5_;
-    rclcpp::Publisher<msgs_ifaces::msg::ChassisCtrl>::SharedPtr topic_rocon_pub_d2_;
+    rclcpp::Publisher<msgs_ifaces::msg::ChassisCtrl>::SharedPtr pub_rocon_d5_;
+    rclcpp::Publisher<msgs_ifaces::msg::ChassisCtrl>::SharedPtr pub_rocon_d2_;
     
     // === Executor ===
     rclcpp::executors::MultiThreadedExecutor executor_;
@@ -101,28 +101,28 @@ private:
         sub_node_ = std::make_shared<rclcpp::Node>("sub_node", node_options);
         
         // Create speed limit service
-        spd_service_ = sub_node_->create_service<services_ifaces::srv::SpdLimit>(
-            "spd_limit",
+        srv_spd_limit_ = sub_node_->create_service<services_ifaces::srv::SpdLimit>(
+            "srv_spd_limit",
             std::bind(&ChassisController::handleSpeedLimitRequest, 
                      this, std::placeholders::_1, std::placeholders::_2)
         );
         
         // Create mission active subscription
-        topic_cc_rcon_sub_ = sub_node_->create_subscription<std_msgs::msg::Bool>(
+        sub_cc_rcon_ = sub_node_->create_subscription<std_msgs::msg::Bool>(
             "tpc_gnss_mission_active", 10,
             std::bind(&ChassisController::cruiseControlCallback, 
                      this, std::placeholders::_1)
         );
         
         // Create flight mode control subscription
-        fmctl_sub_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
+        sub_fmctl_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
             "tpc_rover_fmctl", 10,
             std::bind(&ChassisController::flightModeControlCallback, 
                      this, std::placeholders::_1)
         );
         
         // Create publisher in Domain ID 2
-        topic_rocon_pub_d2_ = sub_node_->create_publisher<msgs_ifaces::msg::ChassisCtrl>(
+        pub_rocon_d2_ = sub_node_->create_publisher<msgs_ifaces::msg::ChassisCtrl>(
             "pub_rovercontrol_d2", 10
         );
     }
@@ -143,7 +143,7 @@ private:
         pub_node_ = std::make_shared<rclcpp::Node>("pub_node", node_options);
         
         // Create publisher in Domain ID 5
-        topic_rocon_pub_d5_ = pub_node_->create_publisher<msgs_ifaces::msg::ChassisCtrl>(
+        pub_rocon_d5_ = pub_node_->create_publisher<msgs_ifaces::msg::ChassisCtrl>(
             "pub_rovercontrol_d5", 10
         );
     }
@@ -235,8 +235,8 @@ private:
             }
 
             // Publish to both domains
-            topic_rocon_pub_d5_->publish(chassis_ctrl);
-            topic_rocon_pub_d2_->publish(chassis_ctrl);
+            pub_rocon_d5_->publish(chassis_ctrl);
+            pub_rocon_d2_->publish(chassis_ctrl);
         }
 
         // Log published control values
