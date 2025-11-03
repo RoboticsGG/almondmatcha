@@ -11,7 +11,7 @@ chassis_controller/
 ├── motor_control.cpp            (141 lines)  Motor PWM & steering servo implementations
 ├── led_status.h                 (44 lines)   Status LED API declarations
 ├── led_status.cpp               (39 lines)   Status LED implementations
-└── REFACTORING_SUMMARY.md                    Detailed module responsibilities & API contracts
+└── README.md                    
 ```
 
 ## Module Overview
