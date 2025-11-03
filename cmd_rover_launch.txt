@@ -5,3 +5,8 @@ ros2 launch rover_launch_system rover_startup.launch.py
 
 # build individual package
 colcon build --packages-select rover_launch_system
+
+
+cd /home/curry/almondmatcha/ws_rpi && 
+source install/setup.bash && 
+ros2 launch rover_launch_system rover_startup.launch.py

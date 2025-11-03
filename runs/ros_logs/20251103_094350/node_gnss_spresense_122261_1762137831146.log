@@ -1,0 +1,8 @@
+[INFO] [1762137836.578932945] [spresense_gnss_node]: Spresense GNSS - Date=, Time=, Sat=0, Fix=0, Lat=0.000000, Lon=0.000000, Alt=0.000000
+[INFO] [1762137838.578933169] [spresense_gnss_node]: Spresense GNSS - Date=, Time=, Sat=0, Fix=0, Lat=0.000000, Lon=0.000000, Alt=0.000000
+[INFO] [1762137840.578729513] [spresense_gnss_node]: Spresense GNSS - Date=1980-01-06, Time=00:00:01, Sat=0, Fix=0, Lat=0.000000, Lon=0.000000, Alt=0.000000
+[INFO] [1762137842.578620786] [spresense_gnss_node]: Spresense GNSS - Date=1980-01-06, Time=00:00:03, Sat=1, Fix=0, Lat=0.000000, Lon=0.000000, Alt=0.000000
+[INFO] [1762137844.578850724] [spresense_gnss_node]: Spresense GNSS - Date=1980-01-06, Time=00:00:05, Sat=1, Fix=0, Lat=0.000000, Lon=0.000000, Alt=0.000000
+[INFO] [1762137846.578879892] [spresense_gnss_node]: Spresense GNSS - Date=1980-01-06, Time=00:00:07, Sat=1, Fix=0, Lat=0.000000, Lon=0.000000, Alt=0.000000
+[INFO] [1762137848.578847104] [spresense_gnss_node]: Spresense GNSS - Date=1980-01-06, Time=00:00:09, Sat=2, Fix=0, Lat=0.000000, Lon=0.000000, Alt=0.000000
+[INFO] [1762137849.932008120] [rclcpp]: signal_handler(signum=2)

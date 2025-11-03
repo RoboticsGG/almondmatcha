@@ -154,7 +154,7 @@ private:
      * @brief Callback for cruise control/remote control flag
      * @param msg Boolean message indicating CC/RC state
      */
-    void cruiseControlCallback(const std_msgs::msg::Bool::SharedPtr msg) {
+    void cruiseControlCallback(const std::shared_ptr<std_msgs::msg::Bool> msg) {
         std::lock_guard<std::mutex> lock(data_lock_);
         if (msg->data != cc_rcon_msg_) { 
             cc_rcon_msg_ = msg->data;
@@ -182,7 +182,7 @@ private:
      * @brief Callback for flight mode control messages
      * @param msg Float32MultiArray containing [steering, detection]
      */
-    void flightModeControlCallback(const std_msgs::msg::Float32MultiArray::SharedPtr msg) {
+    void flightModeControlCallback(const std::shared_ptr<std_msgs::msg::Float32MultiArray> msg) {
         if (msg->data.size() >= 2) {
             std::lock_guard<std::mutex> lock(data_lock_);
             steer_msg_ = msg->data[0];   // Steering command
@@ -307,7 +307,10 @@ private:
  * @brief Main entry point for the chassis controller node
  */
 int main(int argc, char* argv[]) {
-    rclcpp::init(argc, argv);
+    // Initialize rclcpp only if not already initialized (for launch file compatibility)
+    if (!rclcpp::ok()) {
+        rclcpp::init(argc, argv);
+    }
     
     try {
         auto node = std::make_shared<ChassisController>();

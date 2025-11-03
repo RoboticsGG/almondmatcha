@@ -1,0 +1,3 @@
+[INFO] [1762137831.485761661] [domain_bridge_node]: Domain Bridge initialized: Domain 5 -> Domain 2 (50Hz)
+[WARN] [1762137831.507528079] [domain_bridge_node]: Waiting for messages from Domain 5 on 'pub_rovercontrol_d5'...
+[INFO] [1762137849.937645985] [rclcpp]: signal_handler(signum=2)

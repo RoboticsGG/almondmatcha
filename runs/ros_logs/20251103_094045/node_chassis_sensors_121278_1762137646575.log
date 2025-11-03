@@ -1,0 +1,4 @@
+[INFO] [1762137646.923417125] [chassis_sensors_node]: Subscribed to /tp_sensdata_d5
+[INFO] [1762137646.925186484] [chassis_sensors_node]: Created log directory: /home/curry/almondmatcha/runs/logs/
+[INFO] [1762137646.926043803] [chassis_sensors_node]: Logging to: /home/curry/almondmatcha/runs/logs/chassis_sensors_20251103_094046.csv
+[INFO] [1762137674.109766233] [rclcpp]: signal_handler(signum=2)
