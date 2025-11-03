@@ -10,6 +10,8 @@
 
 This firmware implements a 2-task multi-threaded design using Mbed OS for 4-wheel rover motor control and IMU sensor acquisition. The architecture separates motor command processing from sensor data collection, enabling responsive steering and drive control while maintaining continuous vehicle orientation monitoring.
 
+**Source Organization:** Modular (motor_control, led_status, and app modules) — see `workspace/chassis_controller/README.md` for details.
+
 ### Task Breakdown
 
 | Task | Priority | Polling Rate | Function | Stack |

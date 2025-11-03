@@ -1,6 +1,6 @@
 # Tomorrow's Action Items - Quick Start
 
-## 🔧 Build & Test (15–20 min)
+## Build & Test (15–20 min)
 
 ### Step 1: Build
 ```bash
@@ -23,7 +23,7 @@ cd /home/yupi/almondmatcha/mros2-mbed-chassis-dynamics
 
 ---
 
-## 📝 Code Review Checklist
+## Code Review Checklist
 
 - [ ] Review `REFACTORING_SUMMARY.md` in workspace/chassis_controller/
 - [ ] Verify each module's responsibility is clear
@@ -32,7 +32,7 @@ cd /home/yupi/almondmatcha/mros2-mbed-chassis-dynamics
 
 ---
 
-## 🚀 If Everything Works
+## If Everything Works
 1. Commit modular refactoring:
    ```bash
    git add -A
@@ -46,7 +46,7 @@ cd /home/yupi/almondmatcha/mros2-mbed-chassis-dynamics
 
 ---
 
-## ⚠️ If Build Fails
+## If Build Fails
 
 ### Docker Issue
 - Check: `docker ps` (does docker daemon run?)
@@ -65,7 +65,7 @@ cd /home/yupi/almondmatcha/mros2-mbed-chassis-dynamics
 
 ---
 
-## 📞 Reference Points
+## Reference Points
 
 **Modified files:**
 - `/home/yupi/almondmatcha/mros2-mbed-chassis-dynamics/workspace/chassis_controller/app.cpp`
@@ -81,5 +81,4 @@ cd /home/yupi/almondmatcha/mros2-mbed-chassis-dynamics
 
 ---
 
-**Estimated time:** 30–45 min (build + verification)  
-**Team contact:** Confirm build environment setup if docker fails
+**Estimated time:** 30–45 min (build + verification)
