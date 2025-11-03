@@ -37,27 +37,27 @@ const uint32_t MAIN_LOOP_PERIOD_MS = 100;      // Main loop safety tick
  * ===================================== */
 
 // Function declarations
-float frontControl(uint8_t frontDirection, float diff_degree);
-std::tuple<float, uint8_t, uint8_t> backControl(uint8_t backDirection, uint8_t dutycycle_PWM);
-void motorDrive(float duty, uint8_t EN_A, uint8_t EN_B, uint8_t period_PWM, float percent_dutycycle);
+float calculate_steering_pwm_duty(uint8_t steering_direction, float steering_angle_degrees);
+std::tuple<float, uint8_t, uint8_t> calculate_motor_direction(uint8_t motor_direction, uint8_t speed_percent);
+void apply_motor_control(float steering_duty, uint8_t enable_forward, uint8_t enable_backward, uint8_t pwm_period_us_val, float motor_speed_percent);
 
 // Steering servo (PA_3)
-PwmOut DirectPWM(PA_3);
+PwmOut steering_servo_pwm(PA_3);
 
 // Motor driver PWM (left and right motors)
-PwmOut MortorRPWM(PA_6);
-PwmOut MortorLPWM(PE_11);
+PwmOut motor_right_pwm(PA_6);
+PwmOut motor_left_pwm(PE_11);
 
 // Motor driver direction pins (H-bridge enable)
-DigitalOut MortorRAEN(PF_12);
-DigitalOut MortorRBEN(PD_15);
-DigitalOut MortorLAEN(PF_13);
-DigitalOut MortorLBEN(PE_9);
+DigitalOut motor_right_enable_forward(PF_12);
+DigitalOut motor_right_enable_backward(PD_15);
+DigitalOut motor_left_enable_forward(PF_13);
+DigitalOut motor_left_enable_backward(PE_9);
 
 // Control parameters
-uint8_t servo_center = 100;  // Servo center position (degrees)
-uint8_t period_PWM = 20;     // PWM period (microseconds)
-uint8_t degree = 0;          // Current steering angle
+uint8_t servo_center_angle = 100;  // Servo center position (degrees)
+uint8_t pwm_period_us = 20;        // PWM period (microseconds)
+uint8_t current_steering_angle = 0;  // Current steering angle
 
 /* =====================================
  * IMU Sensor Setup
@@ -96,12 +96,12 @@ mros2::Publisher* imu_pub_ptr = NULL;
  * Motor Control Functions
  * ===================================== */
 
-float frontControl(uint8_t frontDirection, float diff_degree)
+float calculate_steering_pwm_duty(uint8_t steering_direction, float steering_angle_degrees)
 {
     /**
      * Calculate steering servo PWM duty cycle from steering angle
-     * frontDirection: 0=straight, 1=left, 2=right (unused in current implementation)
-     * diff_degree: steering angle in degrees relative to center
+     * steering_direction: 0=straight, 1=left, 2=right (unused in current implementation)
+     * steering_angle_degrees: steering angle in degrees relative to center
      * Returns: PWM duty cycle percentage (5%-10% range for standard servo)
      */
     
@@ -113,7 +113,7 @@ float frontControl(uint8_t frontDirection, float diff_degree)
     float servo_min_duty = 5.0f;
     float servo_max_duty = 10.0f;
     
-    float target_angle = servo_center + diff_degree;
+    float target_angle = servo_center_angle + steering_angle_degrees;
     
     // Clamp to servo range
     if (target_angle < servo_min_angle) target_angle = servo_min_angle;
@@ -126,64 +126,64 @@ float frontControl(uint8_t frontDirection, float diff_degree)
     return duty_cycle;
 }
 
-std::tuple<float, uint8_t, uint8_t> backControl(uint8_t backDirection, uint8_t dutycycle_PWM)
+std::tuple<float, uint8_t, uint8_t> calculate_motor_direction(uint8_t motor_direction, uint8_t speed_percent)
 {
     /**
      * Determine motor direction and apply speed from direction flag
-     * backDirection: 0=forward, 1=backward, 2=stop
-     * dutycycle_PWM: motor speed 0-100%
-     * Returns: (motor_duty, EN_A_pin, EN_B_pin) tuple
+     * motor_direction: 0=forward, 1=backward, 2=stop
+     * speed_percent: motor speed 0-100%
+     * Returns: (motor_duty, enable_forward, enable_backward) tuple
      */
     
-    uint8_t EN_A = 0, EN_B = 0;
-    float motor_duty = (float)dutycycle_PWM / 100.0f;
+    uint8_t enable_forward = 0, enable_backward = 0;
+    float motor_duty = (float)speed_percent / 100.0f;
     
-    if (backDirection == 0) {
-        // Forward: EN_A=1, EN_B=0
-        EN_A = 1;
-        EN_B = 0;
-    } else if (backDirection == 1) {
-        // Backward: EN_A=0, EN_B=1
-        EN_A = 0;
-        EN_B = 1;
+    if (motor_direction == 0) {
+        // Forward: enable_forward=1, enable_backward=0
+        enable_forward = 1;
+        enable_backward = 0;
+    } else if (motor_direction == 1) {
+        // Backward: enable_forward=0, enable_backward=1
+        enable_forward = 0;
+        enable_backward = 1;
     } else {
-        // Stop: EN_A=0, EN_B=0
-        EN_A = 0;
-        EN_B = 0;
+        // Stop: enable_forward=0, enable_backward=0
+        enable_forward = 0;
+        enable_backward = 0;
         motor_duty = 0.0f;
     }
     
-    return std::make_tuple(motor_duty, EN_A, EN_B);
+    return std::make_tuple(motor_duty, enable_forward, enable_backward);
 }
 
-void motorDrive(float duty, uint8_t EN_A, uint8_t EN_B, uint8_t period_PWM, float percent_dutycycle)
+void apply_motor_control(float steering_duty, uint8_t enable_forward, uint8_t enable_backward, uint8_t pwm_period_us_val, float motor_speed_percent)
 {
     /**
-     * Apply PWM and direction signals to motor driver
-     * duty: normalized duty cycle (0.0 to 1.0)
-     * EN_A, EN_B: direction pins for H-bridge
-     * period_PWM: PWM period in microseconds
-     * percent_dutycycle: duty cycle as percentage (0-100)
+     * Apply PWM and direction signals to motor hardware
+     * steering_duty: normalized duty cycle (0.0 to 1.0)
+     * enable_forward, enable_backward: direction pins for H-bridge
+     * pwm_period_us_val: PWM period in microseconds
+     * motor_speed_percent: duty cycle as percentage (0-100)
      */
     
     // Configure PWM period (20 us = 50 kHz)
-    DirectPWM.period_us(period_PWM);
-    MortorRPWM.period_us(period_PWM);
-    MortorLPWM.period_us(period_PWM);
+    steering_servo_pwm.period_us(pwm_period_us_val);
+    motor_right_pwm.period_us(pwm_period_us_val);
+    motor_left_pwm.period_us(pwm_period_us_val);
     
-    // Set steering servo PWM (DirectPWM)
-    DirectPWM.write(duty);
+    // Set steering servo PWM (steering_servo_pwm)
+    steering_servo_pwm.write(steering_duty);
     
     // Set motor direction pins
-    MortorRAEN = EN_A;
-    MortorRBEN = EN_B;
-    MortorLAEN = EN_A;
-    MortorLBEN = EN_B;
+    motor_right_enable_forward = enable_forward;
+    motor_right_enable_backward = enable_backward;
+    motor_left_enable_forward = enable_forward;
+    motor_left_enable_backward = enable_backward;
     
     // Set motor speed (duty cycle)
-    float normalized_duty = percent_dutycycle / 100.0f;
-    MortorRPWM.write(normalized_duty);
-    MortorLPWM.write(normalized_duty);
+    float normalized_duty = motor_speed_percent / 100.0f;
+    motor_right_pwm.write(normalized_duty);
+    motor_left_pwm.write(normalized_duty);
 }
 
 /* =====================================
@@ -207,16 +207,15 @@ void motor_control_task() {
                 rover_cmd_mutex.unlock();
                 
                 // Calculate servo PWM from steering angle
-                float servo_duty = frontControl(front_dir, steering_ang);
+                float servo_duty = calculate_steering_pwm_duty(front_dir, steering_ang);
                 
                 // Calculate motor direction and duty from speed
-                std::tuple<float, uint8_t, uint8_t> motor_ctrl = backControl(back_dir, motor_spd);
-                float motor_duty = std::get<0>(motor_ctrl);
-                uint8_t EN_A = std::get<1>(motor_ctrl);
-                uint8_t EN_B = std::get<2>(motor_ctrl);
+                std::tuple<float, uint8_t, uint8_t> motor_ctrl = calculate_motor_direction(back_dir, motor_spd);
+                uint8_t enable_fwd = std::get<1>(motor_ctrl);
+                uint8_t enable_bwd = std::get<2>(motor_ctrl);
                 
                 // Apply motor control signals
-                motorDrive(servo_duty, EN_A, EN_B, period_PWM, motor_spd);
+                apply_motor_control(servo_duty, enable_fwd, enable_bwd, pwm_period_us, motor_spd);
                 
                 MROS2_DEBUG("Motor: front_dir=%d angle=%f back_dir=%d speed=%d", 
                            front_dir, steering_ang, back_dir, motor_spd);

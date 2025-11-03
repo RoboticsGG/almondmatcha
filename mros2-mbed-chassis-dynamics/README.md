@@ -29,9 +29,9 @@ This firmware implements a 2-task multi-threaded design using Mbed OS for 4-whee
 **Operation:**
 1. Polls `rover_cmd` shared struct every `MOTOR_RESPONSE_PERIOD_MS` (50 ms)
 2. Detects new command via `command_updated` flag
-3. Calls `frontControl()` to calculate steering servo PWM from steering angle
-4. Calls `backControl()` to determine motor direction (forward/backward/stop) and speed
-5. Calls `motorDrive()` to apply PWM signals to hardware
+3. Calls `calculate_steering_pwm_duty()` to calculate steering servo PWM from steering angle
+4. Calls `calculate_motor_direction()` to determine motor direction (forward/backward/stop) and speed
+5. Calls `apply_motor_control()` to apply PWM signals to hardware
 6. Uses `Mutex` to safely access shared `rover_cmd` struct
 
 **Subscription:**
@@ -39,10 +39,10 @@ This firmware implements a 2-task multi-threaded design using Mbed OS for 4-whee
 - **Fields:** steering angle, motor speed, direction flags
 
 **Hardware Control:**
-- Steering servo: PWM on **PA_3** (standard RC servo, 1.0-2.0 ms pulse)
-- Right motor PWM: **PA_6**
-- Left motor PWM: **PE_11**
-- Motor direction pins (H-bridge): **PF_12, PD_15, PF_13, PE_9**
+- Steering servo: PWM on **PA_3** via `steering_servo_pwm` (standard RC servo, 1.0-2.0 ms pulse)
+- Right motor PWM: **PA_6** via `motor_right_pwm`
+- Left motor PWM: **PE_11** via `motor_left_pwm`
+- Motor direction pins (H-bridge): **PF_12** (`motor_right_enable_forward`), **PD_15** (`motor_right_enable_backward`), **PF_13** (`motor_left_enable_forward`), **PE_9** (`motor_left_enable_backward`)
 
 **Thread Safety:**
 - Callback stores incoming commands in rover_cmd struct with Mutex protection
@@ -364,6 +364,30 @@ minicom -D /dev/ttyACM0 -b 115200
 ---
 
 ## Development Notes
+
+### Code Quality and Naming Conventions
+
+This codebase follows professional embedded systems naming standards for maintainability:
+
+**Function Naming (Verb-Noun Pattern):**
+- `calculate_steering_pwm_duty()` - Returns steering servo PWM duty cycle from angle
+- `calculate_motor_direction()` - Determines motor direction and speed from control commands
+- `apply_motor_control()` - Applies PWM and direction signals to hardware
+
+**Variable Naming (Descriptive, snake_case):**
+- `steering_servo_pwm` - Steering servo PWM control object (replaces DirectPWM)
+- `motor_right_pwm`, `motor_left_pwm` - Motor PWM control objects
+- `motor_right_enable_forward`, `motor_right_enable_backward` - Motor direction pins (replaces EN_A, EN_B)
+- `servo_center_angle` - Servo center position (replaces servo_center)
+- `pwm_period_us` - PWM period with explicit unit (replaces period_PWM)
+- `current_steering_angle` - Current steering angle in degrees (replaces degree)
+
+**Benefits:**
+- Self-documenting code
+- Fixed typos (Mortor → motor)
+- Consistent naming throughout
+- Easier debugging and maintenance
+- Aligns with industry best practices
 
 ### Thread Safety
 - **Mutex Locking:** Kept to minimal scope to avoid blocking critical operations
