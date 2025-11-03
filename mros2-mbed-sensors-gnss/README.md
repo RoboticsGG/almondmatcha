@@ -111,26 +111,31 @@ To adjust sampling rates, edit these constants at the top of `workspace/sensors_
 
 The STM32 board communicates with the host via Ethernet using ROS 2 DDS (Data Distribution Service).
 
-### Default Network Settings
+### Current Network Settings
 
 ```
-Board IP Address:  192.168.11.2
-Host IP Address:   192.168.11.x (any address on same network)
+Board IP Address:  192.168.1.6
+Host IP Address:   192.168.1.x (any address on same network)
 Netmask:           255.255.255.0
-Gateway:           192.168.11.1
+Gateway:           192.168.1.1
 Baud Rate (Serial): 115200
+Domain ID:         6
 ```
 
 ### Network Setup Instructions
 
 1. **Hardware**: Connect board and host computer via Ethernet cable to the same network
-2. **Network Interface**: Ensure both devices can reach the 192.168.11.0/24 subnet
+2. **Network Interface**: Ensure both devices can reach the 192.168.1.0/24 subnet
 3. **Firewall**: Disable firewall on host for DDS communication
    ```bash
    # Ubuntu
    sudo ufw disable
    ```
 4. **Single Network**: If your host is connected to multiple networks (WiFi + Ethernet), disable WiFi during testing
+5. **Domain ID**: Set ROS_DOMAIN_ID to 6 on host:
+   ```bash
+   export ROS_DOMAIN_ID=6
+   ```
 
 ### Changing IP Configuration
 
@@ -139,9 +144,9 @@ To use a different IP address, edit `platform/mros2-platform.h`:
 ```cpp
 // Change these values in platform/mros2-platform.h:
 #define MROS2_IP_ADDRESS_STATIC         // Comment out for DHCP
-#define MROS2_IP_ADDRESS    "192.168.11.2"
-#define MROS2_NETMASK       "255.255.255.0"
-#define MROS2_GATEWAY       "192.168.11.1"
+#define MROS2_IP_ADDRESS    "192.168.1.6"
+#define MROS2_SUBNET_MASK   "255.255.255.0"
+#define MROS2_DEFAULT_GATEWAY "192.168.1.1"
 ```
 
 For DHCP (automatic IP assignment):

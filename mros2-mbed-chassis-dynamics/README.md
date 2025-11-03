@@ -192,7 +192,7 @@ Both nodes implement the independent task plus centralized main loop pattern to 
 
 ### Network
 - **Ethernet:** NUCLEO-F767ZI onboard RJ45 connector
-- **Static IP:** 192.168.11.2 (configured in `mros2-platform.h`)
+- **Static IP:** 192.168.1.2 (configured in `mros2-platform.h`)
 - **DDS Domain ID:** 5 (via ROS_DOMAIN_ID environment variable)
 
 ---
@@ -204,15 +204,15 @@ Both nodes implement the independent task plus centralized main loop pattern to 
 The board uses a static IP address on the Ethernet interface:
 
 **Board (Chassis Controller - Domain 5):**
-- IP Address: `192.168.11.2`
+- IP Address: `192.168.1.2`
 - Netmask: `255.255.255.0`
-- Gateway: `192.168.11.1`
+- Gateway: `192.168.1.1`
 - Configuration file: `platform/mros2-platform.h`
 
 **Host Machine:**
-- IP Address: `192.168.11.x` (where x is any address from 3-254)
+- IP Address: `192.168.1.x` (where x is any address from 3-254)
 - Netmask: `255.255.255.0`
-- Gateway: `192.168.11.1`
+- Gateway: `192.168.1.1`
 
 ### Setting up Host Network Interface
 
@@ -223,11 +223,11 @@ Connect the NUCLEO-F767ZI to host via Ethernet cable. Configure the host interfa
 ip addr show
 
 # Configure static IP on Ethernet interface (example: eth0)
-sudo ip addr add 192.168.11.100/24 dev eth0
+sudo ip addr add 192.168.1.100/24 dev eth0
 sudo ip link set eth0 up
 
 # Verify connectivity
-ping 192.168.11.2
+ping 192.168.1.2
 ```
 
 ### DDS Domain Configuration
@@ -251,9 +251,9 @@ For two-board rover system:
 
 | Board | Function | Domain ID | IP Address | Purpose |
 |-------|----------|-----------|------------|---------|
-| NUCLEO-F767ZI #1 | Sensors Node | 6 | 192.168.11.1 | GNSS/Power/Encoders |
-| NUCLEO-F767ZI #2 | Chassis Controller | 5 | 192.168.11.2 | Motor/IMU Control |
-| Host Machine | ROS2 Publisher | 5 & 6 | 192.168.11.100 | Command/Monitor |
+| NUCLEO-F767ZI #1 | Sensors Node | 6 | 192.168.1.6 | GNSS/Power/Encoders |
+| NUCLEO-F767ZI #2 | Chassis Controller | 5 | 192.168.1.2 | Motor/IMU Control |
+| Host Machine | ROS2 Publisher | 5 & 6 | 192.168.1.100 | Command/Monitor |
 
 **Note:** Each board must use the same Domain ID as its intended subscribers. Host can switch domains by setting ROS_DOMAIN_ID before each command.
 
@@ -264,7 +264,7 @@ For two-board rover system:
 ### Board Not Reachable
 ```bash
 # Check if board is visible on network
-ping 192.168.11.2
+ping 192.168.1.2
 
 # Verify Ethernet cable connection
 ethtool eth0  # Should show "Link detected: yes"
