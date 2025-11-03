@@ -7,6 +7,11 @@
  * Subscribes to: pub_rovercontrol (rover control commands)
  * Publishes to: tp_imu_data_d5 (IMU sensor data)
  * ROS Domain: 5
+ *
+ * Organization:
+ *   - motor_control.{h,cpp}: Motor PWM and steering servo control
+ *   - led_status.{h,cpp}:    Board status LED indication
+ *   - app.cpp:               Main orchestration and ROS2 integration
  */
 
 #include "mbed.h"
@@ -22,169 +27,36 @@
 #include "msgs_ifaces/msg/sub_gyro_data.hpp"
 #include "msgs_ifaces/msg/main_gyro_data.hpp"
 
+#include "motor_control.h"
+#include "led_status.h"
+
 #include <tuple>
 
 /* =====================================
  * Sampling Rate Constants (Task Timing)
  * ===================================== */
-const uint32_t MOTOR_RESPONSE_PERIOD_MS = 50;   // Motor control task polling rate (~20 Hz)
 const uint32_t IMU_SAMPLE_PERIOD_MS = 10;      // IMU polling every 10ms (100 Hz capability)
 const uint32_t IMU_PUBLISH_INTERVAL = 10;      // Publish every 10 samples = 10 Hz publish rate
 const uint32_t MAIN_LOOP_PERIOD_MS = 100;      // Main loop safety tick
 
 /* =====================================
- * Hardware PWM & Motor Control Pins
+ * IMU Sensor & Shared Data
  * ===================================== */
 
-// Function declarations
-float calculate_steering_pwm_duty(uint8_t steering_direction, float steering_angle_degrees);
-std::tuple<float, uint8_t, uint8_t> calculate_motor_direction(uint8_t motor_direction, uint8_t speed_percent);
-void apply_motor_control(float steering_duty, uint8_t enable_forward, uint8_t enable_backward, uint8_t pwm_period_us_val, float motor_speed_percent);
-
-// Steering servo (PA_3)
-PwmOut steering_servo_pwm(PA_3);
-
-// Motor driver PWM (left and right motors)
-PwmOut motor_right_pwm(PA_6);
-PwmOut motor_left_pwm(PE_11);
-
-// Motor driver direction pins (H-bridge enable)
-DigitalOut motor_right_enable_forward(PF_12);
-DigitalOut motor_right_enable_backward(PD_15);
-DigitalOut motor_left_enable_forward(PF_13);
-DigitalOut motor_left_enable_backward(PE_9);
-
-// Control parameters
-uint8_t servo_center_angle = 100;  // Servo center position (degrees)
-uint8_t pwm_period_us = 20;        // PWM period (microseconds)
-uint8_t current_steering_angle = 0;  // Current steering angle
-
-/* =====================================
- * IMU Sensor Setup
- * ===================================== */
 LSM6DSV16X lsm6dsv16x(I2C_SDA, I2C_SCL);
-DigitalOut led(LED1);
 
-/* =====================================
- * Shared Data Structures (Thread-Safe)
- * ===================================== */
-
-struct RoverCommandData {
-    uint8_t front_direction;        // 0=straight, 1=left, 2=right
-    float steering_angle;           // Steering angle in degrees
-    uint8_t back_direction;         // 0=forward, 1=backward, 2=stop
-    uint8_t motor_speed;            // Motor speed 0-100%
-    bool command_updated;           // Flag: new command available
-};
-
+/// IMU sensor data structure (separate from motor commands)
 struct IMUData {
     int32_t accelerometer[3];
     int32_t gyro[3];
 };
 
-// Global shared data with Mutex protection
-RoverCommandData rover_cmd = {0, 0.0f, 0, 0, false};
+// Global IMU data with Mutex protection
 IMUData imu_data = {{0, 0, 0}, {0, 0, 0}};
-
-Mutex rover_cmd_mutex;
 Mutex imu_data_mutex;
 
 // Global publisher pointer for IMU task
 mros2::Publisher* imu_pub_ptr = NULL;
-
-/* =====================================
- * Motor Control Functions
- * ===================================== */
-
-float calculate_steering_pwm_duty(uint8_t steering_direction, float steering_angle_degrees)
-{
-    /**
-     * Calculate steering servo PWM duty cycle from steering angle
-     * steering_direction: 0=straight, 1=left, 2=right (unused in current implementation)
-     * steering_angle_degrees: steering angle in degrees relative to center
-     * Returns: PWM duty cycle percentage (5%-10% range for standard servo)
-     */
-    
-    // Servo range: typically 90° to 110° maps to 5% to 10% duty cycle (1.0ms to 2.0ms on 20ms period)
-    // Center position = 100° = 7.5% duty cycle (1.5ms)
-    
-    float servo_min_angle = 90.0f;
-    float servo_max_angle = 110.0f;
-    float servo_min_duty = 5.0f;
-    float servo_max_duty = 10.0f;
-    
-    float target_angle = servo_center_angle + steering_angle_degrees;
-    
-    // Clamp to servo range
-    if (target_angle < servo_min_angle) target_angle = servo_min_angle;
-    if (target_angle > servo_max_angle) target_angle = servo_max_angle;
-    
-    // Map angle to duty cycle: (angle - min_angle) / (max_angle - min_angle) * (max_duty - min_duty) + min_duty
-    float duty_cycle = ((target_angle - servo_min_angle) / (servo_max_angle - servo_min_angle)) * 
-                       (servo_max_duty - servo_min_duty) + servo_min_duty;
-    
-    return duty_cycle;
-}
-
-std::tuple<float, uint8_t, uint8_t> calculate_motor_direction(uint8_t motor_direction, uint8_t speed_percent)
-{
-    /**
-     * Determine motor direction and apply speed from direction flag
-     * motor_direction: 0=forward, 1=backward, 2=stop
-     * speed_percent: motor speed 0-100%
-     * Returns: (motor_duty, enable_forward, enable_backward) tuple
-     */
-    
-    uint8_t enable_forward = 0, enable_backward = 0;
-    float motor_duty = (float)speed_percent / 100.0f;
-    
-    if (motor_direction == 0) {
-        // Forward: enable_forward=1, enable_backward=0
-        enable_forward = 1;
-        enable_backward = 0;
-    } else if (motor_direction == 1) {
-        // Backward: enable_forward=0, enable_backward=1
-        enable_forward = 0;
-        enable_backward = 1;
-    } else {
-        // Stop: enable_forward=0, enable_backward=0
-        enable_forward = 0;
-        enable_backward = 0;
-        motor_duty = 0.0f;
-    }
-    
-    return std::make_tuple(motor_duty, enable_forward, enable_backward);
-}
-
-void apply_motor_control(float steering_duty, uint8_t enable_forward, uint8_t enable_backward, uint8_t pwm_period_us_val, float motor_speed_percent)
-{
-    /**
-     * Apply PWM and direction signals to motor hardware
-     * steering_duty: normalized duty cycle (0.0 to 1.0)
-     * enable_forward, enable_backward: direction pins for H-bridge
-     * pwm_period_us_val: PWM period in microseconds
-     * motor_speed_percent: duty cycle as percentage (0-100)
-     */
-    
-    // Configure PWM period (20 us = 50 kHz)
-    steering_servo_pwm.period_us(pwm_period_us_val);
-    motor_right_pwm.period_us(pwm_period_us_val);
-    motor_left_pwm.period_us(pwm_period_us_val);
-    
-    // Set steering servo PWM (steering_servo_pwm)
-    steering_servo_pwm.write(steering_duty);
-    
-    // Set motor direction pins
-    motor_right_enable_forward = enable_forward;
-    motor_right_enable_backward = enable_backward;
-    motor_left_enable_forward = enable_forward;
-    motor_left_enable_backward = enable_backward;
-    
-    // Set motor speed (duty cycle)
-    float normalized_duty = motor_speed_percent / 100.0f;
-    motor_right_pwm.write(normalized_duty);
-    motor_left_pwm.write(normalized_duty);
-}
 
 /* =====================================
  * Task 1: Motor Control Subscriber
@@ -324,9 +196,14 @@ int main()
     // Set ROS domain ID (Domain 5)
     setenv("ROS_DOMAIN_ID", "5", 5);
 
+    // Initialize status LED (off during initialization)
+    set_status_led(false);
+    MROS2_INFO("Status LED initialized (off during init)");
+
     // Connect to network
     if (mros2_platform::network_connect()) {
         MROS2_ERROR("Failed to connect network! Aborting...");
+        // Leave LED off to indicate initialization failure
         return -1;
     }
     MROS2_INFO("Network connected successfully");
@@ -376,6 +253,10 @@ int main()
     // Wait for all tasks and hardware to initialize
     osDelay(1000);
     MROS2_INFO("All initialization complete - ready to operate");
+    
+    // Turn status LED on solid to indicate ready state
+    set_status_led(true);
+    MROS2_INFO("Status LED turned on solid (ready to operate)");
     
     MROS2_INFO("All tasks launched - entering ROS2 spin loop");
     MROS2_INFO("Sampling rates: Motor=%ldms, IMU=%ldms (publish every %ld samples)",
