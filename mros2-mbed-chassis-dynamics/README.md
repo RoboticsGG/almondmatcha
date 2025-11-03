@@ -160,7 +160,7 @@ After initialization completes, both tasks begin operation independently.
 
 ## Comparison to Sensors Node (Domain 6)
 
-| Aspect | Sensors Node (L1) | Chassis Controller (L2) |
+| Aspect | Sensors Node | Chassis Controller |
 |--------|-----------------|------------------------|
 | **Tasks** | 3 (encoder, power, GNSS) | 2 (motor control, IMU) |
 | **Publish Rate** | 4 Hz (aggregated) | 10 Hz (IMU only) |
