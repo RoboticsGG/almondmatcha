@@ -15,14 +15,17 @@ Parameters:
     height (int, default: 720) - Frame height in pixels
     fps (int, default: 30) - Frames per second
     json_config (str, default: "") - Path to RealSense advanced mode JSON configuration
-    open_cam (bool, default: False) - Display camera feed in OpenCV window
+    open_cam (bool, default: False) - Display camera feed in OpenCV window (GUI mode)
     enable_depth (bool, default: False) - Stream depth frames (D415 mode only)
     video_path (str, default: "") - Path to video file (if set, uses video instead of D415)
     loop_video (bool, default: True) - Loop video when it reaches the end
 
 Usage:
-    # Stream from D415 camera
+    # Stream from D415 camera (headless mode)
     ros2 run vision_navigation camera_stream
+
+    # Stream with GUI preview (when monitor is connected)
+    ros2 run vision_navigation camera_stream --ros-args -p open_cam:=True
 
     # Stream from video file with looping
     ros2 run vision_navigation camera_stream --ros-args \\
@@ -258,6 +261,11 @@ class D415StreamNode(Node):
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = frame_id
         self.pub_rgb.publish(msg)
+        
+        # Display frame if GUI mode enabled
+        if self.open_cam:
+            cv2.imshow('Camera Stream (RGB)', frame)
+            cv2.waitKey(1)
 
     # ===================== D415 Mode Frame Streaming =====================
 
@@ -291,6 +299,16 @@ class D415StreamNode(Node):
             msg_depth.header.stamp = self.get_clock().now().to_msg()
             msg_depth.header.frame_id = 'd415_depth_optical_frame'
             self.pub_depth.publish(msg_depth)
+            
+            # Display depth frame if GUI mode enabled
+            if self.open_cam:
+                # Normalize depth for visualization
+                depth_colormap = cv2.applyColorMap(
+                    cv2.convertScaleAbs(depth_img, alpha=0.03), 
+                    cv2.COLORMAP_JET
+                )
+                cv2.imshow('Camera Stream (Depth)', depth_colormap)
+                cv2.waitKey(1)
 
     # ===================== Cleanup Methods =====================
 
@@ -315,6 +333,10 @@ class D415StreamNode(Node):
                 self.cap.release()
         except Exception:
             pass
+        
+        # Close all OpenCV windows if they were opened
+        if self.open_cam:
+            cv2.destroyAllWindows()
 
         super().destroy_node()
 

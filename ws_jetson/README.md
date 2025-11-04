@@ -119,18 +119,41 @@ chmod +x build_clean.sh build_inc.sh
 
 ## Running
 
+### GUI Mode vs Headless Mode
+
+The vision navigation system supports two modes of operation:
+
+**Headless Mode (SSH/No Display)**  
+Run without display windows when connected via SSH or when no monitor is attached:
+```bash
+# All visualization disabled (default)
+camera_stream
+lane_detection
+steering_control
+```
+
+**GUI Mode (With Monitor)**  
+Enable visualization windows for debugging and testing when a monitor is connected:
+```bash
+# Camera stream with preview
+camera_stream --ros-args -p open_cam:=True
+
+# Lane detection with visualization
+lane_detection --ros-args -p show_window:=True
+```
+
 ### Individual Node Execution
 
 #### Camera Stream Node
 
-Stream from D415 camera with default settings:
+Stream from D415 camera with default settings (headless):
 
 ```bash
 source ~/almondmatcha/ws_jetson/install/setup.bash
 camera_stream
 ```
 
-Stream with preview window enabled:
+Stream with preview window enabled (GUI mode):
 
 ```bash
 camera_stream --ros-args -p open_cam:=True
@@ -176,11 +199,62 @@ steering_control --ros-args \
 
 ### Complete System Startup
 
+The system provides three launch files for different use cases:
+
+#### 1. Headless Mode (Production/SSH)
+
+**Recommended for:** Production deployment, SSH sessions, remote operation
+
+```bash
+source ~/almondmatcha/ws_jetson/install/setup.bash
+ros2 launch vision_navigation vision_nav_headless.launch.py
+```
+
+- ✅ No GUI windows (optimized for headless operation)
+- ✅ Lower resource usage
+- ✅ Ideal for SSH access without X11 forwarding
+- ✅ All nodes started with proper timing
+
+#### 2. GUI Mode (Debugging/Testing)
+
+**Recommended for:** Local debugging, testing with monitor connected
+
+```bash
+source ~/almondmatcha/ws_jetson/install/setup.bash
+ros2 launch vision_navigation vision_nav_gui.launch.py
+```
+
+- ✅ Camera preview window (RGB + Depth if enabled)
+- ✅ Lane detection visualization
+- ✅ Ideal for debugging and parameter tuning
+- ✅ All nodes started with proper timing
+
+#### 3. Configurable Mode (Legacy)
+
+**Recommended for:** Custom configuration via command-line arguments
+
+```bash
+source ~/almondmatcha/ws_jetson/install/setup.bash
+ros2 launch vision_navigation vision_navigation.launch.py
+```
+
+Override visualization parameters:
+
+```bash
+# Headless via parameters
+ros2 launch vision_navigation vision_navigation.launch.py \
+  camera_preview:=false lane_visualization:=false
+
+# GUI via parameters  
+ros2 launch vision_navigation vision_navigation.launch.py \
+  camera_preview:=true lane_visualization:=true
+```
+
 Launch all three nodes simultaneously:
 
 ```bash
 source ~/almondmatcha/ws_jetson/install/setup.bash
-ros2 launch vision_navigation vision_nav_system.launch.py
+ros2 launch vision_navigation vision_navigation.launch.py
 ```
 
 Or manually in separate terminals:
@@ -425,13 +499,17 @@ time_sec,theta_ema,b_ema,u,e_sum
 ```
 ws_jetson/
 ├── README.md                          (This file)
+├── build_clean.sh                     (Clean build script)
+├── build_inc.sh                       (Incremental build script)
 ├── .gitignore
 ├── vision_navigation/
 │   ├── package.xml                    (ROS2 package metadata, v1.0.0)
 │   ├── setup.py                       (Python setup configuration)
 │   ├── setup.cfg
 │   ├── launch/
-│   │   └── vision_nav_system.launch.py
+│   │   ├── vision_nav_headless.launch.py  (Production/SSH launch - no GUI)
+│   │   ├── vision_nav_gui.launch.py       (Debug/test launch - with GUI)
+│   │   └── vision_navigation.launch.py    (Configurable launch - legacy)
 │   └── vision_navigation_pkg/
 │       ├── __init__.py
 │       ├── camera_stream_node.py      (RGB/depth camera streaming)
@@ -445,6 +523,14 @@ ws_jetson/
 ├── log/                               (ROS2 logs, auto-generated)
 └── logs/                              (Data logs, CSV files)
 ```
+
+## Launch Files Quick Reference
+
+| Launch File | Mode | GUI | Use Case |
+|------------|------|-----|----------|
+| `vision_nav_headless.launch.py` | Production | ❌ No | SSH/Remote operation |
+| `vision_nav_gui.launch.py` | Debug | ✅ Yes | Local debugging with monitor |
+| `vision_navigation.launch.py` | Configurable | ⚙️ Params | Custom configuration |
 
 ## Building from Source
 
