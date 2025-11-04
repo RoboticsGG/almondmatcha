@@ -437,6 +437,134 @@ The system uses ROS2 domain isolation for performance optimization and modularit
 
 ---
 
+## Topic Pub/Sub Architecture
+
+### Complete Message Flow Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                        AUTONOMOUS MOBILE ROVER SYSTEM                               │
+│                          ROS2 Multi-Domain Architecture                              │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+                           ╔═══════════════════════════════════╗
+                           ║     GROUND STATION (ws_base)      ║
+                           ║  Default Domain (Telemetry)       ║
+                           ╚═══════════════════════════════════╝
+                                      ▲         ▼
+                    Subscribes to telemetry / Publishes commands
+                                      │         │
+                    ┌─────────────────┴─────────┴─────────────────┐
+                    │                                             │
+        ┌───────────────────────┐                    ┌───────────────────────┐
+        │   DOMAIN 2            │                    │   DOMAIN 5            │
+        │ (Chassis & Vision)    │                    │ (Main Rover)          │
+        │                       │                    │                       │
+        │ • RPi (Chassis Ctrl)  │──Domain Bridge───▶ │ • STM32 Chassis       │
+        │ • Jetson (Vision)     │ (50Hz relay)       │ • RPi (Bridge)        │
+        │ • GNSS (Base)         │◀───────────────────│ • GNSS Processor      │
+        └───────────────────────┘                    └───────────────────────┘
+                    │                                             │
+                    └─────────────────┬─────────────────────────┬─┘
+                                      │                         │
+                        ┌─────────────────────────────────────────────┐
+                        │         DOMAIN 6 (Sensors)                 │
+                        │         STM32 Sensors Node                 │
+                        │                                            │
+                        │ • IMU data (LSM6DSV16X)                    │
+                        │ • Sensor telemetry                         │
+                        └─────────────────────────────────────────────┘
+```
+
+### Topic Subscription/Publication Table
+
+| Node | Domain | Publishes | Subscribes | Message Type | Rate/QoS |
+|------|--------|-----------|-----------|--------------|----------|
+| **camera_stream** (ws_jetson) | 2 | `/tpc_rover_d415_rgb` | - | sensor_msgs/Image | 30 FPS (BEST_EFFORT) |
+| | | `/tpc_rover_d415_depth` | - | sensor_msgs/Image | 30 FPS (BEST_EFFORT) |
+| **lane_detection** (ws_jetson) | 2 | `/tpc_rover_nav_lane` | `/tpc_rover_d415_rgb` | Float32MultiArray | 25-30 FPS |
+| **steering_control** (ws_jetson) | 2 | `/tpc_rover_fmctl` | `/tpc_rover_nav_lane` | Float32MultiArray | 50 Hz |
+| **node_chassis_controller** (ws_rpi) | 2,5 | `/pub_rovercontrol_d2` (D2) | `/tpc_rover_fmctl` | ChassisCtrl | 50 Hz |
+| | | `/pub_rovercontrol_d5` (D5) | `/tpc_gnss_mission_active` | | |
+| **node_domain_bridge** (ws_rpi) | 5 | `/pub_rovercontrol` (D2) | `/pub_rovercontrol_d5` (D5) | ChassisCtrl | 50 Hz relay |
+| **node_gnss_spresense** (ws_rpi) | 2 | `/tpc_gnss_spresense` | - | GnssData | 10 Hz |
+| **node_gnss_mission_monitor** (ws_rpi) | 2 | `/tpc_gnss_mission_active` | `/tpc_rover_dest_coordinate` | Bool | 10 Hz |
+| | | `/tpc_gnss_mission_remain_dist` | `/tpc_gnss_spresense` | Float64 | |
+| | | `/tpc_rover_dest_coordinate` | Service: desigation | Float64MultiArray | |
+| **chassis_controller** (mros2-mbed-chassis-dynamics) | 5 | `tp_imu_data_d5` | `pub_rovercontrol` | MainGyroData | 10 Hz |
+| **sensors_node** (mros2-mbed-sensors-gnss) | 6 | `tp_sensdata_d5` | - | MainSensData | 10 Hz |
+| **mission_monitoring_node** (ws_base) | Default | - | `/tpc_gnss_mission_active` | Bool | Telemetry only |
+| | | | `/tpc_gnss_mission_remain_dist` | Float64 | |
+| | | | `/tpc_gnss_spresense` | GnssData | |
+| | | | `/tpc_rover_dest_coordinate` | Float64MultiArray | |
+| | | | `/pub_rovercontrol_d2` | MainRocon | |
+
+### Data Flow Sequences
+
+#### Vision-Based Lane Following
+
+```
+1. camera_stream (ws_jetson/Domain 2)
+   └─▶ Publishes RGB frames: /tpc_rover_d415_rgb (30 FPS)
+       
+2. lane_detection (ws_jetson/Domain 2)
+   ├─ Subscribes: /tpc_rover_d415_rgb
+   └─▶ Publishes: /tpc_rover_nav_lane [theta, b, detected] (25-30 FPS)
+       
+3. steering_control (ws_jetson/Domain 2)
+   ├─ Subscribes: /tpc_rover_nav_lane
+   ├─ Applies PID controller (Kp, Ki, Kd)
+   └─▶ Publishes: /tpc_rover_fmctl [steering_angle, detected] (50 Hz)
+       
+4. node_chassis_controller (ws_rpi/Domain 2,5)
+   ├─ Subscribes (D2): /tpc_rover_fmctl
+   ├─ Provides cruise control logic
+   └─▶ Publishes (D5): /pub_rovercontrol_d5 (50 Hz)
+       
+5. node_domain_bridge (ws_rpi/Domain 5)
+   ├─ Subscribes (D5): /pub_rovercontrol_d5
+   └─▶ Relays (D2): /pub_rovercontrol (50 Hz relay)
+       
+6. chassis_controller (STM32/Domain 5)
+   ├─ Subscribes (D5): /pub_rovercontrol_d5
+   └─▶ Drives motors + publishes IMU data: tp_imu_data_d5 (10 Hz)
+```
+
+#### GNSS-Based Navigation
+
+```
+1. node_gnss_spresense (ws_rpi/Domain 2)
+   ├─ Reads: Sony Spresense GNSS via serial
+   └─▶ Publishes: /tpc_gnss_spresense (lat, long, accuracy) (10 Hz)
+       
+2. node_gnss_mission_monitor (ws_rpi/Domain 2)
+   ├─ Subscribes: /tpc_gnss_spresense
+   ├─ Listens for: /tpc_rover_dest_coordinate (target waypoint)
+   ├─ Calculates: Distance to waypoint, mission progress
+   └─▶ Publishes:
+       • /tpc_gnss_mission_active (Bool): Mission status
+       • /tpc_gnss_mission_remain_dist (Float64): Distance remaining (km)
+       
+3. node_chassis_controller (ws_rpi/Domain 2,5)
+   ├─ Subscribes (D2): /tpc_gnss_mission_active
+   └─▶ Enables/disables cruise control based on mission state
+```
+
+#### Sensor Data Acquisition
+
+```
+1. chassis_controller (STM32-Dynamics/Domain 5)
+   ├─ Polls: LSM6DSV16X IMU sensor @ 100 Hz
+   ├─ Publishes every 10 samples (100 ms interval)
+   └─▶ Topic: tp_imu_data_d5 (accel_x,y,z + gyro_x,y,z) (10 Hz)
+   
+2. sensors_node (STM32-GNSS/Domain 6)
+   ├─ Polls: Multiple sensors
+   └─▶ Topic: tp_sensdata_d5 (sensor telemetry) (10 Hz)
+```
+
+---
+
 ## Key Technologies
 
 - **ROS2 Humble**: Distributed middleware with DDS communication
