@@ -9,9 +9,9 @@
 
 ## Overview
 
-This firmware implements a 3-task independent multi-threaded sensor acquisition system for autonomous rover navigation. The architecture uses modular, reusable components for quadrature encoders, power monitoring, and GNSS/RTK positioning. All tasks run independently with their own polling rates and feed aggregated sensor data to a main publishing loop.
+This firmware implements a 3-task independent multi-threaded sensor acquisition system for autonomous rover navigation. The architecture uses modular, reusable components for quadrature encoders, power monitoring, and GNSS/RTK positioning. Each task operates independently at its native polling rate and feeds aggregated sensor data to a centralized publishing loop for ROS2 distribution.
 
-**Modular Design:** The code is organized into focused modules (encoder_control, power_monitor, gnss_reader) that each manage a specific sensor interface. The main app.cpp focuses purely on task orchestration and ROS2 integration.
+**Design Pattern:** Modular architecture with separated concerns—each sensor interface is encapsulated in its own compilation unit with a well-defined public API.
 
 ---
 
@@ -21,12 +21,12 @@ This firmware implements a 3-task independent multi-threaded sensor acquisition 
 
 ```
 sensors_node/
-├── app.cpp                      (ROS2 orchestration + main loop)
-├── encoder_control.h/cpp        (Quadrature encoder API)
-├── power_monitor.h/cpp          (INA226 power monitoring API)
-├── gnss_reader.h/cpp            (NMEA/GNSS reader API)
-├── CMakeLists.txt               (Build configuration)
-└── README.md                    (This file)
+├── app.cpp                      ROS2 orchestration and sensor aggregation
+├── encoder_control.h/cpp        Quadrature encoder interface
+├── power_monitor.h/cpp          INA226 power monitoring interface
+├── gnss_reader.h/cpp            NMEA/GNSS receiver interface
+├── CMakeLists.txt               Build configuration
+└── README.md                    Documentation
 ```
 
 ### Module Responsibilities
@@ -46,82 +46,80 @@ sensors_node/
 
 **Polling Period:** 100ms  
 **Priority:** Normal  
-**Stack:** 2 KB
+**Stack Size:** 2 KB  
+**Function:** Reads quadrature encoders via hardware interrupt handlers
 
-```
-Loop:
-  1. Read encoder_A_count (from interrupt handler)
-  2. Read encoder_B_count (from interrupt handler)
-  3. Store in sensor_data struct (mutex-protected)
-  4. Sleep 100ms
-```
+**Operational Loop:**
+1. Query encoder A count from volatile atomic counter
+2. Query encoder B count from volatile atomic counter
+3. Update shared data structure under mutex protection
+4. Sleep 100ms before next poll
 
-**API Used:**
-- `encoder_init()` - Attach interrupt handlers
-- `encoder_get_count_a()` - Read encoder A count
-- `encoder_get_count_b()` - Read encoder B count
+**Public API:**
+- `encoder_init()` - Initialize interrupt handlers
+- `encoder_get_count_a()` - Retrieve encoder A count
+- `encoder_get_count_b()` - Retrieve encoder B count
 
-**Hardware:**
+**Hardware Interface:**
 - Encoder A: PA_15 (Channel A), PB_5 (Channel B)
 - Encoder B: PB_3 (Channel A), PB_4 (Channel B)
-- Quadrature logic: Rising/falling edge detection determines direction
+- Logic: Quadrature decoding with direction detection on rising/falling edges
 
 ### Task 2: Power Monitor (5 Hz)
 
 **Polling Period:** 200ms  
 **Priority:** Normal  
-**Stack:** 3 KB
+**Stack Size:** 3 KB  
+**Function:** Acquires bus voltage and system current via I2C
 
-```
-Loop:
-  1. Read INA226 bus voltage register (0x02)
-  2. Read INA226 shunt voltage register (0x01)
-  3. Convert ADC values to physical units (V, A)
-  4. Store in sensor_data struct (mutex-protected)
-  5. Sleep 200ms
-```
+**Operational Loop:**
+1. Issue I2C read for bus voltage register (0x02)
+2. Issue I2C read for shunt voltage register (0x01)
+3. Convert raw ADC values to physical units using calibration constants
+4. Update shared data structure under mutex protection
+5. Sleep 200ms before next poll
 
-**API Used:**
-- `power_monitor_init()` - Configure I2C @ 400 kHz
-- `power_monitor_read_bus_voltage()` - Read voltage (Volts)
-- `power_monitor_read_current()` - Read current (Amps)
+**Public API:**
+- `power_monitor_init()` - Configure I2C bus at 400 kHz
+- `power_monitor_read_bus_voltage()` - Retrieve voltage in Volts
+- `power_monitor_read_current()` - Retrieve current in Amperes
 
-**Hardware:**
+**Hardware Interface:**
 - I2C SDA: PB_9
 - I2C SCL: PB_8
-- INA226 I2C Address: 0x40
+- I2C Frequency: 400 kHz
+- Device Address: 0x40 (INA226)
 - Shunt Resistor: 0.1 Ohms
-- Voltage LSB: 1.25 mV/LSB
-- Current LSB: 2.5 µV/LSB (via shunt voltage)
+- Voltage Scale: 1.25 mV/LSB
+- Current Scale: 2.5 µV/LSB (shunt voltage)
 
 ### Task 3: GNSS Reader (10 Hz)
 
 **Polling Period:** 100ms  
 **Priority:** Normal  
-**Stack:** 4 KB
+**Stack Size:** 4 KB  
+**Function:** Acquires NMEA sentences from RTK-enabled GNSS receiver
 
-```
-Loop:
-  1. Poll USART6 serial port for available data
-  2. Buffer incoming characters until complete NMEA sentence
-  3. Extract NMEA sentence (starts with '$', ends with '\r' or '\n')
-  4. Store in sensor_data struct (mutex-protected)
-  5. Sleep 100ms
-```
+**Operational Loop:**
+1. Poll USART6 serial port for available data (non-blocking)
+2. Buffer incoming characters into line buffer
+3. Detect complete NMEA sentence (starts with '$', ends with CR/LF)
+4. Extract and store sentence in shared data structure under mutex protection
+5. Sleep 100ms before next poll
 
-**API Used:**
-- `gnss_reader_init()` - Configure USART6 @ 115200 baud
-- `gnss_reader_read_nmea()` - Non-blocking NMEA sentence read
-- `gnss_reader_get_default_sentence()` - Get placeholder sentence
+**Public API:**
+- `gnss_reader_init()` - Configure USART6 at 115200 baud
+- `gnss_reader_read_nmea()` - Non-blocking NMEA sentence acquisition
+- `gnss_reader_get_default_sentence()` - Retrieve placeholder sentence
 
-**Hardware:**
-- USART6 TX: PG_14 (Arduino D1)
-- USART6 RX: PG_9 (Arduino D0)
+**Hardware Interface:**
+- USART6 TX Pin: PG_14 (Arduino D1)
+- USART6 RX Pin: PG_9 (Arduino D0)
 - Baud Rate: 115200
 - Protocol: NMEA 0183
-- Receiver: SimpleRTK2b u-blox F9P
+- Device: SimpleRTK2b u-blox F9P
 
-**NMEA Sentences (Examples):**
+**Supported NMEA Sentence Types:**
 - `$GPRMC` - Recommended Minimum Navigation Information
 - `$GPGGA` - Global Positioning System Fix Data
 - `$GPGSA` - GPS DOP and Active Satellites
@@ -130,43 +128,47 @@ Loop:
 ### Main Loop (4 Hz)
 
 **Polling Period:** 250ms  
-**Priority:** Normal (ROS2 spin)
+**Priority:** Normal (ROS2 context)  
+**Function:** Aggregates sensor data and publishes via ROS2 DDS
 
-```
-Loop:
-  1. Lock mutex, read all sensor_data
-  2. Build MainSensData message with all sensor values
-  3. Publish to ROS2 topic "tp_sensdata_d6"
-  4. Print console debug information
-  5. Print GNSS every 1 second (throttled)
-  6. Sleep 250ms
-```
+**Operational Loop:**
+1. Acquire mutex and snapshot all sensor data
+2. Construct MainSensData message with current values
+3. Publish message to ROS2 topic at configured rate
+4. Output formatted console debug information
+5. Throttle and output GNSS data (every 1 second)
+6. Sleep 250ms before next aggregation cycle
 
-**Published Topic:** `tp_sensdata_d6` (MainSensData)
+**Published Interface:**
+- **Topic:** `tp_sensdata_d6` (ROS2 DDS)
+- **Message Type:** `msgs_ifaces/msg/MainSensData`
+- **Publication Rate:** 4 Hz (250ms)
 
-**Message Fields:**
-- `mt_lf_encode_msg` - Left encoder count (int32_t)
-- `mt_rt_encode_msg` - Right encoder count (int32_t)
-- `sys_volt_msg` - Bus voltage in Volts (float)
-- `sys_current_msg` - System current in Amps (float)
+**Message Payload:**
+- `mt_lf_encode_msg` (int32_t) - Left wheel encoder count
+- `mt_rt_encode_msg` (int32_t) - Right wheel encoder count
+- `sys_volt_msg` (float) - Bus voltage in Volts
+- `sys_current_msg` (float) - System current in Amperes
 
 ---
 
 ## Shared Data Structure
 
+The sensor_data structure maintains aggregate state across all independent tasks with mutex-protected synchronization:
+
 ```cpp
 struct {
-    int32_t encoder_A;              // Updated by encoder_read_task @ 10Hz
-    int32_t encoder_B;              // Updated by encoder_read_task @ 10Hz
-    float bus_voltage;              // Updated by power_monitor_task @ 5Hz
-    float current;                  // Updated by power_monitor_task @ 5Hz
-    char nmea_sentence[256];        // Updated by gnss_reader_task @ 10Hz
+    int32_t encoder_A;              // Updated by encoder_read_task at 10 Hz
+    int32_t encoder_B;              // Updated by encoder_read_task at 10 Hz
+    float bus_voltage;              // Updated by power_monitor_task at 5 Hz
+    float current;                  // Updated by power_monitor_task at 5 Hz
+    char nmea_sentence[256];        // Updated by gnss_reader_task at 10 Hz
 } sensor_data;
 
-Mutex sensor_data_mutex;            // Protects all access
+Mutex sensor_data_mutex;            // Ensures atomic read/write access
 ```
 
-All access to `sensor_data` is protected by `sensor_data_mutex` to prevent race conditions between task writers and main loop reader.
+**Synchronization Model:** All access to shared state is protected by `sensor_data_mutex`. Individual task writers hold the mutex for minimal duration (copy operations only). The main loop acquires the mutex once per cycle to snapshot all current values.
 
 ---
 
@@ -272,37 +274,37 @@ MotorA: 1246 | MotorB: 5690 | Vbus: 12.495 V | I: 2.340 A
 
 ## Testing Checklist
 
-- [ ] Build completes without errors
-- [ ] Binary size ~384 KB (appropriate for STM32 flash)
-- [ ] Serial console shows all 3 tasks launching
-- [ ] Encoder counts increment/decrement as wheels turn
-- [ ] Bus voltage readings appear stable (11-14 V typical)
-- [ ] Current readings vary with motor load (0-5 A typical)
-- [ ] GNSS displays valid NMEA sentences every 1 second
-- [ ] ROS2 topic `tp_sensdata_d6` publishes at 4 Hz
-- [ ] No mutex deadlocks observed in console output
+- [ ] Build completes without errors or warnings
+- [ ] Binary size approximately 384 KB (within STM32F767 flash constraints)
+- [ ] Serial console displays initialization messages for all three sensor tasks
+- [ ] Encoder counts increment and decrement correctly as wheels rotate
+- [ ] Bus voltage readings remain stable in expected operating range (11-14 V)
+- [ ] Current readings vary appropriately with motor load conditions (0-5 A typical)
+- [ ] GNSS displays valid NMEA sentences at regular 1-second intervals
+- [ ] ROS2 topic `tp_sensdata_d6` publishes at configured 4 Hz rate
+- [ ] No mutex deadlock conditions observed during extended operation
 
 ---
 
 ## Modular Design Benefits
 
-✅ **Reusability** - Each sensor module can be used in other projects  
-✅ **Testability** - Individual modules can be unit tested in isolation  
-✅ **Maintainability** - Sensor logic is encapsulated and independent  
-✅ **Scalability** - Easy to add new sensors or remove existing ones  
-✅ **Clarity** - Clear separation of concerns between modules  
+* **Reusability** - Each sensor module is self-contained and can be integrated into other projects
+* **Testability** - Individual modules support isolated unit testing without full ROS2 setup
+* **Maintainability** - Sensor logic is encapsulated with clear boundaries and minimal coupling
+* **Scalability** - New sensors can be added with corresponding new modules; existing code remains unchanged
+* **Code Clarity** - Clear separation of concerns across distinct compilation units  
 
 ---
 
 ## Future Enhancements
 
-- [ ] NMEA sentence parsing (extract latitude, longitude, altitude)
-- [ ] Encoder error detection (stuck encoder detection)
-- [ ] Power monitor alerts (low battery, overcurrent)
-- [ ] Sensor fusion (combine GNSS + encoder + IMU)
-- [ ] Configuration file for hardware parameters
-- [ ] Self-tests on startup
-- [ ] Performance timing annotations
+- [ ] NMEA sentence parsing to extract latitude, longitude, and altitude coordinates
+- [ ] Encoder error detection with stuck wheel and sensor degradation handling
+- [ ] Power monitor threshold alerts for low battery or overcurrent conditions
+- [ ] Sensor fusion module combining GNSS, encoder, and IMU data streams
+- [ ] Configuration file system for hardware parameters and calibration constants
+- [ ] Embedded self-test suite executed at startup
+- [ ] Performance timing instrumentation and latency analysis
 
 ---
 
@@ -316,5 +318,5 @@ MotorA: 1246 | MotorB: 5690 | Vbus: 12.495 V | I: 2.340 A
 ---
 
 **Last Updated:** November 4, 2025  
-**Architecture Version:** 2.0 (Modular)  
-**Previous Version:** 1.0 (Monolithic app.cpp)
+**Architecture Version:** 2.0 (Modular Design)  
+**Previous Version:** 1.0 (Monolithic Implementation)
