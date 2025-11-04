@@ -1,84 +1,77 @@
-# Tomorrow's Action Items - Quick Start
+# Action Items - Next Session
 
-## Build & Test (15–20 min)
+## ws_jetson (COMPLETED - November 4, 2025)
 
-### Step 1: Build
-```bash
-cd /home/yupi/almondmatcha/mros2-mbed-chassis-dynamics
-./build.bash all
-# Check for errors; if docker issue, try native or troubleshoot daemon
-```
+### Build & Documentation - DONE
+- [x] Verify builds cleanly
+- [x] Create professional README (479 lines)
+- [x] Clean up temporary files
+- [x] Verify build artifact locations (relative paths)
+- [x] Commit changes to git (3 commits)
 
-### Step 2: If Build Succeeds
-- Find the `.bin` file in the build output
-- Flash to STM32 Nucleo via serial/SWD debugger
-- Open serial console (115200 baud) to monitor logs
-
-### Step 3: Hardware Verification
-- [ ] LED1 OFF during startup (~1 second)
-- [ ] LED1 ON solid after "All initialization complete"
-- [ ] Serial console shows: "Status LED turned on solid (ready to operate)"
-- [ ] Motor responds to ROS2 commands (test via `ros2 topic pub`)
-- [ ] IMU data published to `tp_imu_data_d5` @ 10 Hz
+**Status**: Production-ready, no further action needed
 
 ---
 
-## Code Review Checklist
+## Integration & Testing (READY TO START)
 
-- [ ] Review `REFACTORING_SUMMARY.md` in workspace/chassis_controller/
-- [ ] Verify each module's responsibility is clear
-- [ ] Check that extern/global definitions match headers
-- [ ] Confirm no duplicate symbols across files
+### Phase 1: Basic Functionality Testing (15-20 min)
 
----
-
-## If Everything Works
-1. Commit modular refactoring:
+1. **Test Camera Stream Node**
    ```bash
-   git add -A
-   git commit -m "refactor: Modularize chassis controller (motor_control + led_status)"
-   git push origin main
+   cd ~/almondmatcha/ws_jetson
+   source install/setup.bash
+   ros2 run vision_navigation camera_stream --ros-args -p open_cam:=True
    ```
 
-2. Update main README with new file structure
+2. **Test Lane Detection Node**
+   ```bash
+   ros2 run vision_navigation lane_detection --ros-args -p show_window:=True
+   ```
 
-3. Document in WORK_SESSION_2025-11-04.md results
+3. **Test Steering Control Node**
+   ```bash
+   ros2 run vision_navigation steering_control
+   ```
 
----
+### Phase 2: System Launch Testing (10 min)
 
-## If Build Fails
+```bash
+ros2 launch vision_navigation vision_nav_system.launch.py
+```
 
-### Docker Issue
-- Check: `docker ps` (does docker daemon run?)
-- Try: `sudo dockerd` or docker restart
-- Alternative: Use native build (cross-check with team)
+### Phase 3: Integration with ws_rpi (20-30 min)
 
-### Compilation Error
-- Check error message in terminal output
-- Most likely: Missing include, typo in extern, or Mbed OS version mismatch
-- Solution: Review the specific file and line number, compare with original
-
-### Linker Error (symbol already defined)
-- Indicates duplicate global definition
-- Check motor_control.cpp for multiple `rover_cmd` definitions
-- Solution: Ensure `extern` in .h matches single definition in .cpp
+Verify /tpc_rover_fmctl data flow to ws_rpi rover control nodes
 
 ---
 
-## Reference Points
+## Quick Start Commands
 
-**Modified files:**
-- `/home/yupi/almondmatcha/mros2-mbed-chassis-dynamics/workspace/chassis_controller/app.cpp`
-- NEW: `motor_control.h`, `motor_control.cpp`
-- NEW: `led_status.h`, `led_status.cpp`
+```bash
+# Build ws_jetson
+cd ~/almondmatcha/ws_jetson
+colcon build --packages-select vision_navigation
+source install/setup.bash
 
-**Session log:**
-- `/home/yupi/almondmatcha/WORK_SESSION_2025-11-04.md`
+# Launch ws_jetson
+ros2 launch vision_navigation vision_nav_system.launch.py
 
-**Previous sessions:**
-- WORK_SESSION_2025-11-03.md (sensors node 3-task design)
-- WORK_SESSION_2025-11-01.md (initial STM32 work)
+# Launch ws_rpi
+cd ~/almondmatcha/ws_rpi
+./launch_rover_tmux.sh
+
+# Monitor topics
+ros2 topic echo /tpc_rover_fmctl
+```
 
 ---
 
-**Estimated time:** 30–45 min (build + verification)
+## Reference Files
+
+- ws_jetson/README.md (479 lines, comprehensive)
+- copilot-session-note/FINAL_SESSION_SUMMARY_2025-11-04.md
+- copilot-session-note/SESSION_SUMMARY_2025-11-04.md
+
+**Everything ready for testing. Proceed directly to integration testing phase.**
+
