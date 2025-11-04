@@ -51,61 +51,190 @@ All nodes communicate via Ethernet using ROS2 DDS middleware with domain-based i
 almondmatcha/
 ├── ws_rpi/                                  Raspberry Pi 4 workspace
 │   ├── src/
-│   │   ├── pkg_chassis_control/             Chassis control coordination
-│   │   ├── pkg_chassis_sensors/             Sensor data aggregation
-│   │   ├── pkg_gnss_navigation/             GNSS processing and mission planning
-│   │   ├── rover_launch_system/             System-wide launch files
-│   │   ├── action_ifaces/                   Action interfaces
-│   │   ├── msgs_ifaces/                     Message interfaces
-│   │   └── services_ifaces/                 Service interfaces
-│   ├── build.sh                             Automated build script
-│   ├── launch_rover_tmux.sh                 Tmux-based monitoring launcher
-│   └── README.md
+│   │   ├── pkg_chassis_control/
+│   │   │   ├── src/
+│   │   │   │   ├── node_chassis_controller.cpp      Main control coordinator (Domains 2,5)
+│   │   │   │   └── node_domain_bridge.cpp           Domain 2↔5 relay (50Hz)
+│   │   │   ├── package.xml
+│   │   │   └── CMakeLists.txt
+│   │   │
+│   │   ├── pkg_chassis_sensors/
+│   │   │   ├── src/
+│   │   │   │   ├── node_chassis_imu.cpp             IMU data processor (Domain 5)
+│   │   │   │   └── node_chassis_sensors.cpp         Encoder & power aggregator (Domain 6)
+│   │   │   ├── package.xml
+│   │   │   └── CMakeLists.txt
+│   │   │
+│   │   ├── pkg_gnss_navigation/
+│   │   │   ├── src/
+│   │   │   │   ├── node_gnss_spresense.cpp          GPS position reader (Domain 2)
+│   │   │   │   └── node_gnss_mission_monitor.cpp    Mission planner & tracker (Domain 2)
+│   │   │   ├── package.xml
+│   │   │   └── CMakeLists.txt
+│   │   │
+│   │   ├── rover_launch_system/
+│   │   │   ├── launch/
+│   │   │   │   └── rover_startup.launch.py          System-wide launcher
+│   │   │   ├── setup.py
+│   │   │   └── package.xml
+│   │   │
+│   │   ├── action_ifaces/
+│   │   │   ├── action/
+│   │   │   │   └── DesData.action                   Destination waypoint action
+│   │   │   └── package.xml
+│   │   │
+│   │   ├── msgs_ifaces/
+│   │   │   ├── msg/
+│   │   │   │   ├── ChassisCtrl.msg                  Motor command (steering, speed)
+│   │   │   │   ├── ChassisIMU.msg                   IMU sensor data
+│   │   │   │   ├── ChassisSensors.msg               Encoder/power data
+│   │   │   │   └── SpresenseGNSS.msg                GPS position
+│   │   │   └── package.xml
+│   │   │
+│   │   └── services_ifaces/
+│   │       ├── srv/
+│   │       │   └── SpdLimit.srv                     Speed limit service
+│   │       └── package.xml
+│   │
+│   ├── build.sh                             Automated colcon build script
+│   ├── launch_rover_tmux.sh                 Tmux monitoring launcher
+│   ├── README.md                            Architecture and nodes documentation
+│   └── BUILD.md                             Detailed build instructions
 │
 ├── ws_jetson/                               Jetson Orin Nano workspace
 │   └── vision_navigation/                   Vision navigation package
 │       ├── vision_navigation_pkg/
-│       │   ├── camera_stream_node.py        D415 camera streaming
-│       │   ├── lane_detection_node.py       Lane marker detection
-│       │   ├── steering_control_node.py     PID steering control
-│       │   ├── lane_detector.py             Lane detection pipeline
-│       │   ├── control_filters.py           Control utilities
-│       │   ├── helpers.py                   Utility functions (50+)
-│       │   └── config.py                    Centralized configuration
+│       │   ├── camera_stream_node.py        D415 RGB/depth streaming (30 FPS)
+│       │   ├── lane_detection_node.py       Lane marker detection and analysis
+│       │   ├── steering_control_node.py     PID-based steering control (50 Hz)
+│       │   ├── lane_detector.py             Lane detection pipeline (LAB, Sobel)
+│       │   ├── control_filters.py           Control utilities (EMA filtering)
+│       │   ├── helpers.py                   Reusable helper functions (50+)
+│       │   ├── config.py                    Centralized config (6 classes)
+│       │   └── __init__.py
 │       ├── launch/
-│       │   └── vision_navigation.launch.py  Vision system launcher
-│       └── README.md                        Complete documentation
+│       │   └── vision_navigation.launch.py  System launcher with Domain 2 setup
+│       ├── setup.py                         Package configuration
+│       ├── package.xml
+│       ├── README.md                        Complete vision system documentation
+│       └── resource/                        Package resources
 │
-├── ws_base/                                 Base station workspace
-│   └── src/
-│       ├── mission_control/                 Telemetry and telecommand
-│       ├── action_ifaces/                   Shared action interfaces
-│       ├── msgs_ifaces/                     Shared message interfaces
-│       └── services_ifaces/                 Shared service interfaces
+├── ws_base/                                 Base station workspace (Ground PC)
+│   ├── src/
+│   │   ├── mission_control/
+│   │   │   ├── src/
+│   │   │   │   ├── node_commands.cpp        Command dispatcher and mission planner
+│   │   │   │   └── node_monitoring.cpp      Telemetry monitoring and status display
+│   │   │   ├── config/
+│   │   │   │   └── params.yaml              Mission parameters and settings
+│   │   │   ├── launch/
+│   │   │   │   └── node_comlaunch.py        Mission control launcher
+│   │   │   ├── package.xml
+│   │   │   ├── CMakeLists.txt
+│   │   │   └── README.md
+│   │   │
+│   │   ├── action_ifaces/
+│   │   │   ├── action/
+│   │   │   │   └── DesData.action           Shared destination action interface
+│   │   │   └── package.xml
+│   │   │
+│   │   ├── msgs_ifaces/
+│   │   │   ├── msg/
+│   │   │   │   ├── GnssData.msg             GPS data (lat, long, accuracy)
+│   │   │   │   ├── MainRocon.msg            Rover control commands
+│   │   │   │   ├── MainSensData.msg         Sensor telemetry
+│   │   │   │   ├── SubRocon.msg             Sub-rover control
+│   │   │   │   └── SubSensData.msg          Sub-rover sensor data
+│   │   │   └── package.xml
+│   │   │
+│   │   └── services_ifaces/
+│   │       ├── srv/
+│   │       │   └── SpdLimit.srv             Speed limit service interface
+│   │       └── package.xml
+│   │
+│   └── README.md
 │
-├── mros2-mbed-chassis-dynamics/             STM32 chassis controller
+├── mros2-mbed-chassis-dynamics/             STM32 chassis motor controller
 │   ├── workspace/chassis_controller/
-│   │   ├── app.cpp                          ROS2 integration (269 lines)
-│   │   ├── motor_control.h/cpp              Motor control logic (243 lines)
-│   │   ├── led_status.h/cpp                 Status LED control (83 lines)
-│   │   └── README.md
-│   ├── platform/                            mROS2 platform layer
+│   │   ├── app.cpp                          ROS2 node init + motor task (269 lines)
+│   │   ├── motor_control.h                  Motor PWM/H-bridge control (243 lines)
+│   │   ├── motor_control.cpp
+│   │   ├── led_status.h                     LED indicator control (83 lines)
+│   │   ├── led_status.cpp
+│   │   └── README.md                        Task descriptions and usage
+│   ├── platform/
+│   │   ├── mros2-platform.h                 mROS2 platform abstraction
+│   │   ├── mros2-platform.cpp
+│   │   └── rtps/
+│   │       └── config.h                     RTPS/DDS configuration
+│   ├── mros2_add_msgs/
+│   │   ├── mros2_header_generator/          Message header generation tools
+│   │   │   ├── templates_generator.py
+│   │   │   ├── header_generator.py
+│   │   │   ├── msg_data_generator.py
+│   │   │   ├── msg_def_generator.py
+│   │   │   ├── templates.tpl
+│   │   │   └── header_template.tpl
+│   │   └── mros2_msgs/                      Generated message headers
+│   │       ├── std_msgs/msg/ (18 types)
+│   │       ├── geometry_msgs/msg/ (5 types)
+│   │       ├── sensor_msgs/msg/
+│   │       └── msgs_ifaces/msg/
+│   ├── libs/
+│   │   └── X-Nucleo-IKS4A1_mbedOS/         Sensor libraries
+│   │       ├── plt_lsm6dsv16x/             IMU sensor driver (LSM6DSV16X)
+│   │       ├── plt_lps22df/                Barometer driver (LPS22DF)
+│   │       └── plt_stts22h/                Temperature sensor driver
 │   ├── build.bash                           Docker-based build script
-│   └── CMakeLists.txt
+│   ├── CMakeLists.txt
+│   ├── mbed_app.json                        Mbed OS configuration
+│   ├── mbed-os.lib                          Mbed OS library reference
+│   ├── LICENSE
+│   └── README.md
 │
-├── mros2-mbed-sensors-gnss/                 STM32 sensors node
+├── mros2-mbed-sensors-gnss/                 STM32 sensors and GNSS node
 │   ├── workspace/sensors_node/
-│   │   ├── app.cpp                          3-task sensor integration
-│   │   └── README.md
-│   ├── platform/                            mROS2 platform layer
-│   ├── build.bash                           Docker-based build script
-│   └── CMakeLists.txt
+│   │   ├── app.cpp                          3-task sensor integration node
+│   │   ├── encoder_control.h                Encoder reader task
+│   │   ├── encoder_control.cpp
+│   │   ├── power_monitor.h                  Battery/power monitor task
+│   │   ├── power_monitor.cpp
+│   │   ├── gnss_reader.h                    GNSS position reader task
+│   │   ├── gnss_reader.cpp
+│   │   └── README.md                        Task descriptions and sensors
+│   ├── platform/
+│   │   ├── mros2-platform.h
+│   │   ├── mros2-platform.cpp
+│   │   └── rtps/
+│   │       └── config.h
+│   ├── mros2_add_msgs/
+│   │   ├── mros2_header_generator/
+│   │   └── mros2_msgs/                      Generated message headers
+│   ├── build.bash
+│   ├── CMakeLists.txt
+│   ├── mbed_app.json
+│   ├── mbed-os.lib
+│   ├── LICENSE
+│   └── README.md
 │
-├── copilot-session-note/                    Development session logs
-│   ├── SESSION_CONSOLIDATED_2025-11-04.md   Comprehensive session log
-│   └── TOMORROW_ACTION_ITEMS.md             Future work items
+├── copilot-session-note/                    Development session logs and notes
+│   ├── SESSION_CONSOLIDATED_2025-11-04.md   Comprehensive development history
+│   │                                         (all sessions Nov 1-4, critical info)
+│   └── TOMORROW_ACTION_ITEMS.md             Next steps and future work
 │
-└── README.md                                This file
+├── command/                                 Quick reference command files
+│   ├── command.txt                          All manual launch commands
+│   ├── cmd_rover_launch.txt                 RPi rover startup sequence
+│   └── cmd_jetson_launch.txt                Jetson vision system launch
+│
+├── runs/                                    Data logging and ROS logs
+│   ├── logs/                                CSV data files (ignored by git)
+│   │   ├── chassis_imu_*.csv                IMU acceleration and rotation
+│   │   ├── chassis_sensors_*.csv            Encoder and power data
+│   │   └── gnss_spresense_*.csv             GPS position records
+│   └── ros_logs/                            ROS2 node execution logs
+│
+└── README.md                                This file (system overview)
 ```
 
 ## System Components
