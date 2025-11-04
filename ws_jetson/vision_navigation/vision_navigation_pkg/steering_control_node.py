@@ -32,8 +32,8 @@ Sign Convention:
     -steer_angle => Turn LEFT
 
 CSV Logging:
-    Records control loop data to 'logs/rover_ctl_log_ver_3.csv':
-    time_sec, zeta_ema, b_ema, u, e_sum
+    Records control loop data to '~/almondmatcha/runs/logs/ws_jetson_steering_control_TIMESTAMP.csv':
+    time_sec, theta_ema, b_ema, u, e_sum
 
 Author: Vision Navigation System
 Date: November 4, 2025
@@ -127,13 +127,18 @@ class RoverControlNode(Node):
 
     def _init_logging(self) -> None:
         """Initialize CSV logging for control loop data."""
-        log_dir = "logs"
+        # Centralized logging in runs/logs/ directory
+        log_dir = os.path.expanduser("~/almondmatcha/runs/logs")
         os.makedirs(log_dir, exist_ok=True)
         
-        self.csv_path: str = os.path.join(log_dir, "rover_ctl_log_ver_3.csv")
+        # Generate filename: ws_jetson_steering_control_timestamp.csv
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        filename = f"ws_jetson_steering_control_{timestamp}.csv"
+        self.csv_path: str = os.path.join(log_dir, filename)
         self.csv_file = open(self.csv_path, mode="w", newline="")
         self.csv_writer = csv.writer(self.csv_file)
         self.csv_writer.writerow(["time_sec", "theta_ema", "b_ema", "u", "e_sum"])
+        self.get_logger().info(f"Logging to: {self.csv_path}")
 
     # ===================== Subscription Callbacks =====================
 
@@ -258,9 +263,7 @@ class RoverControlNode(Node):
         """
         status = "Detected" if detected else "Lost"
         self.get_logger().info(
-            f"Lane (filtered): theta={theta_ema:7.2f} deg, b={b_ema:7.2f} | "
-            f"error={error_sum:7.2f} | u={u:7.2f} | "
-            f"steer={steer_angle:7.2f} deg | status={status}"
+            f"theta={theta_ema:.2f}, b={b_ema:.2f}, err={error_sum:.2f}, u={u:.2f}, steer={steer_angle:.2f}, {status}"
         )
 
     # ===================== Cleanup =====================

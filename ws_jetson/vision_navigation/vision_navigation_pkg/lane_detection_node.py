@@ -28,7 +28,7 @@ Algorithm:
     7. Publish and log results
 
 CSV Logging:
-    Saves detection results to 'lane_pub_log.csv' with:
+    Saves detection results to '~/almondmatcha/runs/logs/ws_jetson_lane_detection_TIMESTAMP.csv' with:
     timestamp, theta, b, detected
 
 Author: Vision Navigation System
@@ -103,12 +103,19 @@ class NavProcessNode(Node):
 
         # ===================== State =====================
         self.frame_count: int = 0
-        self.csv_path: str = 'lane_pub_log.csv'
+        # Centralized logging in runs/logs/ directory
+        import time
+        log_dir = os.path.expanduser("~/almondmatcha/runs/logs")
+        os.makedirs(log_dir, exist_ok=True)
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        filename = f"ws_jetson_lane_detection_{timestamp}.csv"
+        self.csv_path: str = os.path.join(log_dir, filename)
         self._csv_header_written: bool = False
 
         self.get_logger().info(
             f"Navigation processing node initialized. "
-            f"Visualization: {'enabled' if self.show_window else 'disabled'}"
+            f"Visualization: {'enabled' if self.show_window else 'disabled'}, "
+            f"Logging to: {self.csv_path}"
         )
 
     # ===================== Subscription Callbacks =====================

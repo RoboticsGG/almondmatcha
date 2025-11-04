@@ -2,3 +2,5 @@ build/
 log/
 install/
 test_on_lab_0001.mp4
+*.csv
+logs/
