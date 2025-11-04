@@ -3,13 +3,18 @@
 
 set -e
 
-# Source ROS2 setup if available
-if [ -f "../install/setup.bash" ]; then
+# Source ROS2 setup if available (check multiple locations)
+if [ -f "install/setup.bash" ]; then
+    source install/setup.bash
+elif [ -f "../install/setup.bash" ]; then
     source ../install/setup.bash
-elif [ -f "../common_ifaces/install/setup.bash" ]; then
-    source ../common_ifaces/install/setup.bash
+elif [ -f "/opt/ros/humble/setup.bash" ]; then
+    source /opt/ros/humble/setup.bash
 else
-    echo "Warning: No setup.bash found. Building without sourcing ROS2 environment."
+    # Try to source from common ROS2 installation paths
+    if [ -f "/opt/ros/humble/setup.bash" ]; then
+        source /opt/ros/humble/setup.bash
+    fi
 fi
 
 # Incremental build (does not clean old artefacts)
