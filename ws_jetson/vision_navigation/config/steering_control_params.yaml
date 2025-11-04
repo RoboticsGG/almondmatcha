@@ -1,5 +1,5 @@
-# Steering Control Node Parameters
-# Vision Navigation System - Control Configuration
+# Steering Control Parameters
+# Vision Navigation System - Control Tuning Configuration
 # Date: November 4, 2025
 
 steering_control:
@@ -14,7 +14,7 @@ steering_control:
     k_d: 0.0                     # Derivative gain
     
     # Filtering
-    ema_alpha: 0.05              # Exponential moving average smoothing
+    ema_alpha: 0.05              # Exponential moving average smoothing (0-1)
     
     # Output saturation
     steer_max_deg: 60.0          # Maximum steering angle (±degrees)

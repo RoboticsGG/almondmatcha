@@ -36,11 +36,17 @@ def generate_launch_description():
     # ==================== ROS2 Domain Configuration ====================
     set_domain_id = SetEnvironmentVariable('ROS_DOMAIN_ID', '2')
     
-    # ==================== Config File Path ====================
-    config_file = PathJoinSubstitution([
+    # ==================== Config File Paths ====================
+    system_config = PathJoinSubstitution([
         FindPackageShare('vision_navigation'),
         'config',
         'vision_nav_gui.yaml'
+    ])
+    
+    steering_config = PathJoinSubstitution([
+        FindPackageShare('vision_navigation'),
+        'config',
+        'steering_control_params.yaml'
     ])
     
     # ==================== Launch Arguments ====================
@@ -106,7 +112,7 @@ def generate_launch_description():
         name='camera_stream',
         output='screen',
         emulate_tty=True,
-        parameters=[config_file],
+        parameters=[system_config],
     )
     
     lane_detection_node = Node(
@@ -115,7 +121,7 @@ def generate_launch_description():
         name='lane_detection',
         output='screen',
         emulate_tty=True,
-        parameters=[config_file],
+        parameters=[system_config],
     )
     
     steering_control_node = Node(
@@ -124,7 +130,7 @@ def generate_launch_description():
         name='steering_control',
         output='screen',
         emulate_tty=True,
-        parameters=[config_file],
+        parameters=[steering_config],
     )
     
     # ==================== Launch Sequence ====================

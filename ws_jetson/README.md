@@ -126,35 +126,35 @@ The system uses YAML configuration files for all runtime parameters, following R
 Located in `vision_navigation/config/`:
 
 **Complete System Configurations:**
-- `vision_nav_headless.yaml` - Production/SSH mode (all GUI disabled)
-- `vision_nav_gui.yaml` - Debug/test mode (all GUI enabled)
+- `vision_nav_headless.yaml` - Production/SSH mode (all parameters, GUI disabled)
+- `vision_nav_gui.yaml` - Debug/test mode (all parameters, GUI enabled)
 
-**Individual Node Configurations:**
-- `camera_params.yaml` - Camera stream parameters
-- `lane_detection_params.yaml` - Lane detection parameters
-- `steering_control_params.yaml` - Steering control parameters
+**Individual Parameter Files:**
+- `steering_control_params.yaml` - Control tuning parameters (frequently modified)
+
+The steering control parameters are kept separate because they require frequent tuning during testing and deployment. Camera and lane detection parameters are in the complete system configs as they rarely change.
 
 ### Configuration Parameters
 
-**Camera Parameters** (camera_params.yaml):
+**Camera Parameters** (in system configs):
 ```yaml
 camera_stream:
   ros__parameters:
     width: 1280              # Frame width in pixels
     height: 720              # Frame height in pixels
     fps: 30                  # Frames per second
-    open_cam: false          # Show camera preview window
+    open_cam: false          # Show camera preview window (true for GUI mode)
     enable_depth: false      # Enable D415 depth stream
     video_path: ""           # Video file path (empty = use camera)
     loop_video: true         # Loop video playback
     json_config: ""          # RealSense advanced mode JSON config
 ```
 
-**Lane Detection Parameters** (lane_detection_params.yaml):
+**Lane Detection Parameters** (in system configs):
 ```yaml
 lane_detection:
   ros__parameters:
-    show_window: false       # Show lane visualization window
+    show_window: false       # Show lane visualization (true for GUI mode)
 ```
 
 **Steering Control Parameters** (steering_control_params.yaml):
@@ -173,41 +173,54 @@ steering_control:
 
 ### Modifying Configuration
 
-**Method 1: Edit YAML files (Recommended)**
+**Tuning control parameters (most common):**
 ```bash
 nano vision_navigation/config/steering_control_params.yaml
 ./build_inc.sh
 ```
 
-**Method 2: Override at runtime**
+**Changing system configuration:**
 ```bash
-ros2 launch vision_navigation vision_nav_gui.launch.py k_p:=5.0 k_i:=0.1
+# For production/SSH use
+nano vision_navigation/config/vision_nav_headless.yaml
+
+# For debugging with GUI
+nano vision_navigation/config/vision_nav_gui.yaml
+
+./build_inc.sh
 ```
 
-**Method 3: Load custom config file**
+**Override parameters at launch:**
+```bash
+ros2 launch vision_navigation vision_nav_gui.launch.py k_p:=5.0 enable_depth:=true
+```
+
+**Load custom steering control config:**
 ```bash
 ros2 run vision_navigation steering_control --ros-args \
-  --params-file $(ros2 pkg prefix vision_navigation)/share/vision_navigation/config/my_custom.yaml
+  --params-file $(ros2 pkg prefix vision_navigation)/share/vision_navigation/config/steering_control_params.yaml
 ```
 
-**Method 4: Dynamic parameter update (while running)**
+**Dynamic parameter update (while running):**
 ```bash
 ros2 param set /steering_control k_p 5.0
-ros2 param dump /steering_control
+ros2 param get /steering_control k_p
 ```
 
 ### Creating Custom Configurations
 
-Copy and modify existing config:
+**For control tuning:**
 ```bash
 cd vision_navigation/config
-cp vision_nav_headless.yaml my_custom_config.yaml
-nano my_custom_config.yaml
+cp steering_control_params.yaml my_control_tune.yaml
+nano my_control_tune.yaml
+./build_inc.sh
 ```
 
-Then rebuild:
+**For complete system:**
 ```bash
-cd ~/almondmatcha/ws_jetson
+cp vision_nav_headless.yaml my_custom_system.yaml
+nano my_custom_system.yaml
 ./build_inc.sh
 ```
 
@@ -222,6 +235,7 @@ Check loaded parameters (while node is running):
 ```bash
 ros2 param list
 ros2 param get /camera_stream width
+ros2 param get /steering_control k_p
 ```
 
 ## Running

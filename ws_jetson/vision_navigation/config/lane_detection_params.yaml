@@ -1,8 +1,0 @@
-# Lane Detection Node Parameters
-# Vision Navigation System - Lane Detection Configuration
-# Date: November 4, 2025
-
-lane_detection:
-  ros__parameters:
-    # Visualization
-    show_window: false           # GUI mode: show lane detection visualization

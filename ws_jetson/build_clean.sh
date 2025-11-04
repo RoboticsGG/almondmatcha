@@ -8,17 +8,10 @@ set -e
 echo "Cleaning previous build artefacts..."
 rm -rf build/ install/ log/
 
-# Source ROS2 setup if available
-if [ -f "../install/setup.bash" ]; then
-    source ../install/setup.bash
-elif [ -f "../common_ifaces/install/setup.bash" ]; then
-    source ../common_ifaces/install/setup.bash
-else
-    echo "Warning: No setup.bash found. Building without sourcing ROS2 environment."
-fi
+# Clear stale AMENT_PREFIX_PATH to avoid warnings from colcon
+unset AMENT_PREFIX_PATH
 
-
-# Build the workspace
+# Build the workspace (clean build, no need to source ROS2 first)
 colcon build --symlink-install
 
 # Source the newly built setup.bash if it exists
