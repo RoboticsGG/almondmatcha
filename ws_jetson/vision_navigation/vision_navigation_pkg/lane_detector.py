@@ -370,8 +370,3 @@ def plot_lane_lines(frame_bgr, warped, Minv, theta, b, detected):
     if scale < 1.0:
         combined_vis = cv2.resize(combined_vis, (int(w * scale), int(h * scale)))
     # cv2.imshow("Lane Detection (Bird's Eye View + Original)", combined_vis)
-    
-
-
-
-
