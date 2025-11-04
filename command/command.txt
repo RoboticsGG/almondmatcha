@@ -1,69 +1,67 @@
-192.168.1.1 = RPI4
-192.168.1.2 = mros2 ชั้น 2
-192.168.1.5 = Jetson Nano
-192.168.1.6 = mros2 ชั้น 5
+ALMONDMATCHA - LAUNCH COMMAND REFERENCE
+========================================
 
-// Rover //
-ssh curry@192.168.1.1
-แล้วใช้คำสั่งตามลำดับ (หลัง ssh ก็อปวางได้เลย [6 terminal])
+NETWORK CONFIGURATION
+=====================
+192.168.1.1 = Raspberry Pi 4 (Main Control) - Domain 2,5,6
+192.168.1.2 = STM32 Chassis Controller (Domain 5)
+192.168.1.5 = Jetson Orin Nano (Domain 2)
+192.168.1.6 = STM32 Sensors Node (Domain 6)
 
-cd almondmatcha/ws_rpi/
-source install/setup.bash
-ros2 run pkg_gnss_navigation node_gnss_spresense
+See cmd_*.txt files for machine-specific instructions:
+- cmd_rpi_launch.txt       → Raspberry Pi 4 launch guide
+- cmd_jetson_launch.txt    → Jetson Orin Nano launch guide
+- cmd_base_launch.txt      → Base station launch guide
 
-cd almondmatcha/ws_rpi/
-source install/setup.bash
-ros2 run pkg_gnss_navigation node_gnss_mission_monitor
+ROVER SYSTEM (ws_rpi)
+=====================
+SSH: ssh curry@192.168.1.1
 
-cd almondmatcha/ws_rpi/
-source install/setup.bash
-ros2 run pkg_chassis_control node_chassis_controller
+Quick Launch:
+$ cd ~/almondmatcha/ws_rpi && source install/setup.bash
+$ ros2 launch rover_launch_system rover_startup.launch.py
 
-export ROS_DOMAIN_ID=5
-cd almondmatcha/ws_rpi/
-source install/setup.bash
-ros2 run pkg_chassis_sensors node_chassis_imu
+See cmd_rpi_launch.txt for detailed options
 
-export ROS_DOMAIN_ID=6
-cd almondmatcha/ws_rpi/
-source install/setup.bash
-ros2 run pkg_chassis_sensors node_chassis_sensors
+VISION SYSTEM (ws_jetson)
+==========================
+SSH: ssh yupi@192.168.1.5
 
-export ROS_DOMAIN_ID=5
-cd almondmatcha/ws_rpi/
-source install/setup.bash
-ros2 run pkg_chassis_control node_domain_bridge
------------------------------------------------------
-// Jetson //
-ssh yupi@192.168.1.5
-แล้วใช้คำสั่งตามลำดับ (หลัง ssh ก็อปวางได้เลย [3 terminal])
+Quick Launch:
+$ cd ~/almondmatcha/ws_jetson && source install/setup.bash
+$ ros2 launch vision_navigation vision_navigation.launch.py
 
-cd almondmatcha/ws_jetson
-source install/setup.bash
-ros2 run pkg_imagproc node_cam_stream
+See cmd_jetson_launch.txt for detailed options
 
-cd almondmatcha/ws_jetson
-source install/setup.bash
-ros2 run pkg_imagproc node_cam_stream --ros-args -p video_path:="/home/yupi/almondmatcha/ws_jetson/001.mp4" -p open_cam:=True
+BASE STATION (ws_base)
+=======================
+Quick Launch:
+$ export ROS_DOMAIN_ID=2
+$ cd ~/almondmatcha/ws_base && source install/setup.bash
+$ ros2 run mission_control node_commands --ros-args \
+  --params-file ./src/mission_control/config/params.yaml
 
-cd almondmatcha/ws_jetson
-source install/setup.bash
-ros2 run pkg_imagproc node_nav_process
+See cmd_base_launch.txt for detailed options
 
-cd almondmatcha/ws_jetson
-source install/setup.bash
-ros2 run pkg_imagproc node_roctl
+STM32 FIRMWARE
+==============
+Build Chassis Controller:
+$ cd ~/almondmatcha/mros2-mbed-chassis-dynamics
+$ ./build.bash all NUCLEO_F767ZI chassis_controller
+Flash build/mros2-mbed.bin via USB mass storage
 
-------------------------------------------------
-// Base // คอมพิวเตอร์ wsl
-. ~/ros2_humble/install/local_setup.bash
+Build Sensors Node:
+$ cd ~/almondmatcha/mros2-mbed-sensors-gnss
+$ ./build.bash all NUCLEO_F767ZI sensors_node
+Flash build/mros2-mbed.bin via USB mass storage
 
-export ROS_DOMAIN_ID=2
-cd almondmatcha/ws_base/
-source install/setup.bash
-cd src/pkg_commands/config/
-ros2 run pkg_commands node_commands --ros-args --params-file ./params.yaml
-//แก้ไขความเร็ว/พิกัดในไฟล์ params.yaml
+DATA LOGGING
+============
+CSV Files Location: ~/almondmatcha/runs/logs/
 
-
-ไฟล์ .csv อยู่ใน almondmatcha/runs/logs/ บน RPI4
+Generated Files:
+- chassis_imu_TIMESTAMP.csv      (IMU acceleration and rotation)
+- chassis_sensors_TIMESTAMP.csv  (Encoder and power data)
+- gnss_spresense_TIMESTAMP.csv   (GPS position records)
+- lane_pub_log.csv               (Jetson lane detection)
+- rover_ctl_log_ver_*.csv        (Jetson steering control)
