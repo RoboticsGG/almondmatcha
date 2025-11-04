@@ -251,28 +251,45 @@ bash build.sh
 **Purpose:** Real-time vision navigation, lane detection, steering parameter computation
 
 **Running Nodes:**
-- `camera_stream` - Intel RealSense D415 RGB/depth streaming (30 FPS @ 1280x720)
+- `camera_stream` - Intel RealSense D415 RGB/depth streaming (30 FPS @ 1280x720, GUI/headless modes)
 - `lane_detection` - Lane marker detection and parameter calculation (theta, b)
-- `steering_control` - PID-based steering control with EMA filtering
+- `steering_control` - PID-based steering control with EMA filtering (50 Hz)
 
-**Launch Command:**
+**Launch Commands:**
+
+GUI Mode (development with visualization):
 ```bash
 cd ~/almondmatcha/ws_jetson
-ros2 launch vision_navigation vision_navigation.launch.py
+ros2 launch vision_navigation vision_nav_gui.launch.py
+```
+
+Headless Mode (production):
+```bash
+cd ~/almondmatcha/ws_jetson
+ros2 launch vision_navigation vision_nav_headless.launch.py
 ```
 
 **Key Features:**
-- Centralized configuration system (config.py) with 6 config classes
-- Auto-sync launch file (reads defaults from config.py)
+- YAML-based configuration (best practice) with separate tuning files
+  - `vision_nav_gui.yaml` / `vision_nav_headless.yaml` - System configuration (camera + lane detection)
+  - `steering_control_params.yaml` - Steering control parameters (separate for easy tuning)
+- GUI/headless mode switching via launch files
 - 100% type hint coverage for all Python code
 - 50+ reusable helper functions
 - Proper initialization sequencing: Camera (0s) → Lane Detection (2s) → Control (3s)
+- Two build scripts for development workflow:
+  - `build_clean.sh` - Full clean rebuild (removes build/install/log artifacts)
+  - `build_inc.sh` - Incremental build (preserves previous artifacts)
 
 **Build:**
 ```bash
 cd ~/almondmatcha/ws_jetson
-colcon build --packages-select vision_navigation
-source install/setup.bash
+
+# Clean build (fresh start, fixes environment issues)
+./build_clean.sh
+
+# Incremental build (faster for minor changes)
+./build_inc.sh
 ```
 
 **Documentation:** `ws_jetson/vision_navigation/README.md`
@@ -697,31 +714,64 @@ The system uses ROS2 domain isolation for performance optimization and modularit
 
 ## Configuration Management
 
-### Vision Navigation (ws_jetson)
+### Vision Navigation (ws_jetson) - YAML Configuration
 
-Centralized configuration in `config.py` with 6 configuration classes:
-- `CameraConfig`: Resolution, FPS, camera modes
-- `LaneDetectionConfig`: Color thresholds, gradient parameters
-- `ControlConfig`: PID gains, error weights, saturation limits
-- `LoggingConfig`: File paths, CSV headers
-- `TopicConfig`: ROS2 topic names
-- `SystemConfig`: Node names, timing, QoS settings
+Configuration follows ROS2 best practices with YAML files instead of config.py.
 
-Launch file automatically reads defaults from config.py (auto-sync).
+**Configuration Files Structure:**
+- `vision_nav_gui.yaml` - System configuration for GUI mode
+  - `camera_stream`: open_cam=true (display RGB/depth windows)
+  - `lane_detection`: show_window=true (display lane detection visualization)
+  
+- `vision_nav_headless.yaml` - System configuration for headless mode
+  - `camera_stream`: open_cam=false (no GUI windows)
+  - `lane_detection`: show_window=false (no visualization)
+  
+- `steering_control_params.yaml` - Steering control tuning parameters (independent file)
+  - Contains all PID gains (k_p, k_i, k_d)
+  - Error weighting parameters (k_e1, k_e2)
+  - EMA filtering coefficient (ema_alpha)
+  - Steering limits and safety parameters
 
-**Quick Tuning Workflow:**
+**How They Work Together:**
+- System configuration files (vision_nav_gui/headless.yaml) load first
+- Steering control parameters file loads second, overriding/adding to system config
+- No parameter duplication: each parameter lives in exactly one file
+- Steering control kept separate for easy tuning during development without changing system config
+
+**Example: Tuning Steering Control**
 ```bash
-# 1. Test parameters (no rebuild)
-ros2 launch vision_navigation vision_navigation.launch.py \
-  k_p:=4.5 k_i:=0.1 k_d:=0.15
+cd ~/almondmatcha/ws_jetson/vision_navigation/config
 
-# 2. Save best values to config.py
-# Edit: ControlConfig.K_P = 4.5
+# Edit steering_control_params.yaml
+nano steering_control_params.yaml
+# Change: k_p: 4.5  (adjust as needed)
 
-# 3. Rebuild
-colcon build --packages-select vision_navigation
+# Launch with updated parameters (no rebuild needed)
+cd ~/almondmatcha/ws_jetson
+ros2 launch vision_navigation vision_nav_gui.launch.py
+```
 
-# 4. Next launch uses new defaults automatically
+**Example: Creating Custom Configuration**
+```bash
+cd ~/almondmatcha/ws_jetson/vision_navigation/config
+
+# Copy GUI configuration as template
+cp vision_nav_gui.yaml my_custom_config.yaml
+
+# Edit for your specific needs
+nano my_custom_config.yaml
+
+# Launch with custom config (modify launch file to use my_custom_config.yaml)
+cd ~/almondmatcha/ws_jetson
+ros2 launch vision_navigation vision_nav_gui.launch.py
+```
+
+**Launching with Parameter Overrides:**
+```bash
+# Override steering gains at runtime
+ros2 launch vision_navigation vision_nav_gui.launch.py \
+  k_p:=5.0 k_i:=0.15 k_d:=0.2
 ```
 
 ### STM32 Embedded Configuration
@@ -870,12 +920,21 @@ Comprehensive documentation available in workspace-specific README files:
 ## Recent Updates (November 4, 2025)
 
 ### ws_jetson Vision Navigation
-- Complete refactoring with 100% type hints
-- Centralized configuration system (config.py)
-- Reusable helper library (helpers.py) with 50+ functions
-- Launch file auto-sync with config defaults
-- Professional documentation consolidation
-- Removed obsolete test directory
+- **Separate Launch Files**: Created `vision_nav_gui.launch.py` and `vision_nav_headless.launch.py`
+  - GUI mode for development (displays camera stream and lane detection windows)
+  - Headless mode for production (no GUI windows for reduced overhead)
+- **YAML Configuration** (Best Practice): Migrated from config.py to YAML files
+  - System configurations: `vision_nav_gui.yaml` and `vision_nav_headless.yaml` (camera + lane detection params)
+  - Steering control: `steering_control_params.yaml` (separate for easy tuning)
+  - No parameter duplication: each parameter in exactly one file
+- **Build Scripts**: Created helper scripts for development workflow
+  - `build_clean.sh` - Full clean rebuild with artifact removal and environment variable cleanup
+  - `build_inc.sh` - Incremental build preserving previous artifacts
+  - Both scripts auto-source `setup.bash` after build
+- **GUI/Headless Mode Support**: Implemented `open_cam` parameter in camera_stream_node.py
+  - Conditional window display and proper cleanup on shutdown
+  - Reduced resource overhead for headless deployments
+- **Build Warning Fixes**: Removed AMENT_PREFIX_PATH colcon warnings by clearing stale environment variables
 
 ### mros2-mbed-chassis-dynamics
 - Refactored from monolithic to modular 4-file architecture
@@ -888,6 +947,8 @@ Comprehensive documentation available in workspace-specific README files:
 - Consolidated session notes into single comprehensive file
 - Removed redundant markdown files
 - Professional README structure across all workspaces
+- Updated configuration management section to document YAML approach
+- Added separate launch file and build script documentation
 
 ---
 
