@@ -32,6 +32,7 @@ All nodes communicate via Ethernet using ROS2 DDS middleware with domain-based i
                               |
                       Base Station PC
                       (Telemetry/Telecommand)
+                      ROS2 Domain 2
                       ws_base
 ```
 
@@ -49,6 +50,26 @@ All nodes communicate via Ethernet using ROS2 DDS middleware with domain-based i
 
 ```
 almondmatcha/
+├── common_ifaces/                           Shared interface definitions (SINGLE SOURCE)
+│   ├── msgs_ifaces/
+│   │   ├── msg/
+│   │   │   ├── ChassisCtrl.msg              Chassis control commands
+│   │   │   ├── ChassisIMU.msg               IMU sensor data
+│   │   │   ├── ChassisSensors.msg           Encoder/battery data
+│   │   │   └── SpresenseGNSS.msg            GNSS position data
+│   │   ├── CMakeLists.txt
+│   │   └── package.xml
+│   │
+│   ├── action_ifaces/
+│   │   ├── action/DesData.action            Navigation goal action
+│   │   └── package.xml
+│   │
+│   ├── services_ifaces/
+│   │   ├── srv/SpdLimit.srv                 Speed limit service
+│   │   └── package.xml
+│   │
+│   └── README.md                            Interface documentation
+│
 ├── ws_rpi/                                  Raspberry Pi 4 workspace
 │   ├── src/
 │   │   ├── pkg_chassis_control/
@@ -75,23 +96,9 @@ almondmatcha/
 │   │   │   ├── setup.py
 │   │   │   └── package.xml
 │   │   │
-│   │   ├── action_ifaces/
-│   │   │   ├── action/
-│   │   │   │   └── DesData.action                   Destination waypoint action
-│   │   │   └── package.xml
-│   │   │
-│   │   ├── msgs_ifaces/
-│   │   │   ├── msg/
-│   │   │   │   ├── ChassisCtrl.msg                  Motor command (steering, speed)
-│   │   │   │   ├── ChassisIMU.msg                   IMU sensor data
-│   │   │   │   ├── ChassisSensors.msg               Encoder/power data
-│   │   │   │   └── SpresenseGNSS.msg                GPS position
-│   │   │   └── package.xml
-│   │   │
-│   │   └── services_ifaces/
-│   │       ├── srv/
-│   │       │   └── SpdLimit.srv                     Speed limit service
-│   │       └── package.xml
+│   │   ├── action_ifaces -> ../../common_ifaces/action_ifaces  (symlink)
+│   │   ├── msgs_ifaces -> ../../common_ifaces/msgs_ifaces      (symlink)
+│   │   └── services_ifaces -> ../../common_ifaces/services_ifaces  (symlink)
 │   │
 │   ├── build.sh                             Automated colcon build script
 │   ├── launch_rover_tmux.sh                 Tmux monitoring launcher
@@ -134,19 +141,9 @@ almondmatcha/
 │       │   │   └── DesData.action           Shared destination action interface
 │       │   └── package.xml
 │       │
-│       ├── msgs_ifaces/
-│       │   ├── msg/
-│       │   │   ├── GnssData.msg             GPS data (lat, long, accuracy)
-│       │   │   ├── MainRocon.msg            Rover control commands
-│       │   │   ├── MainSensData.msg         Sensor telemetry
-│       │   │   ├── SubRocon.msg             Sub-rover control
-│       │   │   └── SubSensData.msg          Sub-rover sensor data
-│       │   └── package.xml
-│       │
-│       └── services_ifaces/
-│           ├── srv/
-│           │   └── SpdLimit.srv             Speed limit service interface
-│           └── package.xml
+│       ├── action_ifaces -> ../../common_ifaces/action_ifaces  (symlink)
+│       ├── msgs_ifaces -> ../../common_ifaces/msgs_ifaces      (symlink)
+│       └── services_ifaces -> ../../common_ifaces/services_ifaces  (symlink)
 │
 ├── mros2-mbed-chassis-dynamics/             STM32 chassis motor controller
 │   ├── workspace/chassis_controller/
@@ -305,10 +302,10 @@ source install/setup.bash
   - Non-blocking I2C operations
 
 **Subscribed Topics:**
-- `/pub_rovercontrol` (msgs_ifaces/MainRocon) - Motor and steering commands
+- `/tpc_chassis_cmd` (msgs_ifaces/ChassisCtrl) - Motor and steering commands
 
 **Published Topics:**
-- `/tp_imu_data_d5` (msgs_ifaces/MainGyroData) - IMU sensor data
+- `/tpc_chassis_imu` (msgs_ifaces/ChassisIMU) - IMU sensor data
 
 **Build:**
 ```bash
@@ -345,7 +342,7 @@ cd ~/almondmatcha/mros2-mbed-chassis-dynamics
   - Provides positioning data
 
 **Published Topics:**
-- `/tp_sensdata_d5` (msgs_ifaces/MainSensData) - Encoder and power data
+- `/tpc_chassis_sensors` (msgs_ifaces/ChassisSensors) - Encoder and power data
 
 **Build:**
 ```bash
@@ -506,7 +503,7 @@ ros2 topic echo /tpc_rover_fmctl
 ros2 topic echo /tp_imu_data_d5
 
 # Monitor sensor data
-ros2 topic echo /tp_sensdata_d5
+ros2 topic echo /tpc_chassis_sensors
 ```
 
 **Manual Motor Control Test:**
@@ -514,9 +511,9 @@ ros2 topic echo /tp_sensdata_d5
 # Set Domain ID for chassis controller
 export ROS_DOMAIN_ID=5
 
-# Send motor command (speed: 50, steering: 0)
-ros2 topic pub /pub_rovercontrol msgs_ifaces/msg/MainRocon \
-  '{mainrocon_msg: {fdr_msg: 0, ro_ctrl_msg: 0.0, bdr_msg: 0, spd_msg: 50}}'
+# Send motor command (speed: 100, steering: 0.5, forward)
+ros2 topic pub /tpc_chassis_cmd msgs_ifaces/msg/ChassisCtrl \
+  '{fdr_msg: 2, ro_ctrl_msg: 0.5, spd_msg: 100, bdr_msg: 1}'
 ```
 
 **Vision System Test:**
@@ -555,7 +552,7 @@ The system uses ROS2 domain isolation for performance optimization and modularit
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
 │                        AUTONOMOUS MOBILE ROVER SYSTEM                               │
-│                          ROS2 Multi-Domain Architecture                              │
+│                          ROS2 Multi-Domain Architecture                             │
 └─────────────────────────────────────────────────────────────────────────────────────┘
 
                            ╔═══════════════════════════════════╗
@@ -571,20 +568,20 @@ The system uses ROS2 domain isolation for performance optimization and modularit
         │   DOMAIN 2            │                    │   DOMAIN 5            │
         │ (Chassis & Vision)    │                    │ (Main Rover)          │
         │                       │                    │                       │
-        │ • RPi (Chassis Ctrl)  │──Domain Bridge───▶ │ • STM32 Chassis       │
+        │ • RPi (Chassis Ctrl)  │──Domain Bridge───▶ | • STM32 Chassis      │
         │ • Jetson (Vision)     │ (50Hz relay)       │ • RPi (Bridge)        │
-        │ • GNSS (Base)         │◀───────────────────│ • GNSS Processor      │
+        │ • GNSS (Base)         │◀───────────────────│ • GNSS Processor     │
         └───────────────────────┘                    └───────────────────────┘
                     │                                             │
                     └─────────────────┬─────────────────────────┬─┘
                                       │                         │
-                        ┌─────────────────────────────────────────────┐
+                        ┌────────────────────────────────────────────┐
                         │         DOMAIN 6 (Sensors)                 │
                         │         STM32 Sensors Node                 │
                         │                                            │
                         │ • IMU data (LSM6DSV16X)                    │
-                        │ • Sensor telemetry                         │
-                        └─────────────────────────────────────────────┘
+                        │ • Sensor telemetry                  │
+                        └────────────────────────────────────────────┘
 ```
 
 ### Topic Subscription/Publication Table
@@ -595,20 +592,22 @@ The system uses ROS2 domain isolation for performance optimization and modularit
 | | | `/tpc_rover_d415_depth` | - | sensor_msgs/Image | 30 FPS (BEST_EFFORT) |
 | **lane_detection** (ws_jetson) | 2 | `/tpc_rover_nav_lane` | `/tpc_rover_d415_rgb` | Float32MultiArray | 25-30 FPS |
 | **steering_control** (ws_jetson) | 2 | `/tpc_rover_fmctl` | `/tpc_rover_nav_lane` | Float32MultiArray | 50 Hz |
-| **node_chassis_controller** (ws_rpi) | 2,5 | `/pub_rovercontrol_d2` (D2) | `/tpc_rover_fmctl` | ChassisCtrl | 50 Hz |
-| | | `/pub_rovercontrol_d5` (D5) | `/tpc_gnss_mission_active` | | |
-| **node_domain_bridge** (ws_rpi) | 5 | `/pub_rovercontrol` (D2) | `/pub_rovercontrol_d5` (D5) | ChassisCtrl | 50 Hz relay |
-| **node_gnss_spresense** (ws_rpi) | 2 | `/tpc_gnss_spresense` | - | GnssData | 10 Hz |
+| **node_chassis_controller** (ws_rpi) | 2,5 | `/tpc_chassis_ctrl_d2` (D2) | `/tpc_rover_fmctl` | ChassisCtrl | 50 Hz |
+| | | `/tpc_chassis_ctrl_d5` (D5) | `/tpc_gnss_mission_active` | | |
+| **node_domain_bridge** (ws_rpi) | 2,5 | `/tpc_chassis_ctrl` (D2) | `/tpc_chassis_ctrl_d5` (D5) | ChassisCtrl | 50 Hz relay |
+| **node_gnss_spresense** (ws_rpi) | 2 | `/tpc_gnss_spresense` | - | SpresenseGNSS | 10 Hz |
 | **node_gnss_mission_monitor** (ws_rpi) | 2 | `/tpc_gnss_mission_active` | `/tpc_rover_dest_coordinate` | Bool | 10 Hz |
 | | | `/tpc_gnss_mission_remain_dist` | `/tpc_gnss_spresense` | Float64 | |
 | | | `/tpc_rover_dest_coordinate` | Service: desigation | Float64MultiArray | |
-| **chassis_controller** (mros2-mbed-chassis-dynamics) | 5 | `tp_imu_data_d5` | `pub_rovercontrol` | MainGyroData | 10 Hz |
-| **sensors_node** (mros2-mbed-sensors-gnss) | 6 | `tp_sensdata_d5` | - | MainSensData | 10 Hz |
+| **chassis_controller** (mros2-mbed-chassis-dynamics) | 5 | `/tpc_chassis_imu` | `/tpc_chassis_cmd` | ChassisIMU | 10 Hz |
+| **sensors_node** (mros2-mbed-sensors-gnss) | 6 | `/tpc_chassis_sensors` | - | ChassisSensors | 10 Hz |
+| **node_chassis_imu** (ws_rpi) | 5 | `/tpc_chassis_imu_processed` | `/tpc_chassis_imu` | ChassisIMU | 10 Hz |
+| **node_chassis_sensors** (ws_rpi) | 6 | `/tpc_chassis_sensors_processed` | `/tpc_chassis_sensors` | ChassisSensors | 10 Hz |
 | **mission_monitoring_node** (ws_base) | Default | - | `/tpc_gnss_mission_active` | Bool | Telemetry only |
 | | | | `/tpc_gnss_mission_remain_dist` | Float64 | |
-| | | | `/tpc_gnss_spresense` | GnssData | |
+| | | | `/tpc_gnss_spresense` | SpresenseGNSS | |
 | | | | `/tpc_rover_dest_coordinate` | Float64MultiArray | |
-| | | | `/pub_rovercontrol_d2` | MainRocon | |
+| | | | `/tpc_chassis_ctrl_d2` | ChassisCtrl | |
 
 ### Data Flow Sequences
 
@@ -630,15 +629,15 @@ The system uses ROS2 domain isolation for performance optimization and modularit
 4. node_chassis_controller (ws_rpi/Domain 2,5)
    ├─ Subscribes (D2): /tpc_rover_fmctl
    ├─ Provides cruise control logic
-   └─▶ Publishes (D5): /pub_rovercontrol_d5 (50 Hz)
+   └─▶ Publishes (D5): /tpc_chassis_ctrl_d5 (50 Hz)
        
-5. node_domain_bridge (ws_rpi/Domain 5)
-   ├─ Subscribes (D5): /pub_rovercontrol_d5
-   └─▶ Relays (D2): /pub_rovercontrol (50 Hz relay)
+5. node_domain_bridge (ws_rpi/Domain 2,5)
+   ├─ Subscribes (D5): /tpc_chassis_ctrl_d5
+   └─▶ Relays (D2): /tpc_chassis_ctrl (50 Hz relay)
        
 6. chassis_controller (STM32/Domain 5)
-   ├─ Subscribes (D5): /pub_rovercontrol_d5
-   └─▶ Drives motors + publishes IMU data: tp_imu_data_d5 (10 Hz)
+   ├─ Subscribes (D5): /tpc_chassis_cmd
+   └─▶ Executes motor control + publishes IMU: /tpc_chassis_imu (10 Hz)
 ```
 
 #### GNSS-Based Navigation
@@ -667,11 +666,19 @@ The system uses ROS2 domain isolation for performance optimization and modularit
 1. chassis_controller (STM32-Dynamics/Domain 5)
    ├─ Polls: LSM6DSV16X IMU sensor @ 100 Hz
    ├─ Publishes every 10 samples (100 ms interval)
-   └─▶ Topic: tp_imu_data_d5 (accel_x,y,z + gyro_x,y,z) (10 Hz)
+   └─▶ Topic: /tpc_chassis_imu (accel_x,y,z + gyro_x,y,z) (10 Hz)
    
-2. sensors_node (STM32-GNSS/Domain 6)
-   ├─ Polls: Multiple sensors
-   └─▶ Topic: tp_sensdata_d5 (sensor telemetry) (10 Hz)
+2. sensors_node (STM32-Sensors/Domain 6)
+   ├─ Polls: Motor encoders + INA226 power monitor
+   └─▶ Topic: /tpc_chassis_sensors (encoder + battery data) (10 Hz)
+   
+3. node_chassis_imu (ws_rpi/Domain 5)
+   ├─ Subscribes: /tpc_chassis_imu
+   └─▶ Processes and republishes: /tpc_chassis_imu_processed
+   
+4. node_chassis_sensors (ws_rpi/Domain 6)
+   ├─ Subscribes: /tpc_chassis_sensors
+   └─▶ Processes and republishes: /tpc_chassis_sensors_processed
 ```
 
 ---

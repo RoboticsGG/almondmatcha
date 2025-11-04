@@ -14,9 +14,9 @@
  * Topics Subscribed:
  *   /tpc_gnss_mission_active (Bool): Mission active flag
  *   /tpc_gnss_mission_remain_dist (Float64): Remaining distance to target (km)
- *   /tpc_gnss_spresense (GnssData): Current GPS position
+ *   /tpc_gnss_spresense (SpresenseGNSS): Current GPS position
  *   /tpc_rover_dest_coordinate (Float64MultiArray): Target coordinates [lat, long]
- *   /pub_rovercontrol_d2 (MainRocon): Rover control commands (steering, speed, direction)
+ *   /tpc_chassis_ctrl_d2 (ChassisCtrl): Rover control commands (steering, speed, direction)
  * 
  * Author: Mission Control System
  * Date: November 4, 2025
@@ -26,9 +26,8 @@
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/float64.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
-#include <msgs_ifaces/msg/gnss_data.hpp>
-#include <msgs_ifaces/msg/main_rocon.hpp>
-#include <msgs_ifaces/msg/sub_rocon.hpp>
+#include <msgs_ifaces/msg/spresense_gnss.hpp>
+#include <msgs_ifaces/msg/chassis_ctrl.hpp>
 #include <iomanip>
 #include <sstream>
 
@@ -68,8 +67,8 @@ private:
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_mission_active_;
     rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr sub_distance_remaining_;
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr sub_target_coords_;
-    rclcpp::Subscription<msgs_ifaces::msg::GnssData>::SharedPtr sub_current_position_;
-    rclcpp::Subscription<msgs_ifaces::msg::MainRocon>::SharedPtr sub_rover_control_;
+    rclcpp::Subscription<msgs_ifaces::msg::SpresenseGNSS>::SharedPtr sub_current_position_;
+    rclcpp::Subscription<msgs_ifaces::msg::ChassisCtrl>::SharedPtr sub_rover_control_;
     
     // Timer for periodic status updates
     rclcpp::TimerBase::SharedPtr status_timer_;
@@ -102,14 +101,14 @@ private:
         );
         
         // Current GNSS position subscription
-        sub_current_position_ = this->create_subscription<msgs_ifaces::msg::GnssData>(
+        sub_current_position_ = this->create_subscription<msgs_ifaces::msg::SpresenseGNSS>(
             "/tpc_gnss_spresense", 10,
             std::bind(&MissionMonitoringNode::on_current_position, this, std::placeholders::_1)
         );
         
         // Rover control state subscription
-        sub_rover_control_ = this->create_subscription<msgs_ifaces::msg::MainRocon>(
-            "/pub_rovercontrol_d2", 10,
+        sub_rover_control_ = this->create_subscription<msgs_ifaces::msg::ChassisCtrl>(
+            "/tpc_chassis_ctrl_d2", 10,
             std::bind(&MissionMonitoringNode::on_rover_control, this, std::placeholders::_1)
         );
         
@@ -161,7 +160,7 @@ private:
      * Callback: Current GNSS position
      * Updates rover's current location
      */
-    void on_current_position(const msgs_ifaces::msg::GnssData::SharedPtr msg) {
+    void on_current_position(const msgs_ifaces::msg::SpresenseGNSS::SharedPtr msg) {
         current_latitude_ = msg->latitude;
         current_longitude_ = msg->longitude;
     }
@@ -170,11 +169,11 @@ private:
      * Callback: Rover control commands
      * Parses steering and movement commands to display user-friendly status
      */
-    void on_rover_control(const msgs_ifaces::msg::MainRocon::SharedPtr msg) {
-        steering_direction_ = msg->mainrocon_msg.fdr_msg;
-        steering_angle_ = msg->mainrocon_msg.ro_ctrl_msg;
-        speed_command_ = msg->mainrocon_msg.spd_msg;
-        movement_direction_ = msg->mainrocon_msg.bdr_msg;
+    void on_rover_control(const msgs_ifaces::msg::ChassisCtrl::SharedPtr msg) {
+        steering_direction_ = msg->fdr_msg;
+        steering_angle_ = msg->ro_ctrl_msg;
+        speed_command_ = msg->spd_msg;
+        movement_direction_ = msg->bdr_msg;
     }
 
     // ===================== Status Display Methods =====================

@@ -1,4 +1,0 @@
-int32 mt_lf_encode_msg
-int32 mt_rt_encode_msg
-float32 sys_current_msg
-float32 sys_volt_msg

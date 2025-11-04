@@ -20,7 +20,7 @@
 
 #include "mros2.h"
 #include "mros2-platform.h"
-#include "msgs_ifaces/msg/main_sens_data.hpp"
+#include "msgs_ifaces/msg/chassis_sensors.hpp"
 #include "encoder_control.h"
 #include "power_monitor.h"
 #include "gnss_reader.h"
@@ -187,7 +187,7 @@ int main()
   
   // Create publisher for sensor data aggregation
   mros2::Publisher PubSensData = 
-    node.create_publisher<msgs_ifaces::msg::MainSensData>("tp_sensdata_d6", 10);
+    node.create_publisher<msgs_ifaces::msg::ChassisSensors>("tpc_chassis_sensors", 10);
 
   // ---- Initialize All Sensor Modules ----
   MROS2_INFO("Initializing sensor modules...");
@@ -239,11 +239,11 @@ int main()
     sensor_data_mutex.unlock();
 
     // Prepare and publish sensor data message
-    msgs_ifaces::msg::MainSensData msgs;
-    msgs.mainsensdata_msg.mt_lf_encode_msg = enc_A;      // Left encoder count
-    msgs.mainsensdata_msg.mt_rt_encode_msg = enc_B;      // Right encoder count
-    msgs.mainsensdata_msg.sys_current_msg = curr;        // System current (A)
-    msgs.mainsensdata_msg.sys_volt_msg = vbus;           // Bus voltage (V)
+    msgs_ifaces::msg::ChassisSensors msgs;
+    msgs.mt_lf_encode_msg = enc_A;      // Left encoder count
+    msgs.mt_rt_encode_msg = enc_B;      // Right encoder count
+    msgs.sys_current_msg = curr;        // System current (A)
+    msgs.sys_volt_msg = vbus;           // Bus voltage (V)
     PubSensData.publish(msgs);
 
     // Print main sensor debug information

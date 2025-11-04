@@ -44,9 +44,9 @@ Continuous telemetry monitoring and status reporting.
 **Subscriptions:**
 - `/tpc_gnss_mission_active` (Bool) - Mission active flag
 - `/tpc_gnss_mission_remain_dist` (Float64) - Remaining distance (km)
-- `/tpc_gnss_spresense` (GnssData) - Current GPS position
+- `/tpc_gnss_spresense` (SpresenseGNSS) - Current GPS position
 - `/tpc_rover_dest_coordinate` (Float64MultiArray) - Target [lat, long]
-- `/pub_rovercontrol_d2` (MainRocon) - Rover control state
+- `/tpc_chassis_ctrl_d2` (ChassisCtrl) - Rover control state
 
 ### Message Interfaces
 
@@ -62,15 +62,20 @@ The package uses custom message types defined in `msgs_ifaces`:
   - Request: `rover_spd` - Speed 0-100%
   - Response: (acknowledgment)
 
-- **GnssData**: GNSS position
-  - `latitude`: Current latitude
-  - `longitude`: Current longitude
+- **SpresenseGNSS**: GNSS position from Sony Spresense board
+  - `date`: Date string (YYYY-MM-DD)
+  - `time`: Time string (HH:MM:SS)
+  - `num_satellites`: Number of satellites in view
+  - `fix`: GNSS fix status
+  - `latitude`: Current latitude (decimal degrees)
+  - `longitude`: Current longitude (decimal degrees)
+  - `altitude`: Altitude above mean sea level (meters)
 
-- **MainRocon**: Rover control commands
-  - `fdr_msg`: Steering direction (1=Left, 3=Right)
-  - `ro_ctrl_msg`: Steering angle (degrees)
-  - `spd_msg`: Speed command (0-100%)
-  - `bdr_msg`: Movement direction (1=Forward, 2=Backward)
+- **ChassisCtrl**: Rover control commands
+  - `fdr_msg`: Front direction (1=right, 2=straight, 3=left)
+  - `ro_ctrl_msg`: Steering control value (0.0 to 1.0)
+  - `spd_msg`: Speed command (0-255)
+  - `bdr_msg`: Back direction (0=stop, 1=forward, 2=backward)
 
 ## Building
 

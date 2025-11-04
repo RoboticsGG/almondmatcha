@@ -13,8 +13,8 @@
  * @brief Domain Communication Bridge Node
  * 
  * This node bridges ROS2 communication between two domains:
- * - Subscribes from Domain ID 5: Topic "pub_rovercontrol_d5"
- * - Publishes to Domain ID 2: Topic "pub_rovercontrol"
+ * - Subscribes from Domain ID 5: Topic "tpc_chassis_ctrl_d5"
+ * - Publishes to Domain ID 2: Topic "tpc_chassis_ctrl"
  * 
  * Acts as a relay to forward control messages between domains at 50Hz (20ms period).
  */
@@ -23,12 +23,12 @@ public:
     DomainBridge() : Node("domain_bridge") {
         // Publisher to Domain ID 2
         pub_chassis_ctrl_d2_ = this->create_publisher<msgs_ifaces::msg::ChassisCtrl>(
-            "pub_rovercontrol", 10
+            "tpc_chassis_ctrl", 10
         );
 
         // Subscriber from Domain ID 5
         sub_chassis_ctrl_d5_ = this->create_subscription<msgs_ifaces::msg::ChassisCtrl>(
-            "pub_rovercontrol_d5", 10, 
+            "tpc_chassis_ctrl_d5", 10, 
             std::bind(&DomainBridge::onDomain5MessageReceived, this, std::placeholders::_1)
         );
 
@@ -86,7 +86,7 @@ private:
         if (!has_received_message_) {
             if (show_waiting_warning_) {
                 RCLCPP_WARN(this->get_logger(), 
-                           "Waiting for messages from Domain 5 on 'pub_rovercontrol_d5'...");
+                           "Waiting for messages from Domain 5 on 'tpc_chassis_ctrl_d5'...");
                 show_waiting_warning_ = false;  // Show warning only once
             }
             return;

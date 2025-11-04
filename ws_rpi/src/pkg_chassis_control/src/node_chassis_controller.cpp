@@ -123,7 +123,7 @@ private:
         
         // Create publisher in Domain ID 2
         pub_rocon_d2_ = sub_node_->create_publisher<msgs_ifaces::msg::ChassisCtrl>(
-            "pub_rovercontrol_d2", 10
+            "tpc_chassis_ctrl_d2", 10
         );
     }
     
@@ -144,7 +144,7 @@ private:
         
         // Create publisher in Domain ID 5
         pub_rocon_d5_ = pub_node_->create_publisher<msgs_ifaces::msg::ChassisCtrl>(
-            "pub_rovercontrol_d5", 10
+            "tpc_chassis_ctrl_d5", 10
         );
     }
     
