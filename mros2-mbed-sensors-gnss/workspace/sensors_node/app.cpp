@@ -31,17 +31,6 @@
 // SAMPLING RATE CONSTANTS
 // ============================================================================
 
-// Task polling periods (milliseconds)
-const uint32_t ENCODER_SAMPLE_PERIOD_MS = 100;    // Encoder task @ 10 Hz
-const uint32_t POWER_SAMPLE_PERIOD_MS = 200;      // Power monitor task @ 5 Hz
-const uint32_t GNSS_SAMPLE_PERIOD_MS = 100;       // GNSS reader task @ 10 Hz
-const uint32_t MAIN_LOOP_PERIOD_MS = 250;         // Main publishing loop @ 4 Hz
-const uint32_t GNSS_PRINT_INTERVAL = 4;           // Print GNSS every 4 main loops (1 second)
-
-// ============================================================================
-// SAMPLING RATE CONSTANTS
-// ============================================================================
-// Task polling periods (milliseconds)
 const uint32_t ENCODER_SAMPLE_PERIOD_MS = 100;    // Encoder task @ 10 Hz
 const uint32_t POWER_SAMPLE_PERIOD_MS = 200;      // Power monitor task @ 5 Hz
 const uint32_t GNSS_SAMPLE_PERIOD_MS = 100;       // GNSS reader task @ 10 Hz
@@ -70,116 +59,6 @@ struct {
 } sensor_data;
 
 Mutex sensor_data_mutex;            // Protects access to sensor_data struct
-
-// ============================================================================
-// SAMPLING RATE CONSTANTS
-// ============================================================================
-// Task polling periods (milliseconds)
-const uint32_t ENCODER_SAMPLE_PERIOD_MS = 100;    // Encoder task @ 10 Hz
-const uint32_t POWER_SAMPLE_PERIOD_MS = 200;      // Power monitor task @ 5 Hz
-const uint32_t GNSS_SAMPLE_PERIOD_MS = 100;       // GNSS reader task @ 10 Hz
-const uint32_t MAIN_LOOP_PERIOD_MS = 250;         // Main publishing loop @ 4 Hz
-const uint32_t GNSS_PRINT_INTERVAL = 4;           // Print GNSS every 4 main loops (1 second)
-
-// ============================================================================
-// SHARED SENSOR DATA STRUCTURE
-// ============================================================================
-
-/**
- * @brief Thread-safe container for all sensor readings
- * Protected by sensor_data_mutex for safe read/write between tasks
- */
-struct {
-    int32_t encoder_A = 0;          // Encoder A count (from encoder task)
-    int32_t encoder_B = 0;          // Encoder B count (from encoder task)
-    float bus_voltage = 0.0f;       // Bus voltage in Volts (from power task)
-    float current = 0.0f;           // System current in Amps (from power task)
-    char nmea_sentence[NMEA_BUFFER_SIZE] = "$GNRMC,,,,,,,,,,,N*71";  // GNSS NMEA string (from GNSS task) - default placeholder when no fix
-} sensor_data;
-
-Mutex sensor_data_mutex;            // Protects access to sensor_data struct
-
-// ============================================================================
-// I2C HELPER FUNCTIONS
-// ============================================================================
-
-/**
- * @brief Read a 16-bit register from INA226
- * @param reg Register address to read
- * @return 16-bit register value, or -1 on error
- */
-int16_t read_register(uint8_t reg) {
-    char cmd[1] = { reg };
-    
-    // Write register address
-    if (i2c.write(INA226_ADDR, cmd, 1, true) != 0) {
-        return -1;  // Error writing address
-    }
-    
-    // Read 2 bytes (16-bit value)
-    char data[2];
-    if (i2c.read(INA226_ADDR, data, 2) != 0) {
-        return -1;  // Error reading data
-    }
-    
-    // Combine bytes: MSB first, then LSB
-    return (data[0] << 8) | data[1];
-}
-
-// ============================================================================
-// GNSS/RTK HELPER FUNCTIONS
-// ============================================================================
-
-/**
- * @brief Read NMEA string from SimpleRTK2b GNSS receiver
- * 
- * Reads data from USART6 serial port and buffers complete NMEA sentences.
- * NMEA sentences start with '$' and end with '\n' or '\r\n'
- * 
- * @param output_buffer Pointer to buffer for storing complete NMEA sentence
- * @param buffer_size Maximum size of output buffer
- * @return Number of characters in the NMEA sentence (0 if no complete sentence yet)
- */
-size_t read_nmea_string(char* output_buffer, size_t buffer_size) {
-    // Read available data from serial port
-    while (gnss_serial.readable()) {
-        uint8_t ch_buffer;
-        ssize_t read_result = gnss_serial.read(&ch_buffer, 1);  // Read 1 byte
-        
-        if (read_result <= 0) {
-            break;  // No data available or error
-        }
-        
-        char ch = (char)ch_buffer;
-        
-        // Start of a new NMEA sentence
-        if (ch == '$') {
-            nmea_buffer_index = 0;
-            nmea_buffer[nmea_buffer_index++] = ch;
-        }
-        // End of NMEA sentence (carriage return or line feed)
-        else if ((ch == '\r' || ch == '\n') && nmea_buffer_index > 0) {
-            // Add null terminator
-            nmea_buffer[nmea_buffer_index] = '\0';
-            
-            // Copy to output buffer if it fits
-            if (nmea_buffer_index < buffer_size) {
-                strcpy(output_buffer, nmea_buffer);
-                size_t result = nmea_buffer_index;
-                nmea_buffer_index = 0;
-                return result;  // Return length of complete NMEA sentence
-            }
-            
-            nmea_buffer_index = 0;  // Reset on buffer overflow
-        }
-        // Regular character in NMEA sentence
-        else if (nmea_buffer_index > 0 && nmea_buffer_index < NMEA_BUFFER_SIZE - 1) {
-            nmea_buffer[nmea_buffer_index++] = ch;
-        }
-    }
-    
-    return 0;  // No complete NMEA sentence available yet
-}
 
 // ============================================================================
 // ENCODER READING TASK

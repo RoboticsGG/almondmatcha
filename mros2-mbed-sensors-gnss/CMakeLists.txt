@@ -27,6 +27,9 @@ message(STATUS "APP_NAME=${APP_NAME}")
 # specify your own file(s) for the application
 set(APP_SRCS
   workspace/${APP_NAME}/app.cpp
+  workspace/${APP_NAME}/encoder_control.cpp
+  workspace/${APP_NAME}/power_monitor.cpp
+  workspace/${APP_NAME}/gnss_reader.cpp
 )
 message(STATUS "APP_SRCS=${APP_SRCS}")
 
