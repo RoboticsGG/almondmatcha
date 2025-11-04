@@ -1,5 +1,6 @@
-# ROS logs
+# ROS logs and data files
 runs/ros_logs/
+runs/logs/*.csv
 
 # Build artifacts
 build/
