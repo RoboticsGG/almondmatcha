@@ -27,6 +27,8 @@ message(STATUS "APP_NAME=${APP_NAME}")
 # specify your own file(s) for the application
 set(APP_SRCS
   workspace/${APP_NAME}/app.cpp
+  workspace/${APP_NAME}/motor_control.cpp
+  workspace/${APP_NAME}/led_status.cpp
 )
 message(STATUS "APP_SRCS=${APP_SRCS}")
 
