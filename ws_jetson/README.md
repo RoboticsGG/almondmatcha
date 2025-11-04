@@ -1,38 +1,49 @@
+
 # Jetson Workspace - Visual Navigation System
 
-Real-time visual navigation system for autonomous rover lane detection and steering control running on NVIDIA Jetson platform.
+Real-time lane detection and steering control for autonomous rovers on NVIDIA Jetson.
 
-## Overview
+## Quick Start
 
-The Jetson workspace (`ws_jetson`) provides camera streaming, lane detection, and closed-loop steering control for autonomous mobile rovers. It processes Intel RealSense D415 camera data or video files to detect lane boundaries and commands steering based on lane position feedback.
-
-### Key Components
-
-- **Camera Stream Node**: Streams RGB/depth frames from D415 camera or video files
-- **Lane Detection Node**: Processes frames to detect lane markers and compute navigation parameters
-- **Steering Control Node**: Implements closed-loop PID steering controller
-- **Control Filters**: Reusable low-pass filters and control utilities
-- **Lane Detector**: Image processing pipeline for lane boundary detection
-
-## System Architecture
-
-### Data Flow
-
+### Build
+```bash
+cd ~/almondmatcha/ws_jetson
+./build_clean.sh   # Clean build (recommended)
+./build_inc.sh     # Incremental build (faster)
 ```
-Camera Input (D415 or Video)
-    |
-    v
-[Camera Stream Node] -> /tpc_rover_d415_rgb (RGB frames)
-    |                -> /tpc_rover_d415_depth (Depth frames, optional)
-    v
-[Lane Detection Node] -> /tpc_rover_nav_lane (Lane parameters)
-    |                 -> lane_pub_log.csv (Detection logging)
-    v
-[Steering Control Node] -> /tpc_rover_fmctl (Steering command)
-                        -> logs/rover_ctl_log_ver_3.csv (Control logging)
-    v
-Steering Actuator (Front Module)
+
+### Configuration
+Edit YAML files in `vision_navigation/config/`:
+- `vision_nav_gui.yaml` — GUI mode (camera preview, lane visualization)
+- `vision_nav_headless.yaml` — Headless mode (no GUI)
+- `steering_control_params.yaml` — Steering PID/control params (tuning)
+
+No parameter duplication: system config and control tuning are separate.
+
+## Launch
+
+Use these scripts for convenience:
+```bash
+./launch_gui.sh      # GUI mode (with visualization)
+./launch_headless.sh # Headless mode (no GUI)
 ```
+Both scripts source ROS2 setup and launch the appropriate mode.
+
+## Troubleshooting
+
+- **Camera not detected:** Check USB, run `rs-enumerate-devices`, install `librealsense2`.
+- **Lane not detected:** Enable visualization, check lighting, adjust color thresholds in `lane_detector.py`.
+- **Steering unstable:** Tune `k_p`, `k_d`, `ema_alpha` in `steering_control_params.yaml`.
+- **High CPU usage:** Lower `fps`, reduce resolution, disable visualization.
+
+## References
+
+- Main project: `/home/yupi/almondmatcha/README.md`
+- Lane/control config: `vision_navigation/config/`
+- Session notes: `/home/yupi/almondmatcha/copilot-session-note/WORK_SESSION_2025-11-04.md`
+
+## License
+Apache 2.0
 
 ## Prerequisites
 
@@ -125,39 +136,42 @@ The system uses YAML configuration files for all runtime parameters, following R
 
 Located in `vision_navigation/config/`:
 
-**Complete System Configurations:**
-- `vision_nav_headless.yaml` - Production/SSH mode (all parameters, GUI disabled)
-- `vision_nav_gui.yaml` - Debug/test mode (all parameters, GUI enabled)
+**System Configuration (Camera & Lane Detection):**
+- `vision_nav_headless.yaml` - Production/SSH mode (GUI disabled)
+- `vision_nav_gui.yaml` - Debug/test mode (GUI enabled)
 
-**Individual Parameter Files:**
-- `steering_control_params.yaml` - Control tuning parameters (frequently modified)
+**Steering Control Configuration (Separate for Tuning):**
+- `steering_control_params.yaml` - Control parameters (frequently modified during testing)
 
-The steering control parameters are kept separate because they require frequent tuning during testing and deployment. Camera and lane detection parameters are in the complete system configs as they rarely change.
+**How they work together:**
+- Launch files load BOTH files: `vision_nav_*.yaml` for system settings + `steering_control_params.yaml` for control tuning
+- No parameter duplication - each parameter defined in exactly one place
+- Steering control kept separate for easy tuning without rebuilding
 
 ### Configuration Parameters
 
-**Camera Parameters** (in system configs):
+**Camera Parameters** (in `vision_nav_*.yaml`):
 ```yaml
 camera_stream:
   ros__parameters:
     width: 1280              # Frame width in pixels
     height: 720              # Frame height in pixels
     fps: 30                  # Frames per second
-    open_cam: false          # Show camera preview window (true for GUI mode)
+    open_cam: false          # Show camera preview (true for GUI mode)
     enable_depth: false      # Enable D415 depth stream
     video_path: ""           # Video file path (empty = use camera)
     loop_video: true         # Loop video playback
     json_config: ""          # RealSense advanced mode JSON config
 ```
 
-**Lane Detection Parameters** (in system configs):
+**Lane Detection Parameters** (in `vision_nav_*.yaml`):
 ```yaml
 lane_detection:
   ros__parameters:
-    show_window: false       # Show lane visualization (true for GUI mode)
+    show_window: false       # Show visualization (true for GUI mode)
 ```
 
-**Steering Control Parameters** (steering_control_params.yaml):
+**Steering Control Parameters** (in `steering_control_params.yaml`):
 ```yaml
 steering_control:
   ros__parameters:
@@ -217,7 +231,7 @@ nano my_control_tune.yaml
 ./build_inc.sh
 ```
 
-**For complete system:**
+**For system configuration:**
 ```bash
 cp vision_nav_headless.yaml my_custom_system.yaml
 nano my_custom_system.yaml
