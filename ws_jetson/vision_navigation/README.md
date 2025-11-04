@@ -1,918 +1,456 @@
-# Vision Navigation System# Visual Navigation Package
+# Vision Navigation System
 
+Real-time visual navigation system for autonomous rover lane detection and steering control. This system processes Intel RealSense D415 camera data or video files to detect lane boundaries and compute steering commands via closed-loop PID control.
 
+## System Overview
 
-Real-time visual navigation system for autonomous rover lane detection and steering control.Real-time visual navigation system for autonomous rover lane detection and steering control.
+The Vision Navigation system consists of three coordinated ROS2 nodes:
 
+1. **Camera Stream Node** - Acquires and publishes RGB/depth frames
+2. **Lane Detection Node** - Detects lane markers and computes steering parameters
+3. **Steering Control Node** - Implements PID-based steering control
 
+Initialization Sequence: Camera (0s) → Lane Detection (2s) → Steering Control (3s)
 
-## Overview## Overview
+## Architecture
 
-
-
-The Vision Navigation package provides camera streaming, lane detection, and closed-loop steering control for autonomous mobile rovers. It processes Intel RealSense D415 camera data or video files to detect lane boundaries and commands steering based on lane position feedback.The Visual Navigation package provides camera streaming, lane detection, and closed-loop steering control for autonomous mobile rovers. It processes Intel RealSense D415 camera data or video files to detect lane boundaries and commands steering based on lane position feedback.
-
-
-
-## Code Organization## System Architecture
-
-
-
-### Directory Structure### Data Flow
-
-
-
-``````
-
-vision_navigation/Camera (D415/Video)
-
-├── README.md                      # This file    |
-
-├── LICENSE                        # Apache 2.0 license    v
-
-├── package.xml                    # ROS2 package metadata[Camera Stream Node] -> /tpc_rover_d415_rgb
-
-├── setup.py                       # Python setup configuration    |
-
-├── setup.cfg                      # Python setup config    v
-
-├── resource/                      # Package resources (auto-generated)[Nav Process Node] -> Lane Detection -> /tpc_rover_nav_lane
-
-├── test/                          # Unit tests directory    |
-
-│    v
-
-├── Core Nodes:[Rover Control Node] -> PID Steering -> /tpc_rover_fmctl
-
-├── camera_stream_node.py          # RGB/depth camera streaming (Intel D415 or video)    |
-
-├── lane_detection_node.py         # Lane marker detection and parameter calculation    v
-
-├── steering_control_node.py       # PID-based steering controlSteering Actuator (Front Module)
-
-│```
-
-├── Utility Modules:
-
-├── lane_detector.py               # Lane detection pipeline (image processing)### Nodes
-
-├── control_filters.py             # Filters and control utilities
-
-│#### Camera Stream Node (node_cam_stream)
-
-└── Demonstration:
-
-    └── demo_lane.py               # Lane detection demonstration**Purpose:** Stream camera data to ROS2 topics
+### Data Flow
 
 ```
+Camera (D415/Video) → Camera Stream Node → /tpc_rover_d415_rgb
+                                           ↓
+                     Lane Detection Node ← Frame Input
+                                           ↓
+                                    /tpc_rover_nav_lane [theta, b, detected]
+                                           ↓
+                     Steering Control Node ← Lane Parameters
+                                           ↓
+                                    /tpc_rover_fmctl [steer_angle, detected]
+                                           ↓
+                                    Steering Actuator
+```
 
-**Responsibilities:**
+### Node Descriptions
 
-### Module Purposes- Initialize Intel RealSense D415 camera OR video file playback
+#### Camera Stream Node (camera_stream)
 
-- Stream RGB frames at configurable frame rate
+Streams RGB and optional depth frames from Intel RealSense D415 or video file.
 
-#### Core Nodes- Optional depth streaming (D415 only)
+Published Topics:
+- `/tpc_rover_d415_rgb` (sensor_msgs/Image, bgr8): RGB frames
+- `/tpc_rover_d415_depth` (sensor_msgs/Image, 16UC1): Depth frames (optional)
 
-- Frame resizing and synchronization
+Parameters:
+- `width` (int, default 1280): Frame width in pixels
+- `height` (int, default 720): Frame height in pixels
+- `fps` (int, default 30): Frames per second
+- `open_cam` (bool, default False): Display preview window
+- `enable_depth` (bool, default False): Enable depth streaming
+- `video_path` (str, default ""): Video file path (empty = use D415 camera)
+- `loop_video` (bool, default True): Loop video when finished
+- `json_config` (str, default ""): RealSense advanced mode JSON config path
 
-**camera_stream_node.py**
+#### Lane Detection Node (lane_detection)
 
-- Streams RGB and depth frames from Intel RealSense D415 camera**Published Topics:**
+Detects lane markers and computes steering parameters (theta, b, detected flag).
 
-- Supports video file playback for testing- `/tpc_rover_d415_rgb` (sensor_msgs/Image, bgr8): RGB camera frames
+Subscribed Topics:
+- `/tpc_rover_d415_rgb` (sensor_msgs/Image): RGB camera stream
 
-- Configurable resolution, frame rate, and advanced settings- `/tpc_rover_d415_depth` (sensor_msgs/Image, 16UC1): Depth frames (optional)
-
-- Publishes to `/tpc_rover_d415_rgb` and `/tpc_rover_d415_depth` topics
-
-**Parameters:**
-
-**lane_detection_node.py**- `width` (int, 1280): Frame width in pixels
-
-- Processes RGB frames to detect lane markers- `height` (int, 720): Frame height in pixels
-
-- Uses color filtering, edge detection, and perspective transform- `fps` (int, 30): Frames per second
-
-- Computes steering angle (theta) and lateral offset (b) parameters- `json_config` (str, ""): Path to RealSense advanced mode configuration
-
-- Publishes detection results to `/tpc_rover_nav_lane` topic- `open_cam` (bool, False): Display camera preview in OpenCV window
-
-- Logs results to `lane_pub_log.csv`- `enable_depth` (bool, False): Stream depth data (D415 only)
-
-- `video_path` (str, ""): Path to video file (if set, uses video instead of camera)
-
-**steering_control_node.py**- `loop_video` (bool, True): Loop video when finished
-
-- Implements closed-loop PID steering controller
-
-- Filters noisy lane detection with exponential moving average**Modes:**
-
-- Computes steering command from lane parameters1. **D415 Camera Mode:** Streams directly from Intel RealSense D415 USB camera
-
-- Publishes steering angle to `/tpc_rover_fmctl` topic2. **Video Playback Mode:** Streams from MP4/AVI video file for testing
-
-- Logs control loop data to `logs/rover_ctl_log_ver_3.csv`
-
-#### Navigation Process Node (node_nav_process)
-
-#### Utility Modules
-
-**Purpose:** Detect lane markers and compute navigation parameters
-
-**lane_detector.py**
-
-- Lane detection image processing pipeline**Responsibilities:**
-
-- Functions:- Subscribe to RGB camera frames
-
-  - `preprocess_frame()`: Color filtering and edge detection (LAB color space)- Apply color filtering, edge detection, and perspective transform
-
-  - `perspective_transform()`: Bird's-eye view transformation- Detect lane boundaries using polyfit
-
-  - `process_frame()`: Complete lane detection pipeline- Calculate steering angle (theta) and lateral offset (b)
-
-- Handles color-based filtering, gradient detection, and contour processing- Publish lane parameters and detection status
-
-- Log results to CSV
-
-**control_filters.py**
-
-- Reusable filter and control components**Subscribed Topics:**
-
-- Classes:- `/tpc_rover_d415_rgb` (sensor_msgs/Image): RGB camera stream
-
-  - `MovingAverageLPF`: Simple moving average filter
-
-  - `ExponentialMovingAverageLPF`: EMA filter with warmup detection**Published Topics:**
-
-- Functions:- `/tpc_rover_nav_lane` (std_msgs/Float32MultiArray): [theta, b, detected]
-
-  - `clamp()`: Value saturation utility  - theta: Heading error from lane center (degrees)
-
-  - `pid_controller()`: Standalone PID calculation  - b: Lateral offset from lane center (pixels)
-
+Published Topics:
+- `/tpc_rover_nav_lane` (std_msgs/Float32MultiArray): [theta, b, detected]
+  - theta: Heading error from lane center (degrees, positive = right)
+  - b: Lateral offset from lane center (pixels, positive = right)
   - detected: Detection flag (1.0 = valid, 0.0 = not detected)
 
-**demo_lane.py**
+Parameters:
+- `show_window` (bool, default False): Display lane detection visualization
 
-- Demonstration script for lane detection testing**Parameters:**
+CSV Output: `lane_pub_log.csv` with columns [timestamp, theta, b, detected]
 
-- Supports video file input and visualization- `show_window` (bool, False): Display lane detection visualization
-
-
-
-## System Architecture**Processing Pipeline:**
-
+Processing Pipeline:
 1. RGB to LAB color space conversion
-
-### Data Flow2. Color-based lane filtering (remove non-lane colors)
-
+2. Color-based lane filtering (green grass removal, lane detection)
 3. Sobel gradient edge detection
+4. Magnitude and direction filtering
+5. White pixel detection
+6. Combined binary image creation
+7. Contour area filtering
+8. Perspective transform (bird's-eye view)
+9. Polyfit lane boundary detection
+10. Theta and b parameter calculation
 
-```4. Magnitude and direction filtering
+#### Steering Control Node (steering_control)
 
-Camera Input (D415 or Video)5. White pixel detection
+Implements closed-loop PID steering control based on lane detection parameters.
 
-    |6. Combined binary image creation
-
-    v7. Contour area filtering
-
-[camera_stream_node]8. Perspective transform (bird's-eye view)
-
-    |9. Polyfit lane boundary detection
-
-    +---> /tpc_rover_d415_rgb (RGB frames)10. Theta and b parameter calculation
-
-    +---> /tpc_rover_d415_depth (Depth frames, optional)
-
-    |**CSV Logging:** `lane_pub_log.csv`
-
-    v- timestamp, theta, b, detected
-
-[lane_detection_node]
-
-    |#### Rover Control Node (node_rover_ctl)
-
-    +---> /tpc_rover_nav_lane (Lane parameters)
-
-    +---> lane_pub_log.csv (Detection logging)**Purpose:** Closed-loop steering control for lane following
-
-    |
-
-    v**Responsibilities:**
-
-[steering_control_node]- Subscribe to lane detection parameters
-
-    |- Apply exponential moving average filtering
-
-    +---> /tpc_rover_fmctl (Steering command)- Compute combined error from heading and lateral offset
-
-    +---> logs/rover_ctl_log_ver_3.csv (Control logging)- Execute PID control algorithm
-
-    |- Publish steering command
-
-    v- Log control loop data
-
-Steering Actuator (Front Module)
-
-```**Subscribed Topics:**
-
+Subscribed Topics:
 - `/tpc_rover_nav_lane` (std_msgs/Float32MultiArray): Lane parameters [theta, b, detected]
 
-### Topic Interface
-
-**Published Topics:**
-
-| Topic | Message Type | Direction | Description |- `/tpc_rover_fmctl` (std_msgs/Float32MultiArray): [steer_angle, detected]
-
-|-------|--------------|-----------|-------------|  - steer_angle: Steering command in degrees (+right, -left)
-
-| `/tpc_rover_d415_rgb` | sensor_msgs/Image (bgr8) | Out | RGB camera frames |  - detected: Lane detection status flag
-
-| `/tpc_rover_d415_depth` | sensor_msgs/Image (16UC1) | Out | Depth frames (optional) |
-
-| `/tpc_rover_nav_lane` | std_msgs/Float32MultiArray | Out | Lane params [theta, b, detected] |**Parameters:**
-
-| `/tpc_rover_fmctl` | std_msgs/Float32MultiArray | Out | Steering command [angle, detected] |- `k_e1` (float, 1.0): Weight on heading error (theta)
-
-- `k_e2` (float, 0.1): Weight on lateral offset (b)
-
-### Processing Pipeline- `k_p` (float, 4.0): Proportional gain
-
-- `k_i` (float, 0.0): Integral gain
-
-#### Lane Detection- `k_d` (float, 0.0): Derivative gain
-
-1. RGB frame input- `ema_alpha` (float, 0.05): Exponential moving average smoothing factor
-
-2. LAB color space conversion- `steer_max_deg` (float, 60.0): Maximum steering angle saturation (±degrees)
-
-3. Color-based filtering (remove grass, detect lanes)- `steer_when_lost` (float, 0.0): Steering command when lane not detected
-
-4. Sobel gradient edge detection
-
-5. Magnitude and direction filtering**Control Algorithm:**
-
-6. White pixel detection
-
-7. Binary image combination```
-
-8. Contour noise removalCombined Error: e = k_e1 * theta_ema + k_e2 * b_ema
-
-9. Perspective transform to bird's-eye viewPID Output: u = k_p * e + k_i * integral(e, dt) + k_d * de/dt
-
-10. Polyfit lane boundary detectionSteering: steer = clamp(u, -steer_max_deg, steer_max_deg)
-
-11. Theta (angle) and b (offset) calculation```
-
-
-
-#### Steering ControlIf lane not detected: steer = steer_when_lost (safety default)
-
-1. Lane parameters input [theta, b, detected]
-
-2. Exponential moving average filtering (warmup period)**CSV Logging:** `logs/rover_ctl_log_ver_3.csv`
-
-3. Combined error calculation: e = k_e1*theta + k_e2*b- time_sec, theta_ema, b_ema, u, e_sum
-
-4. PID control calculation
-
-5. Steering saturation (±steer_max_deg)### Utility Modules
-
-6. Safety fallback if lane not detected
-
-7. Publish steering command#### control_filters.py
-
-
-
-## Installation and BuildingProvides low-pass filters and control utilities:
-
-
-
-### Prerequisites**Classes:**
-
-- ROS 2 (Humble or newer)- `MovingAverageLPF`: Simple moving average filter
-
-- Python 3.10+- `ExponentialMovingAverageLPF`: EMA filter with configurable smoothing
-
-- Dependencies:
-
-  - `python3-opencv`**Functions:**
-
-  - `python3-numpy`- `clamp()`: Saturate value to [min, max] range
-
-  - `pyrealsense2` (for D415 camera)- `pid_controller()`: PID calculation utility
-
-  - `rclpy`, `cv_bridge`, `sensor_msgs`, `std_msgs`
-
-#### lane_detector.py
-
-### Build Steps
-
-Lane detection pipeline functions:
-
-```bash- `preprocess_frame()`: Color filtering and edge detection
-
-# Build the package- `perspective_transform()`: Bird's-eye view transformation
-
-cd /path/to/ws_jetson- `process_frame()`: Complete lane detection pipeline
-
-colcon build --packages-select vision_navigation
-
-## Building
-
-# Source the workspace
-
-source install/setup.bash### Prerequisites
-
-```- ROS 2 (tested on Humble)
-
-- Python 3.10+
-
-### Verify Installation- OpenCV (python3-opencv)
-
-- NumPy (python3-numpy)
-
-```bash- pyrealsense2 (for D415 camera)
-
-# List installed nodes- rclpy, cv_bridge
-
-ros2 pkg executables vision_navigation
-
-### Build Steps
-
-# Output should show:
-
-# vision_navigation camera_stream```bash
-
-# vision_navigation lane_detection# Build the package
-
-# vision_navigation steering_controlcd /path/to/ws_jetson
-
-# vision_navigation demo_lanecolcon build --packages-select pkg_imagproc
-
+Published Topics:
+- `/tpc_rover_fmctl` (std_msgs/Float32MultiArray): [steer_angle, detected]
+  - steer_angle: Steering command in degrees (positive = right, negative = left)
+  - detected: Lane detection status flag
+
+Parameters:
+- `k_e1` (float, default 1.0): Weight on heading error (theta)
+- `k_e2` (float, default 0.1): Weight on lateral offset (b)
+- `k_p` (float, default 4.0): Proportional gain
+- `k_i` (float, default 0.0): Integral gain
+- `k_d` (float, default 0.0): Derivative gain
+- `ema_alpha` (float, default 0.05): Exponential moving average smoothing (0-1)
+- `steer_max_deg` (float, default 60.0): Maximum steering angle saturation
+- `steer_when_lost` (float, default 0.0): Steering command when lane not detected
+
+Control Algorithm:
+```
+Combined Error: e = k_e1 * theta_ema + k_e2 * b_ema
+PID Output: u = k_p * e + k_i * integral(e, dt) + k_d * de/dt
+Steering: steer = clamp(u, -steer_max_deg, steer_max_deg)
+If not detected: steer = steer_when_lost
 ```
 
-# Source the workspace
-
-## Running the Systemsource install/setup.bash
-
-```
-
-### Individual Node Execution
-
-### Verification
-
-#### Camera Stream Node
-
-```bash
-
-```bash# Check installed nodes
-
-# Stream from D415 camera with default settingsros2 pkg executables pkg_imagproc
-
-ros2 run vision_navigation camera_stream
-
-# Should output:
-
-# Stream with preview window# pkg_imagproc node_cam_stream
-
-ros2 run vision_navigation camera_stream --ros-args -p open_cam:=True# pkg_imagproc node_nav_process
-
-# pkg_imagproc node_rover_ctl
-
-# Stream with depth enabled# pkg_imagproc node_demo_lane
-
-ros2 run vision_navigation camera_stream --ros-args -p enable_depth:=True```
-
-
-
-# Stream from video file## Usage
-
-ros2 run vision_navigation camera_stream --ros-args \
-
-  -p video_path:="/path/to/video.mp4"### Running Individual Nodes
-
-```
-
-#### Camera Stream Node
-
-#### Lane Detection Node
-
-```bash
-
-```bash# Stream from D415 camera
-
-# Process frames without visualizationros2 run pkg_imagproc node_cam_stream
-
-ros2 run vision_navigation lane_detection
-
-# Stream from D415 with preview
-
-# Process with lane detection visualizationros2 run pkg_imagproc node_cam_stream --ros-args -p open_cam:=True
-
-ros2 run vision_navigation lane_detection --ros-args -p show_window:=True
-
-```# Stream from D415 with depth
-
-ros2 run pkg_imagproc node_cam_stream --ros-args -p enable_depth:=True
-
-#### Steering Control Node
-
-# Stream from video file
-
-```bashros2 run pkg_imagproc node_cam_stream --ros-args \
-
-# Run with default control parameters  -p video_path:="/path/to/video.mp4" -p loop_video:=True
-
-ros2 run vision_navigation steering_control```
-
-
-
-# Run with custom PID gains#### Navigation Process Node
-
-ros2 run vision_navigation steering_control --ros-args \
-
-  -p k_p:=5.0 -p k_i:=0.1 -p k_d:=0.05```bash
-
-```# Process frames with visualization disabled
-
-ros2 run pkg_imagproc node_nav_process
-
-### Complete System Startup
-
-# Process with lane detection visualization
-
-Terminal 1 - Camera streaming:ros2 run pkg_imagproc node_nav_process --ros-args -p show_window:=True
-
-```bash```
-
-ros2 run vision_navigation camera_stream --ros-args -p open_cam:=True
-
-```#### Rover Control Node
-
-
-
-Terminal 2 - Lane detection:```bash
-
-```bash# Run with default parameters
-
-ros2 run vision_navigation lane_detection --ros-args -p show_window:=Trueros2 run pkg_imagproc node_rover_ctl
-
-```
-
-# Run with custom control gains
-
-Terminal 3 - Steering control:ros2 run pkg_imagproc node_rover_ctl --ros-args \
-
-```bash  -p k_p:=5.0 -p k_i:=0.1 -p k_d:=0.05 \
-
-ros2 run vision_navigation steering_control  -p steer_max_deg:=45.0
-
-``````
-
-
-
-Terminal 4 - Monitor output (optional):### Running Complete System
-
-```bash
-
-ros2 topic echo /tpc_rover_fmctl```bash
-
-```# Terminal 1: Camera stream
-
-ros2 run pkg_imagproc node_cam_stream --ros-args -p open_cam:=True
+CSV Output: `logs/rover_ctl_log_ver_3.csv` with columns [time_sec, theta_ema, b_ema, u, e_sum]
 
 ## Configuration and Tuning
 
-# Terminal 2: Lane detection
+### Centralized Configuration (config.py)
 
-### Camera Stream Parametersros2 run pkg_imagproc node_nav_process --ros-args -p show_window:=True
+All system parameters are centralized in `vision_navigation_pkg/config.py`:
 
+- CameraConfig: Resolution, FPS, camera modes
+- LaneDetectionConfig: Color thresholds, gradient parameters, window settings
+- ControlConfig: PID gains, error weights, saturation limits
+- LoggingConfig: File paths, CSV headers
+- TopicConfig: ROS2 topic names (tpc_* convention)
+- SystemConfig: Node names, initialization timing, QoS settings
 
+Launch file automatically reads defaults from config.py, enabling:
+- Single source of truth for all parameters
+- No manual sync between config and launch file
+- Environment variable override support
 
-| Parameter | Default | Description |# Terminal 3: Rover control
+### Quick Tuning Workflow
 
-|-----------|---------|-------------|ros2 run pkg_imagproc node_rover_ctl
+1. Test parameters during session (no rebuild):
+   ```bash
+   ros2 launch vision_navigation vision_navigation.launch.py \
+     k_p:=4.5 k_i:=0.1 k_d:=0.15
+   ```
 
-| width | 1280 | Frame width in pixels |
+2. Save best values to config.py:
+   ```python
+   class ControlConfig:
+       K_P = 4.5    # Updated from testing
+       K_I = 0.1
+       K_D = 0.15
+   ```
 
-| height | 720 | Frame height in pixels |# Terminal 4: Monitor steering output
+3. Rebuild:
+   ```bash
+   colcon build --packages-select vision_navigation
+   ```
 
-| fps | 30 | Frames per second |ros2 topic echo /tpc_rover_fmctl
+4. Next session uses new defaults:
+   ```bash
+   ros2 launch vision_navigation vision_navigation.launch.py
+   ```
 
-| enable_depth | False | Enable depth streaming (D415 only) |```
+### Tuning Examples
 
-| open_cam | False | Display preview window |
+Smooth lane following (gentle turns):
+```bash
+ros2 launch vision_navigation vision_navigation.launch.py \
+  k_e1:=0.8 k_e2:=0.05 k_p:=3.0 steer_max_deg:=45
+```
 
-| video_path | "" | Video file path (empty = use D415) |### With ROS2 Launch File (if available)
+Aggressive tracking (sharp turns):
+```bash
+ros2 launch vision_navigation vision_navigation.launch.py \
+  k_e1:=1.5 k_e2:=0.2 k_p:=5.0 steer_max_deg:=60
+```
 
-| loop_video | True | Loop video when finished |
+With integral/derivative control (steady-state correction and damping):
+```bash
+ros2 launch vision_navigation vision_navigation.launch.py \
+  k_p:=4.0 k_i:=0.1 k_d:=0.05 ema_alpha:=0.08
+```
 
-| json_config | "" | RealSense advanced mode config JSON |```bash
+## Installation and Build
 
-ros2 launch pkg_imagproc vision_navigation.launch.py
+### Prerequisites
 
-### Lane Detection Parameters```
+- ROS 2 (Humble or newer)
+- Python 3.10+
+- OpenCV (python3-opencv)
+- NumPy (python3-numpy)
+- pyrealsense2 (for D415 camera)
+- rclpy, cv_bridge, sensor_msgs, std_msgs
 
-
-
-| Parameter | Default | Description |## Configuration
-
-|-----------|---------|-------------|
-
-| show_window | False | Display lane detection visualization |### Lane Detection Tuning
-
-
-
-### Steering Control ParametersEdit parameters in `lane_detector.py`:
-
-- `green_mask` thresholds: Filter out green grass
-
-| Parameter | Default | Description |- `red_mask` thresholds: Detect red lane markers
-
-|-----------|---------|-------------|- Sobel gradient thresholds: Edge detection sensitivity
-
-| k_e1 | 1.0 | Heading error weight |- Magnitude and direction filtering: Edge feature extraction
-
-| k_e2 | 0.1 | Lateral offset weight |- Contour area threshold: Noise removal
-
-| k_p | 4.0 | Proportional gain |
-
-| k_i | 0.0 | Integral gain |### Control Tuning
-
-| k_d | 0.0 | Derivative gain |
-
-| ema_alpha | 0.05 | EMA smoothing factor (0-1) |Example configuration for different scenarios:
-
-| steer_max_deg | 60.0 | Maximum steering angle |
-
-| steer_when_lost | 0.0 | Steering when lane lost |**Gentle lane following (smooth turns):**
+### Build Steps
 
 ```bash
+# Navigate to workspace
+cd /path/to/ws_jetson
 
-### Control Tuning Examples-p k_e1:=0.8 -p k_e2:=0.05 -p k_p:=3.0
+# Build the package
+colcon build --packages-select vision_navigation
 
+# Source the workspace
+source install/setup.bash
+
+# Verify installation
+ros2 pkg executables vision_navigation
 ```
 
-**Smooth lane following (gentle turns):**
+## Running the System
 
-```bash**Aggressive tracking (sharp turns):**
+### Individual Node Execution
 
-ros2 run vision_navigation steering_control --ros-args \```bash
-
-  -p k_e1:=0.8 -p k_e2:=0.05 -p k_p:=3.0 -p steer_max_deg:=45-p k_e1:=1.5 -p k_e2:=0.2 -p k_p:=5.0
-
-``````
-
-
-
-**Aggressive tracking (sharp turns):****With integral control (steady-state correction):**
-
-```bash```bash
-
-ros2 run vision_navigation steering_control --ros-args \-p k_p:=4.0 -p k_i:=0.1 -p k_d:=0.02
-
-  -p k_e1:=1.5 -p k_e2:=0.2 -p k_p:=5.0 -p steer_max_deg:=60```
-
+Camera stream from D415:
+```bash
+ros2 run vision_navigation camera_stream
 ```
+
+Camera stream with preview:
+```bash
+ros2 run vision_navigation camera_stream --ros-args -p open_cam:=True
+```
+
+From video file:
+```bash
+ros2 run vision_navigation camera_stream --ros-args \
+  -p video_path:="/path/to/video.mp4"
+```
+
+Lane detection with visualization:
+```bash
+ros2 run vision_navigation lane_detection --ros-args -p show_window:=True
+```
+
+Steering control:
+```bash
+ros2 run vision_navigation steering_control
+```
+
+### Complete System Startup
+
+Terminal 1 - Camera:
+```bash
+ros2 run vision_navigation camera_stream --ros-args -p open_cam:=True
+```
+
+Terminal 2 - Lane detection:
+```bash
+ros2 run vision_navigation lane_detection --ros-args -p show_window:=True
+```
+
+Terminal 3 - Steering control:
+```bash
+ros2 run vision_navigation steering_control
+```
+
+Terminal 4 - Monitor steering output:
+```bash
+ros2 topic echo /tpc_rover_fmctl
+```
+
+Or use launch file (automated sequencing):
+```bash
+ros2 launch vision_navigation vision_navigation.launch.py
+```
+
+## Helper Modules
+
+### control_filters.py
+
+Provides low-pass filters and control utilities:
+
+Classes:
+- `MovingAverageLPF`: Simple moving average filter
+- `ExponentialMovingAverageLPF`: EMA filter with configurable smoothing and warmup detection
+
+Functions:
+- `clamp()`: Saturate value to [min, max] range
+- `pid_controller()`: PID calculation with anti-windup support
+
+### lane_detector.py
+
+Lane detection pipeline functions:
+- `preprocess_frame()`: Color filtering and edge detection
+- `perspective_transform()`: Bird's-eye view transformation
+- `find_center_line()`: Sliding window lane tracking
+- `compute_lane_params()`: Theta and b parameter calculation
+- `process_frame()`: Complete lane detection pipeline
+- `plot_lane_lines()`: Visualization (for debugging)
+
+### helpers.py
+
+Reusable utility functions (50+ total):
+- Conversion: degrees_to_radians, radians_to_degrees, normalize_angle
+- Validation: is_valid_number, validate_image, validate_roi_points
+- Math: clamp, lerp, smooth_step, exponential_moving_average, calculate_distance
+- Image: resize_image, crop_image, draw_crosshair, draw_text_box
+- Logging: setup_csv_logging, log_csv_row, get_timestamp_string
+- Timing: Timer class for performance measurement
+- ROS: get_message_timestamp, create_float_array_message
+
+## Data Output
+
+### Lane Detection Log (lane_pub_log.csv)
+
+Columns: timestamp, theta, b, detected
+
+Example:
+```
+2025-11-04T10:30:45.123456,5.23,45.67,1.0
+2025-11-04T10:30:45.153456,-3.21,42.11,1.0
+```
+
+### Steering Control Log (logs/rover_ctl_log_ver_3.csv)
+
+Columns: time_sec, theta_ema, b_ema, u, e_sum
+
+Example:
+```
+1730708000.123,4.85,44.25,19.4,5.12
+1730708000.153,-2.95,41.80,-11.8,-3.42
+```
+
+## Performance Specifications
+
+- Maximum camera FPS: 30
+- End-to-end latency: 100-150 ms (typical)
+- EMA filter warmup time: 1.5 seconds (default alpha=0.05)
+- Memory per node: 150-200 MB
+- Typical processing resolution: 1280x720
 
 ## Troubleshooting
 
-**With integral/derivative control:**
+### D415 Camera Not Detected
 
-```bash### D415 Camera Not Detected
+1. Check USB connection
+2. Verify device: `rs-enumerate-devices`
+3. Install librealsense: `sudo apt install librealsense2`
+4. Check device serial number (current: 806312060441)
 
-ros2 run vision_navigation steering_control --ros-args \
+### Lane Detection Not Working
 
-  -p k_p:=4.0 -p k_i:=0.1 -p k_d:=0.05**Problem:** "Cannot find RealSense device"
+1. Enable visualization: `-p show_window:=True`
+2. Check lighting conditions (outdoor, shadows, etc.)
+3. Verify lane markers are visible and contrasting
+4. Adjust color thresholds in config.py LaneDetectionConfig
+5. Use video file mode for testing: `-p video_path:="/path/to/video.mp4"`
 
-```
+### Steering Commands Not Received
 
-**Solutions:**
+1. Verify all nodes running: `ros2 node list`
+2. Check topic connectivity: `ros2 topic info /tpc_rover_nav_lane`
+3. Monitor lane detection: `ros2 topic echo /tpc_rover_nav_lane`
+4. Check steering control node parameters loaded correctly
 
-## Data Logging1. Check USB connection
-
-2. Verify device is recognized: `rs-enumerate-devices`
-
-### Lane Detection Log (lane_pub_log.csv)3. Check device serial number matches in code (current: 806312060441)
-
-```4. Install librealsense: `sudo apt install librealsense2`
-
-timestamp,theta,b,detected
-
-2025-11-04T10:30:45.123456,5.23,45.67,1.0### Lane Detection Not Working
-
-2025-11-04T10:30:45.153456,-3.21,42.11,1.0
-
-```**Problem:** Lane not detected or incorrect detection
-
-
-
-### Control Loop Log (logs/rover_ctl_log_ver_3.csv)**Solutions:**
-
-```1. Check camera focus and exposure (adjust with JSON config)
-
-time_sec,theta_ema,b_ema,u,e_sum2. Ensure lane markers are visible and contrasting
-
-1730708000.123,4.85,44.25,19.4,5.123. Verify lighting conditions (outdoor, shadows, etc.)
-
-1730708000.153,-2.95,41.80,-11.8,-3.424. Enable visualization: `-p show_window:=True`
-
-```5. Adjust color thresholds in lane_detector.py
-
-
-
-## Troubleshooting### Steering Commands Not Received
-
-
-
-### Camera Issues**Problem:** `/tpc_rover_fmctl` topic empty
-
-
-
-**Problem: "Cannot find RealSense device"****Solutions:**
-
-- Check USB connection1. Verify all three nodes are running: `ros2 node list`
-
-- Verify device: `rs-enumerate-devices`2. Check topic connectivity: `ros2 topic info /tpc_rover_nav_lane`
-
-- Install librealsense: `sudo apt install librealsense2`3. Monitor lane detection: `ros2 topic echo /tpc_rover_nav_lane`
-
-- Check device serial matches code (current: 806312060441)4. Check control node parameters loaded correctly
-
-
-
-**Problem: "pyrealsense2 not found"**### High CPU Usage
-
-- Install: `pip install pyrealsense2`
-
-- Or use video mode: `-p video_path:="/path/to/video.mp4"`**Problem:** Frame rate too high causing CPU overload
-
-
-
-### Lane Detection Issues**Solutions:**
+### High CPU Usage
 
 1. Reduce frame rate: `-p fps:=15`
+2. Reduce resolution: `-p width:=640 -p height:=480`
+3. Disable visualization: `-p show_window:=False`
+4. Use video file mode instead of live camera
 
-**Problem: Lane not detected or incorrect detection**2. Reduce image resolution: `-p width:=640 -p height:=480`
+### Oscillating or Unstable Steering
 
-- Enable visualization: `-p show_window:=True`3. Disable visualization: `-p show_window:=False`
+1. Increase EMA smoothing: `-p ema_alpha:=0.02`
+2. Reduce proportional gain: `-p k_p:=2.0`
+3. Add derivative control: `-p k_d:=0.05`
+4. Adjust error weights: reduce `k_e1` or `k_e2`
 
-- Check lighting conditions4. Use video file mode instead of live camera
+## Sign Conventions
 
-- Verify lane markers are visible and contrasting
+### Steering Angle
+- Positive: Turn RIGHT
+- Negative: Turn LEFT
+- Units: Degrees
+- Range: [-steer_max_deg, +steer_max_deg]
 
-- Adjust color thresholds in `lane_detector.py`## Performance
+### Heading Error (theta)
+- Positive: Lane center is to the RIGHT (need to turn right)
+- Negative: Lane center is to the LEFT (need to turn left)
+- Units: Degrees
 
+### Lateral Offset (b)
+- Positive: Camera is displaced to the RIGHT from lane center
+- Negative: Camera is displaced to the LEFT from lane center
+- Units: Pixels
 
-
-**Problem: High false detections**### Frame Rate
-
-- Reduce EMA alpha: `-p ema_alpha:=0.02`- Camera stream: Configurable (default 30 FPS)
-
-- Enable buffer warmup by checking is_full()- Lane detection: Real-time (typically 25-30 FPS @ 1280x720)
-
-- Adjust gradient thresholds in lane_detector.py- Control loop: Depends on lane detection rate
-
-
-
-### Steering Control Issues### Latency
-
-- Camera to steering command: ~100-150 ms (typical)
-
-**Problem: "/tpc_rover_fmctl" topic not published**- EMA filter warm-up: ~1.5 seconds (with alpha=0.05, maxlen=30)
-
-- Verify all nodes running: `ros2 node list`
-
-- Check lane detection: `ros2 topic echo /tpc_rover_nav_lane`### Memory
-
-- Monitor control node: `ros2 topic echo /tpc_rover_fmctl`- Typical process memory: 150-200 MB per node
-
-
-
-**Problem: Oscillating or unstable steering**## Data Output
-
-- Increase EMA smoothing: `-p ema_alpha:=0.02`
-
-- Reduce proportional gain: `-p k_p:=2.0`### CSV Logs
-
-- Add derivative control: `-p k_d:=0.05`
-
-**lane_pub_log.csv:**
-
-### Performance Issues```
-
-timestamp,theta,b,detected
-
-**Problem: High CPU usage**2025-11-04T10:30:45.123456,5.23,45.67,1.0
-
-- Reduce frame rate: `-p fps:=15`2025-11-04T10:30:45.153456,-3.21,42.11,1.0
-
-- Reduce resolution: `-p width:=640 -p height:=480````
-
-- Disable preview: `-p open_cam:=False`
-
-- Disable visualization: `-p show_window:=False`**logs/rover_ctl_log_ver_3.csv:**
+## File Structure
 
 ```
+vision_navigation/
+├── README.md                           # This file
+├── LICENSE                             # Apache 2.0
+├── package.xml                         # ROS2 metadata
+├── setup.py                            # Python setup
+├── setup.cfg                           # Setup config
+├── launch/
+│   └── vision_navigation.launch.py     # ROS2 launch file
+├── vision_navigation_pkg/
+│   ├── __init__.py
+│   ├── config.py                       # Centralized configuration
+│   ├── helpers.py                      # Utility functions
+│   ├── camera_stream_node.py           # Camera streaming node
+│   ├── lane_detection_node.py          # Lane detection node
+│   ├── steering_control_node.py        # Steering control node
+│   ├── lane_detector.py                # Lane detection pipeline
+│   └── control_filters.py              # Filters and utilities
+├── resource/                           # Package resources
+└── test/                               # Unit tests
+```
 
-**Problem: High latency (steering lag)**time_sec,theta_ema,b_ema,u,e_sum
+## Version History
 
-- Reduce EMA window: Edit `maxlen` in `ExponentialMovingAverageLPF`1730708000.123,4.85,44.25,19.4,5.12
+### v1.0.0 (November 4, 2025)
 
-- Reduce frame processing time with lower resolution1730708000.153,-2.95,41.80,-11.8,-3.42
+Code Quality:
+- 100% type hint coverage
+- Professional docstrings for all functions and classes
+- Comprehensive documentation
 
-- Ensure sufficient CPU resources available```
+Architecture:
+- Centralized configuration (config.py) with 6 config classes
+- Reusable helper module (helpers.py) with 50+ functions
+- Auto-sync launch file that reads from config.py
+- Proper node initialization sequencing (2s camera, cascading startup)
 
-
-
-## Sign Conventions## Sign Conventions
-
-
-
-### Steering Angle### Steering Angle
-
-- **Positive:** Turn RIGHT- **Positive:** Turn RIGHT
-
-- **Negative:** Turn LEFT- **Negative:** Turn LEFT
-
-- **Units:** Degrees- **Units:** Degrees
-
-
-
-### Heading Error (theta)### Heading Error (theta)
-
-- **Positive:** Lane center RIGHT of camera (need right turn)- **Positive:** Lane center is to the RIGHT (need to turn right)
-
-- **Negative:** Lane center LEFT of camera (need left turn)- **Negative:** Lane center is to the LEFT (need to turn left)
-
-- **Units:** Degrees- **Units:** Degrees
-
-
-
-### Lateral Offset (b)### Lateral Offset (b)
-
-- **Positive:** Camera RIGHT of lane center- **Positive:** Camera is displaced to the RIGHT from lane center
-
-- **Negative:** Camera LEFT of lane center- **Negative:** Camera is displaced to the LEFT from lane center
-
-- **Units:** Pixels- **Units:** Pixels
-
-
-
-## Performance Specifications## Dependencies
-
-
-
-| Metric | Value |### Runtime
-
-|--------|-------|- rclpy (ROS2 Python client)
-
-| Max camera FPS | 30 |- cv_bridge (ROS2 OpenCV bridge)
-
-| Typical latency (end-to-end) | 100-150 ms |- sensor_msgs (ROS2 sensor message types)
-
-| EMA filter warmup time | 1.5 seconds (default alpha=0.05) |- std_msgs (ROS2 standard message types)
-
-| Memory per node | 150-200 MB |- opencv-python / python3-opencv
-
-| Processing resolution | 1280x720 |- numpy / python3-numpy
-
-- pyrealsense2 (Intel RealSense SDK)
+Improvements:
+- Launch file auto-reads defaults from config.py (no manual sync)
+- Environment variable override support
+- Enhanced PID controller with anti-windup
+- Professional code organization and naming
+- Removed all educational/tutorial comments
 
 ## Dependencies
 
-### Development
-
-### Runtime- ament_python (ROS2 build system)
-
-- rclpy (ROS2 Python client library)- ament_copyright, ament_flake8, ament_pep257 (code quality)
-
+### Runtime
+- rclpy (ROS2 Python client)
 - cv_bridge (ROS2 OpenCV bridge)
-
-- sensor_msgs (ROS2 sensor messages)## File Structure
-
+- sensor_msgs (ROS2 sensor messages)
 - std_msgs (ROS2 standard messages)
+- opencv-python / python3-opencv
+- numpy / python3-numpy
+- pyrealsense2 (Intel RealSense SDK)
 
-- opencv-python / python3-opencv```
-
-- numpy / python3-numpypkg_imagproc/
-
-- pyrealsense2 (Intel RealSense SDK)├── package.xml              # Package metadata (v1.0.0)
-
-├── setup.py                 # Python setup configuration
-
-### Build├── setup.cfg                # Python setup config
-
-- ament_python (ROS2 build system)├── pkg_imagproc/
-
-- ament_copyright, ament_flake8, ament_pep257 (code quality tools)│   ├── __init__.py
-
-│   ├── node_cam1_d415_stream.py    # Camera streaming node
-
-## Future Enhancements│   ├── node_cam1_nav_process.py    # Lane detection node
-
-│   ├── node_rover_ctl.py           # Steering control node
-
-- ROS2 launch file for complete system startup│   ├── lane_detector.py            # Lane detection pipeline
-
-- Unit tests and integration tests│   ├── control_filters.py          # Filters and utilities
-
-- Performance profiling and optimization│   ├── demo_lane.py               # Demo/testing node
-
-- Support for additional camera models│   ├── command.txt
-
-- Real-time parameter tuning service│   └── preprocess_img/
-
-- Machine learning-based lane detection├── launch/                  # ROS2 launch files
-
-- Multi-lane tracking and path planning├── resource/               # Package resources
-
-- Sensor fusion (IMU, encoders, lidar)└── test/                   # Unit tests
-
-- Web dashboard for monitoring```
-
-
-
-## Improvements in v1.0.0## Improvements in v1.0.0
-
-
-
-### Code Organization### Code Organization
-
-- Simplified directory structure (removed nested pkg_imagproc)- Separated filter classes into dedicated module (control_filters.py)
-
-- Clearer node names for easy identification- Added comprehensive type hints throughout
-
-- Removed unused temporary files and directories- Better method organization with clear sections (initialization, callbacks, utilities)
-
-- Organized utility modules for reusability- Professional docstrings for all classes and methods
-
-
-
-### Naming Convention### Node Refactoring
-
-- Package: `vision_navigation` (descriptive, semantic)- node_cam1_d415_stream.py: Better error handling, cleaner initialization, type hints
-
-- Nodes:- node_cam1_nav_process.py: Improved frame validation, better logging, visualization helper
-
-  - `camera_stream` (instead of node_cam1_d415_stream)- node_rover_ctl.py: Clearer PID implementation, buffer warmup logic, better status output
-
-  - `lane_detection` (instead of node_cam1_nav_process)
-
-  - `steering_control` (instead of node_rover_ctl)### Documentation
-
-- Entry points reflect clear functionality- Professional README with complete architecture overview
-
-- Parameter documentation and tuning guide
-
-### Code Quality- Troubleshooting section with common issues
-
-- Type hints throughout- CSV log format documentation
-
-- Comprehensive docstrings- Sign convention documentation
-
-- Professional documentation
-
-- Consistent error handling### Package Metadata
-
-- Resource cleanup and lifecycle management- Updated version to 1.0.0
-
-- Improved package description
-
-### Maintainability- Corrected entry point naming
-
-- Logical file organization- Consistent Python 3 usage
-
-- Extracted reusable components
-
-- Better separation of concerns## Future Enhancements
-
-- Clear code sections and comments
-
-- ROS2 launch file for complete system startup
-
-## License- Unit tests for lane detection pipeline
-
-- Performance profiling and optimization
-
-Apache 2.0- Support for additional camera types (Raspberry Pi Camera v2)
-
-- Real-time parameter tuning via ROS2 parameter service
-
-## Support- Machine learning-based lane detection (neural network)
-
-- Multi-lane tracking and path planning
-
-For issues or documentation updates, refer to WORK_SESSION files in workspace root.- Sensor fusion (IMU, encoders, lidar)
-
+### Build
+- ament_python (ROS2 build system)
 
 ## License
 
 Apache 2.0
 
-## Support
+## Future Enhancements
 
-For issues or questions, refer to workspace documentation in WORK_SESSION files.
+- Unit tests for lane detection pipeline
+- Real-time parameter tuning via ROS2 parameter service
+- Performance profiling and optimization
+- Support for additional camera types
+- Machine learning-based lane detection
+- Multi-lane tracking and path planning
+- Sensor fusion (IMU, encoders, lidar)
