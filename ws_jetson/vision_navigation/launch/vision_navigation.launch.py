@@ -27,6 +27,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, LogInfo, TimerAction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch.actions import SetEnvironmentVariable
 
 from vision_navigation_pkg.config import (
     CameraConfig, LaneDetectionConfig, ControlConfig, SystemConfig
@@ -34,6 +35,11 @@ from vision_navigation_pkg.config import (
 
 
 def generate_launch_description():
+    # ==================== ROS2 Domain Configuration ====================
+    
+    # Set domain ID for vision navigation system (Domain 2: Chassis control and vision)
+    set_domain_id = SetEnvironmentVariable('ROS_DOMAIN_ID', '2')
+    
     # ==================== Launch Arguments (Auto-synced from config.py) ====================
     
     # Camera stream node parameters
@@ -205,6 +211,9 @@ def generate_launch_description():
     # ==================== Return Launch Description ====================
     
     return LaunchDescription([
+        # Set ROS2 domain for vision system
+        set_domain_id,
+        
         # Declare arguments
         camera_width,
         camera_height,

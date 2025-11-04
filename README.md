@@ -427,8 +427,8 @@ The system uses ROS2 domain isolation for performance optimization and modularit
 | Domain ID | Purpose | Nodes |
 |-----------|---------|-------|
 | **Default** | Base station communication | ws_base telemetry/telecommand |
-| **2** | Chassis control (publisher) | node_chassis_controller (publish only) |
-| **5** | Main rover domain | node_chassis_controller (subscribe), chassis-dynamics STM32, node_gnss_spresense, ws_jetson vision |
+| **2** | Chassis control and vision | node_chassis_controller (publish only), ws_jetson vision nodes |
+| **5** | Main rover domain | node_chassis_controller (subscribe), chassis-dynamics STM32, node_gnss_spresense |
 | **6** | Sensors domain | sensors-gnss STM32, node_chassis_sensors |
 
 **Domain Bridge:** `node_domain_bridge` translates messages between Domain 2 and Domain 5 for chassis control coordination.
