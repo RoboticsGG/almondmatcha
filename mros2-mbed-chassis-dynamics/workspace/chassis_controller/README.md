@@ -82,14 +82,186 @@ chassis_controller/
 
 ---
 
-## Build
+## Build Instructions
 
+### Prerequisites
+
+System Requirements:
+- Linux (Ubuntu 18.04 LTS or newer)
+- ARM GCC cross-compiler 10.3 or later
+- Mbed OS toolchain
+- CMake 3.19 or later
+- Python 3.8 or later
+- Git with submodule support
+
+Verify Installation:
 ```bash
-cd /home/yupi/almondmatcha/mros2-mbed-chassis-dynamics
-./build.bash all NUCLEO_F767ZI chassis_controller
+arm-none-eabi-gcc --version
+cmake --version
+python3 --version
 ```
 
-The build system automatically discovers all `.cpp` and `.h` files in this directory via CMake.
+### Quick Build
+
+Standard compilation:
+```bash
+cd /home/yupi/almondmatcha/mros2-mbed-chassis-dynamics
+sudo ./build.bash all NUCLEO_F767ZI chassis_controller
+```
+
+Output Artifacts:
+- Flash Binary: `build/NUCLEO_F767ZI/mros2-mbed.bin` (385.8 KB)
+- Intel HEX: `build/NUCLEO_F767ZI/mros2-mbed.hex`
+- Executable ELF: `build/NUCLEO_F767ZI/mros2-mbed.elf`
+
+Build Duration:
+- Incremental build: 2-3 seconds (only changed files recompiled)
+- First build: 5-10 minutes (all framework libraries compiled)
+
+### Build System Configuration
+
+The CMake build system automatically includes:
+- Application source files: `app.cpp`, `motor_control.cpp`, `led_status.cpp`
+- X-Nucleo-IKS4A1 IMU driver library
+- Mbed OS 6.x core and drivers
+- mROS2 v0.5.4 framework
+- All required header paths for modular compilation
+
+Module Source Files in CMakeLists.txt:
+```cmake
+set(APP_SRCS
+  workspace/${APP_NAME}/app.cpp
+  workspace/${APP_NAME}/motor_control.cpp
+  workspace/${APP_NAME}/led_status.cpp
+)
+```
+
+### Build Output Analysis
+
+Memory Summary:
+```
+Total Static RAM memory (data + bss): 104344 bytes
+Total Flash memory (text + data): 385788 bytes
+
+Module Breakdown:
+workspace/chassis_controller      2030 bytes flash, 389 bytes RAM
+libs/X-Nucleo-IKS4A1_mbedOS      1328 bytes flash
+mros2/embeddedRTPS              21156 bytes flash
+[Remaining: Mbed OS, lwIP, mbedTLS, etc.]
+```
+
+### Clean Build
+
+To rebuild from scratch:
+```bash
+cd /home/yupi/almondmatcha/mros2-mbed-chassis-dynamics
+rm -rf build/
+sudo ./build.bash all NUCLEO_F767ZI chassis_controller
+```
+
+### Build Troubleshooting
+
+Problem: `error: cannot access 'mros2': No such file or directory`
+Solution: Initialize Git submodules.
+```bash
+git submodule update --init --recursive
+```
+
+Problem: `arm-none-eabi-g++: command not found`
+Solution: Install the ARM GCC cross-compiler.
+```bash
+sudo apt-get install gcc-arm-none-eabi
+```
+
+Problem: `CMake Error: cmake version 3.18`
+Solution: Update CMake to version 3.19 or later.
+```bash
+sudo apt-get install --upgrade cmake
+```
+
+Problem: `undefined reference to 'motor_control_cpp'`
+Solution: Module source files not in CMakeLists.txt. Verify:
+```bash
+grep "motor_control.cpp" CMakeLists.txt
+grep "led_status.cpp" CMakeLists.txt
+```
+
+Problem: Build takes longer than expected on first run
+Solution: This is normal. First build compiles all framework libraries (Mbed OS, mROS2). Subsequent builds only recompile modified files and are much faster.
+
+### Customizing the Build
+
+Adding a New Module:
+
+1. Create header and implementation files:
+```bash
+touch workspace/chassis_controller/gripper_control.h
+touch workspace/chassis_controller/gripper_control.cpp
+```
+
+2. Add to CMakeLists.txt in the project root:
+```cmake
+set(APP_SRCS
+  workspace/${APP_NAME}/app.cpp
+  workspace/${APP_NAME}/motor_control.cpp
+  workspace/${APP_NAME}/led_status.cpp
+  workspace/${APP_NAME}/gripper_control.cpp
+)
+```
+
+3. Rebuild:
+```bash
+sudo ./build.bash all NUCLEO_F767ZI chassis_controller
+```
+
+### Deployment and Flashing
+
+Connect Board via USB:
+```bash
+lsblk  # Identify DAPLINK mount point (typically /media/DAPLINK)
+```
+
+Copy Binary to Board:
+```bash
+cp build/NUCLEO_F767ZI/mros2-mbed.bin /media/DAPLINK/
+```
+
+Alternative: Using STLINK Programmer:
+```bash
+st-flash write build/NUCLEO_F767ZI/mros2-mbed.bin 0x8000000
+```
+
+Verify Flash Success:
+- LED on board blinks
+- Serial console at 115200 baud shows startup messages
+- Board resets automatically
+
+Monitor Serial Output:
+```bash
+minicom -D /dev/ttyACM0 -b 115200
+# Or:
+screen /dev/ttyACM0 115200
+```
+
+### Incremental Development Workflow
+
+For faster iteration during development:
+
+```bash
+# 1. Edit a module (e.g., motor control)
+nano workspace/chassis_controller/motor_control.cpp
+
+# 2. Rebuild (only modified files recompiled, ~2-3 seconds)
+sudo ./build.bash all NUCLEO_F767ZI chassis_controller
+
+# 3. Flash to board
+cp build/NUCLEO_F767ZI/mros2-mbed.bin /media/DAPLINK/
+
+# 4. Monitor output
+minicom -D /dev/ttyACM0 -b 115200
+```
+
+This cycle typically takes less than 10 seconds per iteration.
 
 ---
 
