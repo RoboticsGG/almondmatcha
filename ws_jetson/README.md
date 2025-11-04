@@ -83,6 +83,40 @@ source install/setup.bash
 - **ROS logs**: `ws_jetson/log/`
 - **Data logs**: `ws_jetson/logs/`
 
+## Build Scripts
+
+To simplify building the workspace, two scripts are provided:
+
+### Clean Build Script
+
+Use this script to remove all previous build, install, and log artefacts before building:
+
+```bash
+./build_clean.sh
+```
+- Removes `build/`, `install/`, and `log/` directories before building
+- Sources ROS2 setup if available
+- Runs `colcon build --symlink-install`
+- Recommended for a fresh build after major changes
+
+### Incremental Build Script
+
+Use this script for a regular build that preserves previous build artefacts:
+
+```bash
+./build_inc.sh
+```
+- Does not remove old build artefacts
+- Sources ROS2 setup if available
+- Runs `colcon build --symlink-install`
+- Recommended for quick rebuilds after minor changes
+
+Both scripts are located in the workspace root (`ws_jetson/`). Make sure they are executable:
+
+```bash
+chmod +x build_clean.sh build_inc.sh
+```
+
 ## Running
 
 ### Individual Node Execution
