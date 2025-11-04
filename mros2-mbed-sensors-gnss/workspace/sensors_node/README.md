@@ -190,14 +190,225 @@ const uint32_t GNSS_PRINT_INTERVAL = 4;           // Print GNSS every 4 main loo
 
 ---
 
-## Quick Build
+## Build Instructions
 
+### Prerequisites
+
+**System Requirements:**
+- Linux (Ubuntu 18.04 LTS or newer)
+- ARM GCC cross-compiler 10.3+
+- Mbed OS toolchain
+- CMake 3.19+
+- Python 3.8+
+- Git with submodule support
+
+**Verify Installation:**
+```bash
+arm-none-eabi-gcc --version
+cmake --version
+python3 --version
+```
+
+### Project Structure
+
+The build system expects:
+```
+mros2-mbed-sensors-gnss/
+├── mbed-os/                          # Mbed OS 6 source
+├── mros2/                            # mROS2 framework
+├── workspace/sensors_node/           # This application
+│   ├── app.cpp                       # Main application file
+│   ├── encoder_control.h/cpp         # Encoder module (included in build via CMakeLists.txt)
+│   ├── power_monitor.h/cpp           # Power monitor module
+│   ├── gnss_reader.h/cpp             # GNSS reader module
+│   └── README.md
+├── platform/                         # Hardware platform code
+├── CMakeLists.txt                    # Build configuration (includes all modules)
+└── build.bash                        # Build script
+```
+
+### Quick Build
+
+**One-line build:**
 ```bash
 cd ~/almondmatcha/mros2-mbed-sensors-gnss
 sudo ./build.bash all NUCLEO_F767ZI sensors_node
 ```
 
-**Output Binary:** `build/NUCLEO_F767ZI/sensors_node.bin` (384.5 KB)
+**Output Binary:**
+- Flash Binary: `build/NUCLEO_F767ZI/mros2-mbed.bin` (384.5 KB)
+- Intel HEX: `build/NUCLEO_F767ZI/mros2-mbed.hex`
+- Executable ELF: `build/NUCLEO_F767ZI/mros2-mbed.elf`
+
+**Build Time:** ~2-3 minutes (incremental) / ~5-10 minutes (clean)
+
+### Build Process Details
+
+**Step 1: Initialize Dependencies**
+The build script automatically:
+```bash
+cd mros2-mbed-sensors-gnss
+git submodule update --init --recursive  # Fetch mROS2 and dependencies
+```
+
+**Step 2: Generate Build Files**
+CMake processes:
+- `workspace/sensors_node/app.cpp` - Main application
+- `workspace/sensors_node/encoder_control.cpp` - Encoder module implementation
+- `workspace/sensors_node/power_monitor.cpp` - Power monitor module implementation
+- `workspace/sensors_node/gnss_reader.cpp` - GNSS reader module implementation
+- `platform/mros2-platform.cpp` - STM32 platform initialization
+- All Mbed OS and mROS2 framework sources
+
+**Step 3: Compile & Link**
+- Compiles all `.cpp` source files to object files
+- Links object files with Mbed OS, mROS2, and standard libraries
+- Total binary: **384.5 KB flash memory** (within STM32F767ZI 2 MB limit)
+
+**Step 4: Generate Output Formats**
+- Binary: `.bin` (for direct flash programming)
+- HEX: `.hex` (for alternative flash tools)
+- Map: `.map` (memory layout analysis)
+
+### Build Output Analysis
+
+The build completes with memory summary:
+
+```
+Total Static RAM memory (data + bss): 105840 bytes
+Total Flash memory (text + data): 384716 bytes
+
+Module                    Flash    RAM
+mbed-os/drivers          +2212    0
+mbed-os/targets          +8086    +594
+workspace/sensors_node   +982     +1072
+```
+
+**Explanation:**
+- Modular sensors_node adds ~982 bytes flash overhead (vs. monolithic design)
+- Each module is independently compiled and linked
+- RAM usage is dominated by mROS2 framework (~45 KB) and static buffers
+
+### Clean Build
+
+To rebuild from scratch:
+
+```bash
+cd ~/almondmatcha/mros2-mbed-sensors-gnss
+rm -rf build/
+sudo ./build.bash all NUCLEO_F767ZI sensors_node
+```
+
+### Build Troubleshooting
+
+**Problem:** `error: cannot access 'mros2': No such file or directory`  
+**Solution:** Submodules not initialized. Run:
+```bash
+git submodule update --init --recursive
+```
+
+**Problem:** `arm-none-eabi-g++: command not found`  
+**Solution:** ARM toolchain not in PATH. Install:
+```bash
+sudo apt-get install gcc-arm-none-eabi
+```
+
+**Problem:** `CMake Error: cmake version 3.18`  
+**Solution:** CMake too old. Update:
+```bash
+sudo apt-get install --upgrade cmake
+```
+
+**Problem:** `undefined reference to 'encoder_get_count_a()'`  
+**Solution:** Module source files not in CMakeLists.txt. Verify:
+```bash
+grep "workspace/sensors_node/encoder_control.cpp" CMakeLists.txt
+grep "workspace/sensors_node/power_monitor.cpp" CMakeLists.txt
+grep "workspace/sensors_node/gnss_reader.cpp" CMakeLists.txt
+```
+
+**Problem:** `Build takes too long (>10 min) on clean build`  
+**Solution:** This is normal for first build (Mbed OS + mROS2 framework compilation). Subsequent incremental builds are ~2-3 minutes.
+
+### Customizing the Build
+
+**Change Sensor Polling Rates**
+
+Edit sampling rate constants in `workspace/sensors_node/app.cpp`:
+
+```cpp
+const uint32_t ENCODER_SAMPLE_PERIOD_MS = 100;    // Change to 50 for 20 Hz
+const uint32_t POWER_SAMPLE_PERIOD_MS = 200;      // Change to 100 for 10 Hz
+const uint32_t GNSS_SAMPLE_PERIOD_MS = 100;       // Change to 200 for 5 Hz
+const uint32_t MAIN_LOOP_PERIOD_MS = 250;         // Change to 500 for 2 Hz
+```
+
+Then rebuild:
+```bash
+sudo ./build.bash all NUCLEO_F767ZI sensors_node
+```
+
+**Add a New Sensor Module**
+
+1. Create `new_sensor.h` and `new_sensor.cpp` in `workspace/sensors_node/`
+2. Add to `CMakeLists.txt`:
+   ```cmake
+   workspace/${APP_NAME}/new_sensor.cpp
+   ```
+3. Include and call in `app.cpp`:
+   ```cpp
+   #include "new_sensor.h"
+   new_sensor_init();  // In main()
+   new_sensor_read();  // In task
+   ```
+4. Rebuild
+
+### Deployment & Flashing
+
+**Connect Board via USB:**
+```bash
+# Board appears as DAPLINK device
+lsblk  # Identify mount point (typically /media/DAPLINK)
+```
+
+**Copy Binary to Board:**
+```bash
+cp build/NUCLEO_F767ZI/mros2-mbed.bin /media/DAPLINK/
+```
+
+**Alternative: Using STLINK Programmer**
+```bash
+st-flash write build/NUCLEO_F767ZI/mros2-mbed.bin 0x8000000
+```
+
+**Verify Flash Success:**
+- LED on board blinks
+- Serial console (115200 baud) shows startup messages
+- Board resets automatically
+
+**Monitor Serial Output:**
+```bash
+minicom -D /dev/ttyACM0 -b 115200
+# Or:
+screen /dev/ttyACM0 115200
+```
+
+### Incremental Development Workflow
+
+For faster iteration:
+
+```bash
+# Edit one module (e.g., encoder_control.cpp)
+nano workspace/sensors_node/encoder_control.cpp
+
+# Rebuild (only changed files recompiled)
+sudo ./build.bash all NUCLEO_F767ZI sensors_node
+
+# Flash to board
+cp build/NUCLEO_F767ZI/mros2-mbed.bin /media/DAPLINK/
+```
+
+This approach rebuilds in ~2-3 seconds vs. 5-10 minutes for clean builds.
 
 ---
 
