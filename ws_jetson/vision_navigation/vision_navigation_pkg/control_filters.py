@@ -15,7 +15,7 @@ Date: November 4, 2025
 """
 
 from collections import deque
-from typing import Deque, Optional
+from typing import Deque, Optional, Tuple
 import numpy as np
 
 
@@ -133,33 +133,48 @@ def pid_controller(
     kp: float,
     ki: float,
     kd: float,
-    integral: float,
+    integral_state: float,
     last_error: float,
-    dt: float
-) -> tuple:
+    dt: float,
+    integral_limit: float = 200.0
+) -> Tuple[float, float, float]:
     """
-    PID controller calculation.
+    PID controller calculation with anti-windup.
+    
+    Implements standard PID control with integral anti-windup saturation
+    to prevent integrator windup during sustained errors.
+    
+    Control law: u = kp*e + ki*∫e*dt + kd*de/dt
     
     Args:
-        error: Current error
-        kp: Proportional gain
-        ki: Integral gain
-        kd: Derivative gain
-        integral: Accumulated integral term
-        last_error: Previous error value
-        dt: Time delta (seconds)
+        error: Current control error
+        kp: Proportional gain (units: output/error)
+        ki: Integral gain (units: output/(error*sec))
+        kd: Derivative gain (units: output*sec/error)
+        integral_state: Accumulated integral term from previous step
+        last_error: Previous error value for derivative calculation
+        dt: Time delta between samples (seconds)
+        integral_limit: Anti-windup saturation limit (default: 200.0)
         
     Returns:
-        Tuple: (control_output, new_integral, new_last_error)
+        Tuple of:
+            - control_output (float): PID output signal
+            - new_integral (float): Updated integral state for next step
+            - current_error (float): Current error (for next iteration)
     """
-    # Integral term
-    integral += error * dt
-    integral = clamp(integral, -200, 200)
+    # ===== Integral Term (with anti-windup) =====
+    integral_state += error * dt
+    integral_state = clamp(integral_state, -integral_limit, integral_limit)
 
-    # Derivative term
-    d_term = (error - last_error) / dt if dt > 1e-6 else 0.0
+    # ===== Derivative Term (with zero-division protection) =====
+    if dt > 1e-6:
+        derivative_term = (error - last_error) / dt
+    else:
+        derivative_term = 0.0
 
-    # Control output
-    u = (kp * error) + (ki * integral) + (kd * d_term)
+    # ===== PID Control Output =====
+    proportional_term = kp * error
+    integral_term = ki * integral_state
+    control_output = proportional_term + integral_term + (kd * derivative_term)
 
-    return u, integral, error
+    return control_output, integral_state, error

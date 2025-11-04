@@ -1,45 +1,7 @@
 """
 Configuration Module - Vision Navigation System
 
-Centralizes all system parameters and tunable constants in one place.
-This follows Python best practices for configuration management.
-
-PYTHON CONFIGURATION BEST PRACTICES:
-====================================
-
-1. CENTRALIZED CONFIGURATION FILE (config.py):
-   - Single source of truth for all parameters
-   - Easy to modify without changing code
-   - Environment-specific variants possible
-   - Parameters can be loaded from files (YAML, JSON, etc.)
-
-2. FILE NAMING CONVENTIONS:
-   - config.py: System-wide constants and parameters
-   - params.py: Alternative name (also valid)
-   - settings.py: Alternative name (also valid)
-   - Best practice: Use config.py (most common)
-
-3. COMPARISON WITH OTHER LANGUAGES:
-   
-   C/C++:        #define MAX_VALUE 100
-   Java:         public static final int MAX_VALUE = 100;
-   C#/.NET:      const int MaxValue = 100;
-   Python:       MAX_VALUE = 100  (at module level)
-   YAML config:  max_value: 100
-   
-   Python advantage: Single file can define all constants with clear organization
-
-4. LOADING STRATEGIES:
-   a) Hardcoded constants (simplest, this file)
-   b) Environment variables: os.getenv('PARAM_NAME', default)
-   c) Config files (YAML, JSON): yaml.load(file)
-   d) Mix of above: defaults in config.py, overrides from environment
-
-5. CLASS VS MODULE-LEVEL:
-   - Module-level: CAMERA_WIDTH = 1280  (simple, flat)
-   - Class: class CameraConfig: WIDTH = 1280  (organized, grouped)
-   - Dataclass: @dataclass class CameraConfig: width: int = 1280 (typed)
-   - We use nested classes for organization
+Centralizes all system parameters and tunable constants.
 
 Author: Vision Navigation System
 Date: November 4, 2025
@@ -275,17 +237,9 @@ class SystemConfig:
 # ===================== HELPER: CONFIGURATION OVERRIDE ======================
 
 def override_from_environment():
-    """
-    Override config values from environment variables.
+    """Override config values from environment variables.
     
-    Usage:
-        Set: export CAMERA_WIDTH=640
-        Get: CameraConfig.WIDTH will be 640
-    
-    Pattern: MODULENAME_PARAMNAME
-    Example: CAMERA_WIDTH, CONTROL_K_P, etc.
-    
-    NOTE: This is optional. Use only if you need environment-based configuration.
+    Pattern: MODULENAME_PARAMNAME (e.g., CAMERA_WIDTH, CONTROL_K_P)
     """
     import os
     
@@ -306,60 +260,10 @@ def override_from_environment():
         ControlConfig.K_D = float(os.environ["CONTROL_K_D"])
 
 
-# ===================== CONFIGURATION USAGE EXAMPLES =====================
+
 
 if __name__ == "__main__":
-    """
-    EXAMPLE: How to use this configuration module
-    
-    In your node file:
-    
-        from vision_navigation_pkg.config import CameraConfig, ControlConfig
-        
-        class MyNode(Node):
-            def __init__(self):
-                super().__init__('my_node')
-                
-                # Access configuration
-                width = CameraConfig.WIDTH
-                fps = CameraConfig.FPS
-                kp = ControlConfig.K_P
-                
-                # Use helper methods
-                resolution = CameraConfig.get_resolution()  # (1280, 720)
-                gains = ControlConfig.get_pid_gains()       # {"kp": 4.0, ...}
-    
-    BENEFITS:
-    
-    1. CENTRALIZED: All parameters in one place
-    2. EASY MODIFICATION: Change once, affects everywhere
-    3. TYPE SAFE: Python IDE provides autocomplete
-    4. DOCUMENTED: Each parameter has clear purpose
-    5. VERSIONABLE: Track parameter changes in git
-    6. TESTABLE: Easy to create test configurations
-    7. REPRODUCIBLE: Same parameters for each run
-    
-    COMPARISON WITH OTHER APPROACHES:
-    
-    BAD (scattered hardcoding):
-        def camera_node():
-            width = 1280  # Magic number!
-            fps = 30
-            
-    OKAY (ROS parameters):
-        self.declare_parameter('width', 1280)
-        width = self.get_parameter('width').value
-        
-    GOOD (this approach):
-        from vision_navigation_pkg.config import CameraConfig
-        width = CameraConfig.WIDTH  # Clear, documented, central
-    
-    BEST (combination):
-        # Start with defaults from config.py
-        # Override with ROS parameters if provided
-        width = self.get_parameter('width').value or CameraConfig.WIDTH
-    """
-    
+    """Display configuration values"""
     print("Vision Navigation System Configuration")
     print("=" * 50)
     print(f"\nCamera Configuration:")

@@ -1,47 +1,8 @@
 """
 Helper Functions Module - Vision Navigation System
 
-Centralizes utility functions used across multiple nodes and modules.
-This follows Python best practices for code organization and reusability.
-
-PYTHON HELPERS BEST PRACTICES:
-==============================
-
-1. ORGANIZATION:
-   - Separate utility/helper functions from business logic
-   - Group related helpers by functionality
-   - Create dedicated modules for each category
-
-2. FILE NAMING:
-   - helpers.py: General-purpose utilities (common choice)
-   - utils.py: Utilities (also valid, slightly different connotation)
-   - tools.py: Tool functions
-   - common.py: Commonly used functions
-   - Best practice: Use helpers.py for domain-specific, utils.py for general
-
-3. COMPARISON WITH OTHER LANGUAGES:
-   
-   C/C++:        util.h / util.cpp
-   Java:         UtilityClass.java, *Helper.java
-   C#/.NET:      Helpers.cs, Extensions.cs
-   Python:       helpers.py, utils.py
-   
-   Python advantage: Modules are first-class, don't need wrapper classes
-
-4. TYPES OF HELPER FUNCTIONS:
-   a) Conversion helpers: Convert data between formats
-   b) Validation helpers: Check data validity
-   c) Math helpers: Mathematical operations
-   d) I/O helpers: File/stream operations
-   e) Logging helpers: Structured logging
-   f) ROS helpers: ROS-specific utilities
-
-5. BEST PRACTICES:
-   - Single responsibility: Each function does one thing well
-   - Pure functions: No side effects when possible
-   - Type hints: Always include type annotations
-   - Documentation: Every function has a docstring
-   - Testing: Easy to unit test (no complex dependencies)
+Centralizes utility functions for image processing, validation, math,
+logging, and timing operations used across multiple nodes.
 
 Author: Vision Navigation System
 Date: November 4, 2025
@@ -575,42 +536,9 @@ def create_float_array_message(data: List[float]) -> 'Float32MultiArray':
     return msg
 
 
-# ===================== USAGE EXAMPLE =====================
+
 
 if __name__ == "__main__":
-    """
-    EXAMPLE: How to use helper functions
-    
-    In your node file:
-    
-        from vision_navigation_pkg import helpers
-        
-        # Math helpers
-        clamped_value = helpers.clamp(150, -100, 100)  # 100
-        
-        # Image helpers
-        resized_img = helpers.resize_image(img, 640, maintain_aspect=True)
-        
-        # Logging helpers
-        success, msg = helpers.setup_csv_logging("logs/data.csv", ["time", "value"])
-        if success:
-            helpers.log_csv_row("logs/data.csv", [time.time(), 42.5])
-        
-        # Timing helpers
-        timer = helpers.Timer("processing")
-        timer.start()
-        # ... do work ...
-        elapsed = timer.stop()
-        print(timer)  # "processing: 125.34ms"
-    
-    BENEFITS:
-    
-    1. CODE REUSE: Use same function in multiple nodes
-    2. CONSISTENCY: All nodes use same helper logic
-    3. TESTING: Easy to unit test helper functions
-    4. MAINTENANCE: Fix bug once, benefits all nodes
-    5. CLARITY: Self-documenting function names
-    """
-    
+    """Display helper functions info"""
     print("Helper Functions Module Loaded")
     print("Usage: from vision_navigation_pkg.helpers import <function_name>")

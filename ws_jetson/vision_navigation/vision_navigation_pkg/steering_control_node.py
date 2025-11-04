@@ -184,7 +184,8 @@ class RoverControlNode(Node):
             self.k_p, self.k_i, self.k_d,
             self.integral,
             self.last_error,
-            dt
+            dt,
+            integral_limit=200.0
         )
 
         # ===== Steering Command =====
