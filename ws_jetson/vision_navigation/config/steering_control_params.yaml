@@ -1,0 +1,21 @@
+# Steering Control Node Parameters
+# Vision Navigation System - Control Configuration
+# Date: November 4, 2025
+
+steering_control:
+  ros__parameters:
+    # Error weights (combined error: e = k_e1*theta + k_e2*b)
+    k_e1: 1.0                    # Weight on heading error (theta)
+    k_e2: 0.1                    # Weight on lateral offset (b)
+    
+    # PID gains (control law: u = kp*e + ki*∫e*dt + kd*de/dt)
+    k_p: 4.0                     # Proportional gain
+    k_i: 0.0                     # Integral gain
+    k_d: 0.0                     # Derivative gain
+    
+    # Filtering
+    ema_alpha: 0.05              # Exponential moving average smoothing
+    
+    # Output saturation
+    steer_max_deg: 60.0          # Maximum steering angle (±degrees)
+    steer_when_lost: 0.0         # Steering when lane not detected

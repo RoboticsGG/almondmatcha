@@ -117,6 +117,113 @@ Both scripts are located in the workspace root (`ws_jetson/`). Make sure they ar
 chmod +x build_clean.sh build_inc.sh
 ```
 
+## Configuration
+
+The system uses YAML configuration files for all runtime parameters, following ROS2 best practices.
+
+### Configuration Files
+
+Located in `vision_navigation/config/`:
+
+**Complete System Configurations:**
+- `vision_nav_headless.yaml` - Production/SSH mode (all GUI disabled)
+- `vision_nav_gui.yaml` - Debug/test mode (all GUI enabled)
+
+**Individual Node Configurations:**
+- `camera_params.yaml` - Camera stream parameters
+- `lane_detection_params.yaml` - Lane detection parameters
+- `steering_control_params.yaml` - Steering control parameters
+
+### Configuration Parameters
+
+**Camera Parameters** (camera_params.yaml):
+```yaml
+camera_stream:
+  ros__parameters:
+    width: 1280              # Frame width in pixels
+    height: 720              # Frame height in pixels
+    fps: 30                  # Frames per second
+    open_cam: false          # Show camera preview window
+    enable_depth: false      # Enable D415 depth stream
+    video_path: ""           # Video file path (empty = use camera)
+    loop_video: true         # Loop video playback
+    json_config: ""          # RealSense advanced mode JSON config
+```
+
+**Lane Detection Parameters** (lane_detection_params.yaml):
+```yaml
+lane_detection:
+  ros__parameters:
+    show_window: false       # Show lane visualization window
+```
+
+**Steering Control Parameters** (steering_control_params.yaml):
+```yaml
+steering_control:
+  ros__parameters:
+    k_e1: 1.0               # Weight on heading error (theta)
+    k_e2: 0.1               # Weight on lateral offset (b)
+    k_p: 4.0                # PID proportional gain
+    k_i: 0.0                # PID integral gain
+    k_d: 0.0                # PID derivative gain
+    ema_alpha: 0.05         # Exponential moving average smoothing
+    steer_max_deg: 60.0     # Maximum steering angle (degrees)
+    steer_when_lost: 0.0    # Steering when lane not detected
+```
+
+### Modifying Configuration
+
+**Method 1: Edit YAML files (Recommended)**
+```bash
+nano vision_navigation/config/steering_control_params.yaml
+./build_inc.sh
+```
+
+**Method 2: Override at runtime**
+```bash
+ros2 launch vision_navigation vision_nav_gui.launch.py k_p:=5.0 k_i:=0.1
+```
+
+**Method 3: Load custom config file**
+```bash
+ros2 run vision_navigation steering_control --ros-args \
+  --params-file $(ros2 pkg prefix vision_navigation)/share/vision_navigation/config/my_custom.yaml
+```
+
+**Method 4: Dynamic parameter update (while running)**
+```bash
+ros2 param set /steering_control k_p 5.0
+ros2 param dump /steering_control
+```
+
+### Creating Custom Configurations
+
+Copy and modify existing config:
+```bash
+cd vision_navigation/config
+cp vision_nav_headless.yaml my_custom_config.yaml
+nano my_custom_config.yaml
+```
+
+Then rebuild:
+```bash
+cd ~/almondmatcha/ws_jetson
+./build_inc.sh
+```
+
+### Verifying Configuration
+
+Check installed configs:
+```bash
+ls $(ros2 pkg prefix vision_navigation)/share/vision_navigation/config/
+```
+
+Check loaded parameters (while node is running):
+```bash
+ros2 param list
+ros2 param get /camera_stream width
+```
+
 ## Running
 
 ### GUI Mode vs Headless Mode

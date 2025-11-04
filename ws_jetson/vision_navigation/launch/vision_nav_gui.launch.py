@@ -22,9 +22,10 @@ Date: November 4, 2025
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, LogInfo, TimerAction
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch.actions import SetEnvironmentVariable
+from launch_ros.substitutions import FindPackageShare
 
 from vision_navigation_pkg.config import (
     CameraConfig, LaneDetectionConfig, ControlConfig
@@ -34,6 +35,13 @@ from vision_navigation_pkg.config import (
 def generate_launch_description():
     # ==================== ROS2 Domain Configuration ====================
     set_domain_id = SetEnvironmentVariable('ROS_DOMAIN_ID', '2')
+    
+    # ==================== Config File Path ====================
+    config_file = PathJoinSubstitution([
+        FindPackageShare('vision_navigation'),
+        'config',
+        'vision_nav_gui.yaml'
+    ])
     
     # ==================== Launch Arguments ====================
     
@@ -98,16 +106,7 @@ def generate_launch_description():
         name='camera_stream',
         output='screen',
         emulate_tty=True,
-        parameters=[{
-            'width': LaunchConfiguration('camera_width'),
-            'height': LaunchConfiguration('camera_height'),
-            'fps': LaunchConfiguration('camera_fps'),
-            'open_cam': True,  # GUI ENABLED
-            'enable_depth': LaunchConfiguration('enable_depth'),
-            'video_path': LaunchConfiguration('video_path'),
-            'loop_video': LaunchConfiguration('loop_video'),
-            'json_config': LaunchConfiguration('json_config'),
-        }],
+        parameters=[config_file],
     )
     
     lane_detection_node = Node(
@@ -116,9 +115,7 @@ def generate_launch_description():
         name='lane_detection',
         output='screen',
         emulate_tty=True,
-        parameters=[{
-            'show_window': True,  # GUI ENABLED
-        }],
+        parameters=[config_file],
     )
     
     steering_control_node = Node(
@@ -127,16 +124,7 @@ def generate_launch_description():
         name='steering_control',
         output='screen',
         emulate_tty=True,
-        parameters=[{
-            'k_e1': LaunchConfiguration('k_e1'),
-            'k_e2': LaunchConfiguration('k_e2'),
-            'k_p': LaunchConfiguration('k_p'),
-            'k_i': LaunchConfiguration('k_i'),
-            'k_d': LaunchConfiguration('k_d'),
-            'ema_alpha': LaunchConfiguration('ema_alpha'),
-            'steer_max_deg': LaunchConfiguration('steer_max_deg'),
-            'steer_when_lost': LaunchConfiguration('steer_when_lost'),
-        }],
+        parameters=[config_file],
     )
     
     # ==================== Launch Sequence ====================
