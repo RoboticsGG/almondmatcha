@@ -1,4 +1,0 @@
-[WARN] [1762137831.526544972] [rclcpp]: logging was initialized more than once
-[WARN] [1762137831.677868476] [rclcpp]: logging was initialized more than once
-[INFO] [1762137831.793663227] [chassis_controller_node]: Chassis Controller initialized (Subscriber: Domain 2, Publisher: Domain 5)
-[INFO] [1762137849.929661642] [rclcpp]: signal_handler(signum=2)

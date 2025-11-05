@@ -1,3 +1,0 @@
-[INFO] [1762137831.268463764] [chassis_imu_node]: Subscribed to /tp_imu_data_d5
-[INFO] [1762137831.270378971] [chassis_imu_node]: Logging to: /home/curry/almondmatcha/runs/logs/chassis_imu_20251103_094351.csv
-[INFO] [1762137849.930167504] [rclcpp]: signal_handler(signum=2)

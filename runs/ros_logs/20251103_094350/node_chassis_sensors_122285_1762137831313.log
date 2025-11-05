@@ -1,3 +1,0 @@
-[INFO] [1762137831.449749100] [chassis_sensors_node]: Subscribed to /tp_sensdata_d5
-[INFO] [1762137831.451567828] [chassis_sensors_node]: Logging to: /home/curry/almondmatcha/runs/logs/chassis_sensors_20251103_094351.csv
-[INFO] [1762137849.929658716] [rclcpp]: signal_handler(signum=2)
