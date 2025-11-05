@@ -1,19 +1,17 @@
-#ifndef _GEOMETRY_MSGS_MSG_TWIST_H
-#define _GEOMETRY_MSGS_MSG_TWIST_H
+#ifndef _.._MSG_MSGS_IFACES_H
+#define _.._MSG_MSGS_IFACES_H
 
 #include <iostream>
 #include <string>
 #include <cstring>
-#include "geometry_msgs/msg/vector3.hpp"
-#include "geometry_msgs/msg/vector3.hpp"
 
 using namespace std;
 
-namespace geometry_msgs
+namespace ..
 {
 namespace msg
 {
-class Twist
+class msgs_ifaces
 {
 public:
   uint32_t cntPub = 0;
@@ -82,9 +80,17 @@ public:
   }
 
   
-  geometry_msgs::msg::Vector3 linear;
+   ;
   
-  geometry_msgs::msg::Vector3 angular;
+   ;
+  
+  int32_t mt_lf_encode_msg;
+  
+  int32_t mt_rt_encode_msg;
+  
+  float sys_current_msg;
+  
+  float sys_volt_msg;
   
 
   uint32_t copyToBuf(uint8_t *addrPtr)
@@ -95,18 +101,90 @@ public:
     
     
     
-    tmpPub = linear.copyToBuf(addrPtr);
-    cntPub += tmpPub;
-    addrPtr += tmpPub;
+    memcpy(addrPtr, &, );
+    addrPtr += ;
+    cntPub += ;
+
     
     
     
     
+    memcpy(addrPtr, &, );
+    addrPtr += ;
+    cntPub += ;
+
     
-    tmpPub = angular.copyToBuf(addrPtr);
-    cntPub += tmpPub;
-    addrPtr += tmpPub;
     
+    
+    
+    if (cntPub % 4 > 0)
+    {
+      for (uint32_t i = 0; i < (4 - (cntPub % 4)); i++)
+      {
+        *addrPtr = 0;
+        addrPtr += 1;
+      }
+      cntPub += 4 - (cntPub % 4);
+    }
+    
+    memcpy(addrPtr, &mt_lf_encode_msg, 4);
+    addrPtr += 4;
+    cntPub += 4;
+
+    
+    
+    
+    
+    if (cntPub % 4 > 0)
+    {
+      for (uint32_t i = 0; i < (4 - (cntPub % 4)); i++)
+      {
+        *addrPtr = 0;
+        addrPtr += 1;
+      }
+      cntPub += 4 - (cntPub % 4);
+    }
+    
+    memcpy(addrPtr, &mt_rt_encode_msg, 4);
+    addrPtr += 4;
+    cntPub += 4;
+
+    
+    
+    
+    
+    if (cntPub % 4 > 0)
+    {
+      for (uint32_t i = 0; i < (4 - (cntPub % 4)); i++)
+      {
+        *addrPtr = 0;
+        addrPtr += 1;
+      }
+      cntPub += 4 - (cntPub % 4);
+    }
+    
+    memcpy(addrPtr, &sys_current_msg, 4);
+    addrPtr += 4;
+    cntPub += 4;
+
+    
+    
+    
+    
+    if (cntPub % 4 > 0)
+    {
+      for (uint32_t i = 0; i < (4 - (cntPub % 4)); i++)
+      {
+        *addrPtr = 0;
+        addrPtr += 1;
+      }
+      cntPub += 4 - (cntPub % 4);
+    }
+    
+    memcpy(addrPtr, &sys_volt_msg, 4);
+    addrPtr += 4;
+    cntPub += 4;
+
     
     
 
@@ -122,20 +200,80 @@ public:
     
     
     
-    tmpSub = linear.copyFromBuf(addrPtr);
-    cntSub += tmpSub;
-    addrPtr += tmpSub;
-    
-
+    memcpy(&, addrPtr, );
+    addrPtr += ;
+    cntSub += ;
     
     
     
     
-    tmpSub = angular.copyFromBuf(addrPtr);
-    cntSub += tmpSub;
-    addrPtr += tmpSub;
+    memcpy(&, addrPtr, );
+    addrPtr += ;
+    cntSub += ;
     
-
+    
+    
+    
+    if (cntSub % 4 > 0)
+    {
+      for (uint32_t i = 0; i < (4 - (cntSub % 4)); i++)
+      {
+        addrPtr += 1;
+      }
+      cntSub += 4 - (cntSub % 4);
+    }
+    
+    memcpy(&mt_lf_encode_msg, addrPtr, 4);
+    addrPtr += 4;
+    cntSub += 4;
+    
+    
+    
+    
+    if (cntSub % 4 > 0)
+    {
+      for (uint32_t i = 0; i < (4 - (cntSub % 4)); i++)
+      {
+        addrPtr += 1;
+      }
+      cntSub += 4 - (cntSub % 4);
+    }
+    
+    memcpy(&mt_rt_encode_msg, addrPtr, 4);
+    addrPtr += 4;
+    cntSub += 4;
+    
+    
+    
+    
+    if (cntSub % 4 > 0)
+    {
+      for (uint32_t i = 0; i < (4 - (cntSub % 4)); i++)
+      {
+        addrPtr += 1;
+      }
+      cntSub += 4 - (cntSub % 4);
+    }
+    
+    memcpy(&sys_current_msg, addrPtr, 4);
+    addrPtr += 4;
+    cntSub += 4;
+    
+    
+    
+    
+    if (cntSub % 4 > 0)
+    {
+      for (uint32_t i = 0; i < (4 - (cntSub % 4)); i++)
+      {
+        addrPtr += 1;
+      }
+      cntSub += 4 - (cntSub % 4);
+    }
+    
+    memcpy(&sys_volt_msg, addrPtr, 4);
+    addrPtr += 4;
+    cntSub += 4;
     
     
 
@@ -199,7 +337,7 @@ public:
   }
 
 private:
-  std::string type_name = "geometry_msgs::msg::dds_::Twist";
+  std::string type_name = "..::msg::dds_::msgs_ifaces";
 };
 };
 }
@@ -207,10 +345,10 @@ private:
 namespace message_traits
 {
 template<>
-struct TypeName<geometry_msgs::msg::Twist*> {
+struct TypeName<..::msg::msgs_ifaces*> {
   static const char* value()
   {
-    return "geometry_msgs::msg::dds_::Twist_";
+    return "..::msg::dds_::msgs_ifaces_";
   }
 };
 }

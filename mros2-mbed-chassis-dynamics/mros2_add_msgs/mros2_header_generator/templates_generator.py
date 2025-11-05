@@ -12,7 +12,9 @@ pubMsgTypes = []
 subMsgTypes = []
 
 def toSnakeCase(string):
-    return re.sub("(.[A-Z])",lambda x:x.group(1)[0] + "_" +x.group(1)[1],string).lower()
+    # Insert underscore before uppercase letters, but not at the start or after underscores
+    s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', string)
+    return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
 
 def main():
     print('Generate template.hpp from mros2 app code file.')

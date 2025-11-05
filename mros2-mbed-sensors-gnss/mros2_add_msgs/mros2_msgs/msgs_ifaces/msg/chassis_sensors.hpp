@@ -1,5 +1,5 @@
-#ifndef _GEOMETRY_MSGS_MSG_POINT_H
-#define _GEOMETRY_MSGS_MSG_POINT_H
+#ifndef _MSGS_IFACES_MSG_CHASSIS_SENSORS_H
+#define _MSGS_IFACES_MSG_CHASSIS_SENSORS_H
 
 #include <iostream>
 #include <string>
@@ -7,11 +7,11 @@
 
 using namespace std;
 
-namespace geometry_msgs
+namespace msgs_ifaces
 {
 namespace msg
 {
-class Point
+class ChassisSensors
 {
 public:
   uint32_t cntPub = 0;
@@ -26,19 +26,16 @@ public:
                                   const uint32_t size,
                                   const T &data)
   {
-    uint32_t lenPad = (0 == (cntPub % sizeof(T))) ? 0 : (sizeof(T) - (cntPub % sizeof(T))); // this doesn't get along with float128.
+    uint32_t lenPad = (0 == (cntPub % sizeof(T))) ? 0 : (sizeof(T) - (cntPub % sizeof(T)));
     if (size < sizeof(T))
     {
-      // There are no enough space.
       return 0;
     }
-    // Put padding space
     for (int i = 0; i < lenPad; i++)
     {
       *addrPtr = 0;
       addrPtr += 1;
     }
-    // Store serialzed value.
     memcpy(addrPtr, &data, sizeof(T));
     addrPtr += sizeof(T);
 
@@ -66,7 +63,7 @@ public:
       cntLocalFrag += sizeof(uint32_t);
     }
 
-    uint32_t cntFrag = (cntPubMemberLocal - sizeof(uint32_t)); // cntPubMemberLocal > 4 here
+    uint32_t cntFrag = (cntPubMemberLocal - sizeof(uint32_t));
     uint32_t tmp = std::min(pubDataSize - cntFrag, size - cntLocalFrag);
     if (0 < tmp)
     {
@@ -80,11 +77,13 @@ public:
   }
 
   
-  double x;
+  int32_t mt_lf_encode_msg;
   
-  double y;
+  int32_t mt_rt_encode_msg;
   
-  double z;
+  float sys_current_msg;
+  
+  float sys_volt_msg;
   
 
   uint32_t copyToBuf(uint8_t *addrPtr)
@@ -93,60 +92,61 @@ public:
     uint32_t arraySize;
     uint32_t stringSize;
     
-    
-    
-    if (cntPub % 8 > 0)
+    // mt_lf_encode_msg (int32)
+    if (cntPub % 4 > 0)
     {
-      for (uint32_t i = 0; i < (8 - (cntPub % 8)); i++)
+      for (uint32_t i = 0; i < (4 - (cntPub % 4)); i++)
       {
         *addrPtr = 0;
         addrPtr += 1;
       }
-      cntPub += 8 - (cntPub % 8);
+      cntPub += 4 - (cntPub % 4);
     }
-    
-    memcpy(addrPtr, &x, 8);
-    addrPtr += 8;
-    cntPub += 8;
+    memcpy(addrPtr, &mt_lf_encode_msg, 4);
+    addrPtr += 4;
+    cntPub += 4;
 
-    
-    
-    
-    
-    if (cntPub % 8 > 0)
+    // mt_rt_encode_msg (int32)
+    if (cntPub % 4 > 0)
     {
-      for (uint32_t i = 0; i < (8 - (cntPub % 8)); i++)
+      for (uint32_t i = 0; i < (4 - (cntPub % 4)); i++)
       {
         *addrPtr = 0;
         addrPtr += 1;
       }
-      cntPub += 8 - (cntPub % 8);
+      cntPub += 4 - (cntPub % 4);
     }
-    
-    memcpy(addrPtr, &y, 8);
-    addrPtr += 8;
-    cntPub += 8;
+    memcpy(addrPtr, &mt_rt_encode_msg, 4);
+    addrPtr += 4;
+    cntPub += 4;
 
-    
-    
-    
-    
-    if (cntPub % 8 > 0)
+    // sys_current_msg (float32)
+    if (cntPub % 4 > 0)
     {
-      for (uint32_t i = 0; i < (8 - (cntPub % 8)); i++)
+      for (uint32_t i = 0; i < (4 - (cntPub % 4)); i++)
       {
         *addrPtr = 0;
         addrPtr += 1;
       }
-      cntPub += 8 - (cntPub % 8);
+      cntPub += 4 - (cntPub % 4);
     }
-    
-    memcpy(addrPtr, &z, 8);
-    addrPtr += 8;
-    cntPub += 8;
+    memcpy(addrPtr, &sys_current_msg, 4);
+    addrPtr += 4;
+    cntPub += 4;
 
-    
-    
+    // sys_volt_msg (float32)
+    if (cntPub % 4 > 0)
+    {
+      for (uint32_t i = 0; i < (4 - (cntPub % 4)); i++)
+      {
+        *addrPtr = 0;
+        addrPtr += 1;
+      }
+      cntPub += 4 - (cntPub % 4);
+    }
+    memcpy(addrPtr, &sys_volt_msg, 4);
+    addrPtr += 4;
+    cntPub += 4;
 
     return cntPub;
   }
@@ -157,55 +157,57 @@ public:
     uint32_t arraySize;
     uint32_t stringSize;
 
-    
-    
-    
-    if (cntSub % 8 > 0)
+    // mt_lf_encode_msg (int32)
+    if (cntSub % 4 > 0)
     {
-      for (uint32_t i = 0; i < (8 - (cntSub % 8)); i++)
+      for (uint32_t i = 0; i < (4 - (cntSub % 4)); i++)
       {
         addrPtr += 1;
       }
-      cntSub += 8 - (cntSub % 8);
+      cntSub += 4 - (cntSub % 4);
     }
+    memcpy(&mt_lf_encode_msg, addrPtr, 4);
+    addrPtr += 4;
+    cntSub += 4;
     
-    memcpy(&x, addrPtr, 8);
-    addrPtr += 8;
-    cntSub += 8;
-    
-    
-    
-    
-    if (cntSub % 8 > 0)
+    // mt_rt_encode_msg (int32)
+    if (cntSub % 4 > 0)
     {
-      for (uint32_t i = 0; i < (8 - (cntSub % 8)); i++)
+      for (uint32_t i = 0; i < (4 - (cntSub % 4)); i++)
       {
         addrPtr += 1;
       }
-      cntSub += 8 - (cntSub % 8);
+      cntSub += 4 - (cntSub % 4);
     }
+    memcpy(&mt_rt_encode_msg, addrPtr, 4);
+    addrPtr += 4;
+    cntSub += 4;
     
-    memcpy(&y, addrPtr, 8);
-    addrPtr += 8;
-    cntSub += 8;
-    
-    
-    
-    
-    if (cntSub % 8 > 0)
+    // sys_current_msg (float32)
+    if (cntSub % 4 > 0)
     {
-      for (uint32_t i = 0; i < (8 - (cntSub % 8)); i++)
+      for (uint32_t i = 0; i < (4 - (cntSub % 4)); i++)
       {
         addrPtr += 1;
       }
-      cntSub += 8 - (cntSub % 8);
+      cntSub += 4 - (cntSub % 4);
     }
+    memcpy(&sys_current_msg, addrPtr, 4);
+    addrPtr += 4;
+    cntSub += 4;
     
-    memcpy(&z, addrPtr, 8);
-    addrPtr += 8;
-    cntSub += 8;
-    
-    
+    // sys_volt_msg (float32)
+    if (cntSub % 4 > 0)
+    {
+      for (uint32_t i = 0; i < (4 - (cntSub % 4)); i++)
+      {
+        addrPtr += 1;
+      }
+      cntSub += 4 - (cntSub % 4);
+    }
+    memcpy(&sys_volt_msg, addrPtr, 4);
+    addrPtr += 4;
+    cntSub += 4;
 
     return cntSub;
   }
@@ -239,15 +241,14 @@ public:
 
   uint32_t calcRawTotalSize()
   {
-    // TODO: store template code here
     return 0;
   }
 
   uint32_t calcTotalSize()
   {
     uint32_t tmp;
-    tmp = 4 + calcRawTotalSize();                  // CDR encoding version.
-    tmp += (0 == (tmp % 4) ? 0 : (4 - (tmp % 4))); // Padding
+    tmp = 4 + calcRawTotalSize();
+    tmp += (0 == (tmp % 4) ? 0 : (4 - (tmp % 4)));
     return tmp;
   }
 
@@ -256,18 +257,16 @@ public:
     cntPub = 0;
     cntSub = 0;
     idxSerialized = 0;
-    // TODO: store template code here
     return;
   }
 
   FragCopyReturnType copyToFragBuf(uint8_t *addrPtr, uint32_t size)
   {
-    // TODO: store template code here
     return {false, 0};
   }
 
 private:
-  std::string type_name = "geometry_msgs::msg::dds_::Point";
+  std::string type_name = "msgs_ifaces::msg::dds_::ChassisSensors";
 };
 };
 }
@@ -275,10 +274,10 @@ private:
 namespace message_traits
 {
 template<>
-struct TypeName<geometry_msgs::msg::Point*> {
+struct TypeName<msgs_ifaces::msg::ChassisSensors*> {
   static const char* value()
   {
-    return "geometry_msgs::msg::dds_::Point_";
+    return "msgs_ifaces::msg::dds_::ChassisSensors_";
   }
 };
 }
