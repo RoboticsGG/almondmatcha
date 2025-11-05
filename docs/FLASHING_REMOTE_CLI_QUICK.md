@@ -82,3 +82,46 @@ If you want, I can add a small helper script to `scripts/remote_flash.sh` that:
 
 ---
 File created for quick reference: `docs/FLASHING_REMOTE_CLI_QUICK.md`
+
+Multiple boards attached to the same host
+----------------------------------------
+If more than one Nucleo/ST‑Link is attached to the remote PC, you must be explicit about which physical board (or probe) you program. Here are practical options in order of reliability:
+
+1) Prefer selecting the probe by serial (no unplug needed)
+   - Use `st-info --probe` (from libstlink) to list ST‑Link probes and their serials:
+     ```bash
+     st-info --probe
+     # Example output:
+     # Found 2 ST-Link probe(s)
+     #  - ST-Link 1 SN: 067000123456
+     #  - ST-Link 2 SN: 067000654321
+     ```
+   - Use OpenOCD and pass the serial to the interface config with `hla_serial`:
+     ```bash
+     openocd -f interface/stlink.cfg -c "hla_serial 067000123456" -f target/stm32f7x.cfg \
+       -c "init; reset init; program /path/to/mros2-mbed.bin 0x08000000 verify reset; exit"
+     ```
+   - STM32CubeProgrammer CLI also supports selecting the probe by serial (syntax varies by version). Example:
+     ```bash
+     STM32_Programmer_CLI -c port=SWD,@SN=067000123456 -d /path/to/mros2-mbed.bin 0x08000000
+     ```
+
+2) If your tools do not support serial selection, temporarily unplug the other board
+   - This is simple and guarantees the correct `st-flash`/OpenOCD target will be the only probe.
+   - Monitor `dmesg` while unplugging/replugging to confirm which device node or probe disappears/reappears.
+
+3) If the board exposes a mass‑storage device, identify it uniquely
+   - Mount points under `/run/media/$USER` or `/media/$USER` may include an ID or label. Query udev to get serial/model:
+     ```bash
+     MP="/run/media/$USER/MBED"   # replace with actual mount
+     DEV=$(findmnt -n -o SOURCE --target "$MP")   # e.g. /dev/sdb1
+     udevadm info --query=property --name="${DEV%[0-9]*}"
+     ```
+   - Look for `ID_SERIAL`, `ID_MODEL` or `ID_FS_LABEL` to disambiguate drives.
+
+Script usage notes
+------------------
+- The helper scripts added in `scripts/` (`remote_flash_chassis.sh`, `remote_flash_sensors.sh`) try Flow A first (mass‑storage copy) and fall back to `st-flash` if no mount is found. They do not currently accept CLI flags to pick a probe by serial.
+- If you need to target a specific ST‑Link without unplugging, use OpenOCD (with `hla_serial`) or STM32CubeProgrammer CLI (with `@SN=`) as shown above instead of the scripts.
+- If you prefer, I can update the scripts to accept `--mount <mountpoint>` and `--stlink-serial <serial>` options so you can program a specific device without unplugging. Tell me if you want that and I will implement it.
+
