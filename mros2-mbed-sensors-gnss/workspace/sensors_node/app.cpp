@@ -189,6 +189,17 @@ int main()
   mros2::Publisher PubSensData = 
     node.create_publisher<msgs_ifaces::msg::ChassisSensors>("tpc_chassis_sensors", 10);
 
+  // ===== DDS DISCOVERY COORDINATION FIX =====
+  // Wait for DDS/RTPS participant discovery to complete
+  // SPDP announcements sent every 1000ms, need at least 5-6 cycles
+  // for reliable discovery across all nodes (ws_rpi + ws_jetson + STM32s)
+  // This fixes intermittent "no messages received" issue by ensuring
+  // publishers/subscribers are fully matched before data transmission starts
+  MROS2_INFO("Waiting 6 seconds for DDS participant discovery...");
+  osDelay(6000);  // 6 seconds = 6 SPDP cycles for robust discovery
+  MROS2_INFO("Discovery wait complete - initializing sensors");
+  // ==========================================
+
   // ---- Initialize All Sensor Modules ----
   MROS2_INFO("Initializing sensor modules...");
   
