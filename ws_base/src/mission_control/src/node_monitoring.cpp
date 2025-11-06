@@ -84,31 +84,31 @@ private:
         
         // Mission status subscription
         sub_mission_active_ = this->create_subscription<std_msgs::msg::Bool>(
-            "/tpc_gnss_mission_active", 10,
+            "tpc_gnss_mission_active", 10,
             std::bind(&MissionMonitoringNode::on_mission_active, this, std::placeholders::_1)
         );
         
         // Remaining distance subscription
         sub_distance_remaining_ = this->create_subscription<std_msgs::msg::Float64>(
-            "/tpc_gnss_mission_remain_dist", 10,
+            "tpc_gnss_mission_remain_dist", 10,
             std::bind(&MissionMonitoringNode::on_distance_remaining, this, std::placeholders::_1)
         );
         
         // Target coordinates subscription
         sub_target_coords_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
-            "/tpc_rover_dest_coordinate", 10,
+            "tpc_rover_dest_coordinate", 10,
             std::bind(&MissionMonitoringNode::on_target_coordinates, this, std::placeholders::_1)
         );
         
         // Current GNSS position subscription
         sub_current_position_ = this->create_subscription<msgs_ifaces::msg::SpresenseGNSS>(
-            "/tpc_gnss_spresense", 10,
+            "tpc_gnss_spresense", 10,
             std::bind(&MissionMonitoringNode::on_current_position, this, std::placeholders::_1)
         );
         
-        // Rover control state subscription
+        // Rover control state subscription (via base bridge)
         sub_rover_control_ = this->create_subscription<msgs_ifaces::msg::ChassisCtrl>(
-            "/tpc_chassis_ctrl_d2", 10,
+            "tpc_chassis_cmd", 10,
             std::bind(&MissionMonitoringNode::on_rover_control, this, std::placeholders::_1)
         );
         
