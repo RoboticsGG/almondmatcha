@@ -187,14 +187,14 @@ class TopicConfig:
     """ROS2 topic names - follows tpc_* convention"""
     
     # Camera topics
-    RGB_STREAM = "/tpc_rover_d415_rgb"
-    DEPTH_STREAM = "/tpc_rover_d415_depth"
+    RGB_STREAM = "tpc_rover_d415_rgb"
+    DEPTH_STREAM = "tpc_rover_d415_depth"
     
     # Lane detection topics
-    LANE_PARAMETERS = "/tpc_rover_nav_lane"    # [theta, b, detected]
+    LANE_PARAMETERS = "tpc_rover_nav_lane"    # [theta, b, detected]
     
     # Control topics
-    STEERING_COMMAND = "/tpc_rover_fmctl"      # [steer_angle, detected]
+    STEERING_COMMAND = "tpc_rover_fmctl"      # [steer_angle, detected]
     
     @classmethod
     def get_all_topics(cls):

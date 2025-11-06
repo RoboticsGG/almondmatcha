@@ -76,7 +76,7 @@ class NavProcessNode(Node):
         # ===================== Subscriptions =====================
         self.sub_rgb = self.create_subscription(
             Image, 
-            '/tpc_rover_d415_rgb', 
+            'tpc_rover_d415_rgb', 
             self._on_rgb_frame,
             qos
         )
@@ -84,7 +84,7 @@ class NavProcessNode(Node):
         # ===================== Publishers =====================
         self.pub_lane = self.create_publisher(
             Float32MultiArray, 
-            '/tpc_rover_nav_lane', 
+            'tpc_rover_nav_lane', 
             10
         )
 
