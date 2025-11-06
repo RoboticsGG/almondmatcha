@@ -63,6 +63,8 @@ void gnss_reader_init() {
     
     // Give interface time to stabilize
     osDelay(100);
+    
+    printf("[GNSS] Starting reception test - waiting for data...\r\n");
 }
 
 // ============================================================================
@@ -74,7 +76,13 @@ size_t gnss_reader_read_nmea(char* output_buffer, size_t buffer_size) {
         return 0;  // Invalid parameters
     }
     
+    // Check if serial port is readable
+    if (!gnss_serial.readable()) {
+        return 0;  // No data available
+    }
+    
     // Read all available data from serial port
+    uint32_t bytes_read = 0;
     while (gnss_serial.readable()) {
         uint8_t ch_buffer;
         ssize_t read_result = gnss_serial.read(&ch_buffer, 1);
@@ -83,7 +91,11 @@ size_t gnss_reader_read_nmea(char* output_buffer, size_t buffer_size) {
             break;  // No data available or error
         }
         
+        bytes_read++;
         char ch = static_cast<char>(ch_buffer);
+        
+        // Debug: Print every character received (uncomment for verbose debugging)
+        // printf("[GNSS-BYTE] 0x%02X ('%c')\r\n", (unsigned char)ch, (ch >= 32 && ch < 127) ? ch : '?');
         
         // Start of a new NMEA sentence
         if (ch == '$') {

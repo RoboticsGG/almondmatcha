@@ -134,11 +134,14 @@ void power_monitor_task() {
 void gnss_reader_task() {
     MROS2_INFO("GNSS reader task started");
     uint32_t nmea_received_count = 0;
+    uint32_t read_attempts = 0;
     
     while (true) {
         // Read NMEA data from serial port
         char nmea_sentence[GNSS_NMEA_BUFFER_SIZE];
         size_t nmea_length = gnss_reader_read_nmea(nmea_sentence, GNSS_NMEA_BUFFER_SIZE);
+        
+        read_attempts++;
         
         if (nmea_length > 0) {
             nmea_received_count++;
@@ -158,6 +161,12 @@ void gnss_reader_task() {
             // $GPGGA - Global Positioning System Fix Data
             // $GPGSA - GPS DOP and Active Satellites
             // $GPGSV - GPS Satellites in View
+        }
+        
+        // Print status every 10 read attempts (1 second = 10 * 100ms)
+        if (read_attempts % 10 == 0) {
+            printf("[GNSS-STATUS] Read attempts: %lu, Sentences received: %lu\r\n", 
+                   read_attempts, nmea_received_count);
         }
         
         // Sleep before next read
