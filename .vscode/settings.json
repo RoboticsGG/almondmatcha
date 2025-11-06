@@ -2,5 +2,6 @@
     "cmake.ignoreCMakeListsMissing": true,
     "files.associations": {
         "memory": "cpp"
-    }
+    },
+    "C_Cpp.errorSquiggles": "disabled"
 }

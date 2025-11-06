@@ -119,20 +119,20 @@ private:
         );
         
         // Mission active status
-        sub_d5_mission_active_ = this->create_subscription<std_msgs::msg::Bool>(
-            "tpc_gnss_mission_active", 10,
-            [this](const std_msgs::msg::Bool::ConstSharedPtr msg) { 
-                pub_d2_mission_active_->publish(*msg);
-            }
-        );
-        
-        // Distance remaining
-        sub_d5_distance_ = this->create_subscription<std_msgs::msg::Float64>(
-            "tpc_gnss_mission_remain_dist", 10,
-            [this](const std_msgs::msg::Float64::ConstSharedPtr msg) { 
-                pub_d2_distance_->publish(*msg);
-            }
-        );
+            sub_d5_mission_active_ = this->create_subscription<std_msgs::msg::Bool>(
+                "tpc_gnss_mission_active", 10,
+                [this](const std::shared_ptr<const std_msgs::msg::Bool> msg) {
+                    pub_d2_mission_active_->publish(*msg);
+                }
+            );
+
+            // Distance remaining
+            sub_d5_distance_ = this->create_subscription<std_msgs::msg::Float64>(
+                "tpc_gnss_mission_remain_dist", 10,
+                [this](const std::shared_ptr<const std_msgs::msg::Float64> msg) {
+                    pub_d2_distance_->publish(*msg);
+                }
+            );
         
         RCLCPP_INFO(this->get_logger(), "Domain 5 subscribers initialized (6 topics)");
     }
