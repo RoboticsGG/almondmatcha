@@ -45,11 +45,11 @@ private:
         qos_profile.transient_local();
 
         sub_chassis_sensors_ = this->create_subscription<msgs_ifaces::msg::ChassisSensors>(
-            "/tp_sensdata_d5", qos_profile,
+            "/tpc_chassis_sensors", qos_profile,
             std::bind(&ChassisSensorsNode::sensorsCallback, this, std::placeholders::_1)
         );
         
-        RCLCPP_INFO(this->get_logger(), "Subscribed to /tp_sensdata_d5");
+        RCLCPP_INFO(this->get_logger(), "Subscribed to /tpc_chassis_sensors");
     }
 
     void setupLogging() {
