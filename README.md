@@ -26,7 +26,7 @@ All nodes communicate via Ethernet using ROS2 DDS middleware with domain-based i
    Raspberry Pi          Jetson Orin         STM32 Chassis          STM32 Sensors
    192.168.1.1           192.168.1.5         192.168.1.2            192.168.1.6
    (Main Control)     (Vision Navigation)  (Motor + IMU)       (Encoder + GNSS)
-   ROS2 Domains 2,5,6    ROS2 Domain 5      ROS2 Domain 5       ROS2 Domain 6
+   ROS2 Domains 2,5      ROS2 Domain 2      ROS2 Domain 5       ROS2 Domain 5
         |                     |                     |                     |
         +---------------------+---------------------+---------------------+
                               |
@@ -40,11 +40,11 @@ All nodes communicate via Ethernet using ROS2 DDS middleware with domain-based i
 
 | Node | Hardware | IP Address | Role | ROS2 Domains |
 |------|----------|------------|------|--------------|
-| **ws_rpi** | Raspberry Pi 4 | 192.168.1.1 | Main rover computer, coordination | 2, 5, 6 |
-| **ws_jetson** | Jetson Orin Nano | 192.168.1.5 | Vision processing, lane detection | 5 |
+| **ws_rpi** | Raspberry Pi 4 | 192.168.1.1 | Main rover computer, coordination | 2, 5 |
+| **ws_jetson** | Jetson Orin Nano | 192.168.1.5 | Vision processing, lane detection | 2 |
 | **chassis-dynamics** | STM32 Nucleo-F767ZI | 192.168.1.2 | Motor control, IMU sensor | 5 |
-| **sensors-gnss** | STM32 Nucleo-F767ZI | 192.168.1.6 | Encoders, power, GNSS | 6 |
-| **ws_base** | Ground Station PC | Variable | Telemetry/telecommand | Default |
+| **sensors-gnss** | STM32 Nucleo-F767ZI | 192.168.1.6 | Encoders, power, GNSS | 5 |
+| **ws_base** | Ground Station PC | Variable | Telemetry/telecommand | 2 |
 
 ## Workspace Structure
 
@@ -74,14 +74,13 @@ almondmatcha/
 │   ├── src/
 │   │   ├── pkg_chassis_control/
 │   │   │   ├── src/
-│   │   │   │   ├── node_chassis_controller.cpp      Main control coordinator (Domains 2,5)
-│   │   │   │   └── node_domain_bridge.cpp           Domain 2↔5 relay (50Hz)
+│   │   │   │   └── node_chassis_controller.cpp      Main control coordinator (Domain 2)
 │   │   │   └── package.xml
 │   │   │
 │   │   ├── pkg_chassis_sensors/
 │   │   │   ├── src/
 │   │   │   │   ├── node_chassis_imu.cpp             IMU data processor (Domain 5)
-│   │   │   │   └── node_chassis_sensors.cpp         Encoder & power aggregator (Domain 6)
+│   │   │   │   └── node_chassis_sensors.cpp         Encoder & power aggregator (Domain 5)
 │   │   │   └── package.xml
 │   │   │
 │   │   ├── pkg_gnss_navigation/
@@ -223,12 +222,11 @@ almondmatcha/
 **Purpose:** Central coordination, sensor fusion, mission planning, domain bridging
 
 **Running Nodes:**
-- `node_chassis_controller` - Coordinates motor commands and cruise control (Domains 2, 5)
+- `node_chassis_controller` - Coordinates motor commands and cruise control (Domain 2)
 - `node_chassis_imu` - Processes IMU sensor data (Domain 5)
-- `node_chassis_sensors` - Aggregates encoder and power data (Domain 6)
-- `node_gnss_spresense` - GNSS position processing (Domain 5)
-- `node_gnss_mission_monitor` - Mission waypoint tracking
-- `node_domain_bridge` - Bridges communication between Domain 2 and Domain 5
+- `node_chassis_sensors` - Aggregates encoder and power data (Domain 5)
+- `node_gnss_spresense` - GNSS position processing (Domain 2)
+- `node_gnss_mission_monitor` - Mission waypoint tracking (Domain 2)
 
 **Launch Command:**
 ```bash
@@ -344,7 +342,7 @@ cd ~/almondmatcha/mros2-mbed-chassis-dynamics
 - MCU: STM32F767ZI (Cortex-M7, 216 MHz)
 - Flash: 384.5 KB
 - IP: 192.168.1.6
-- Domain: 6
+- Domain: 5
 
 **Tasks:**
 - **Task 1 (Normal Priority, 20 ms):** Encoder Reader
@@ -551,14 +549,10 @@ The system uses ROS2 domain isolation for performance optimization and modularit
 
 | Domain ID | Purpose | Nodes |
 |-----------|---------|-------|
-| **Default** | Base station communication | ws_base telemetry/telecommand |
-| **2** | Chassis control and vision | node_chassis_controller (publish only), ws_jetson vision nodes |
-| **5** | Main rover domain | node_chassis_controller (subscribe), chassis-dynamics STM32, node_gnss_spresense |
-| **6** | Sensors domain | sensors-gnss STM32, node_chassis_sensors |
+| **2** | Base station & Chassis control bridge | ws_base telemetry/telecommand, node_chassis_controller, node_gnss_* |
+| **5** | Main rover domain (all sensors & STM32s) | chassis-dynamics STM32, sensors-gnss STM32, node_chassis_imu, node_chassis_sensors |
 
-**Domain Bridge:** `node_domain_bridge` translates messages between Domain 2 and Domain 5 for chassis control coordination.
-
-**Note:** A harmless "logging was initialized more than once" warning is expected due to multiple ROS2 contexts for multi-domain support.
+**Note:** Consolidated from 3 domains (2, 5, 6) to 2 domains (2, 5) on November 6, 2025. See `DOMAIN_CONSOLIDATION_SUMMARY.md` for details about the architectural simplification.
 
 ---
 
@@ -574,7 +568,7 @@ The system uses ROS2 domain isolation for performance optimization and modularit
 
                            ╔═══════════════════════════════════╗
                            ║     GROUND STATION (ws_base)      ║
-                           ║  Default Domain (Telemetry)       ║
+                           ║     Domain 2 (Telemetry)          ║
                            ╚═══════════════════════════════════╝
                                       ▲         ▼
                     Subscribes to telemetry / Publishes commands
@@ -583,22 +577,17 @@ The system uses ROS2 domain isolation for performance optimization and modularit
                     │                                             │
         ┌───────────────────────┐                    ┌───────────────────────┐
         │   DOMAIN 2            │                    │   DOMAIN 5            │
-        │ (Chassis & Vision)    │                    │ (Main Rover)          │
+        │ (Chassis & Vision)    │                    │ (All Rover Sensors)   │
         │                       │                    │                       │
-        │ • RPi (Chassis Ctrl)  │──Domain Bridge───▶ | • STM32 Chassis      │
-        │ • Jetson (Vision)     │ (50Hz relay)       │ • RPi (Bridge)        │
-        │ • GNSS (Base)         │◀───────────────────│ • GNSS Processor     │
+        │ • RPi (Chassis Ctrl)  │                    | • STM32 Chassis       │
+        │ • Jetson (Vision)     │                    │ • STM32 Sensors       │
+        │ • GNSS (Base)         │                    │ • RPi (IMU/Sensors)   │
+        │                       │                    │ • RPi (GNSS)          │
         └───────────────────────┘                    └───────────────────────┘
                     │                                             │
                     └─────────────────┬─────────────────────────┬─┘
-                                      │                         │
-                        ┌────────────────────────────────────────────┐
-                        │         DOMAIN 6 (Sensors)                 │
-                        │         STM32 Sensors Node                 │
-                        │                                            │
-                        │ • IMU data (LSM6DSV16X)                    │
-                        │ • Sensor telemetry                  │
-                        └────────────────────────────────────────────┘
+                                      │
+              (Consolidated from 3 domains: Nov 6, 2025)
 ```
 
 ### Topic Subscription/Publication Table
@@ -609,18 +598,17 @@ The system uses ROS2 domain isolation for performance optimization and modularit
 | | | `/tpc_rover_d415_depth` | - | sensor_msgs/Image | 30 FPS (BEST_EFFORT) |
 | **lane_detection** (ws_jetson) | 2 | `/tpc_rover_nav_lane` | `/tpc_rover_d415_rgb` | Float32MultiArray | 25-30 FPS |
 | **steering_control** (ws_jetson) | 2 | `/tpc_rover_fmctl` | `/tpc_rover_nav_lane` | Float32MultiArray | 50 Hz |
-| **node_chassis_controller** (ws_rpi) | 2,5 | `/tpc_chassis_ctrl_d2` (D2) | `/tpc_rover_fmctl` | ChassisCtrl | 50 Hz |
-| | | `/tpc_chassis_ctrl_d5` (D5) | `/tpc_gnss_mission_active` | | |
-| **node_domain_bridge** (ws_rpi) | 2,5 | `/tpc_chassis_ctrl` (D2) | `/tpc_chassis_ctrl_d5` (D5) | ChassisCtrl | 50 Hz relay |
+| **node_chassis_controller** (ws_rpi) | 2 | `/tpc_chassis_ctrl_d2` (D2) | `/tpc_rover_fmctl` | ChassisCtrl | 50 Hz |
+| | | | `/tpc_gnss_mission_active` | | |
 | **node_gnss_spresense** (ws_rpi) | 2 | `/tpc_gnss_spresense` | - | SpresenseGNSS | 10 Hz |
 | **node_gnss_mission_monitor** (ws_rpi) | 2 | `/tpc_gnss_mission_active` | `/tpc_rover_dest_coordinate` | Bool | 10 Hz |
 | | | `/tpc_gnss_mission_remain_dist` | `/tpc_gnss_spresense` | Float64 | |
 | | | `/tpc_rover_dest_coordinate` | Service: desigation | Float64MultiArray | |
 | **chassis_controller** (mros2-mbed-chassis-dynamics) | 5 | `/tpc_chassis_imu` | `/tpc_chassis_cmd` | ChassisIMU | 10 Hz |
-| **sensors_node** (mros2-mbed-sensors-gnss) | 6 | `/tpc_chassis_sensors` | - | ChassisSensors | 10 Hz |
+| **sensors_node** (mros2-mbed-sensors-gnss) | 5 | `/tpc_chassis_sensors` | - | ChassisSensors | 10 Hz |
 | **node_chassis_imu** (ws_rpi) | 5 | `/tpc_chassis_imu_processed` | `/tpc_chassis_imu` | ChassisIMU | 10 Hz |
-| **node_chassis_sensors** (ws_rpi) | 6 | `/tpc_chassis_sensors_processed` | `/tpc_chassis_sensors` | ChassisSensors | 10 Hz |
-| **mission_monitoring_node** (ws_base) | Default | - | `/tpc_gnss_mission_active` | Bool | Telemetry only |
+| **node_chassis_sensors** (ws_rpi) | 5 | `/tpc_chassis_sensors_processed` | `/tpc_chassis_sensors` | ChassisSensors | 10 Hz |
+| **mission_monitoring_node** (ws_base) | 2 | - | `/tpc_gnss_mission_active` | Bool | Telemetry only |
 | | | | `/tpc_gnss_mission_remain_dist` | Float64 | |
 | | | | `/tpc_gnss_spresense` | SpresenseGNSS | |
 | | | | `/tpc_rover_dest_coordinate` | Float64MultiArray | |
@@ -643,16 +631,12 @@ The system uses ROS2 domain isolation for performance optimization and modularit
    ├─ Applies PID controller (Kp, Ki, Kd)
    └─▶ Publishes: /tpc_rover_fmctl [steering_angle, detected] (50 Hz)
        
-4. node_chassis_controller (ws_rpi/Domain 2,5)
+4. node_chassis_controller (ws_rpi/Domain 2)
    ├─ Subscribes (D2): /tpc_rover_fmctl
    ├─ Provides cruise control logic
-   └─▶ Publishes (D5): /tpc_chassis_ctrl_d5 (50 Hz)
+   └─▶ Publishes (D2): /tpc_chassis_ctrl_d2 (50 Hz)
        
-5. node_domain_bridge (ws_rpi/Domain 2,5)
-   ├─ Subscribes (D5): /tpc_chassis_ctrl_d5
-   └─▶ Relays (D2): /tpc_chassis_ctrl (50 Hz relay)
-       
-6. chassis_controller (STM32/Domain 5)
+5. chassis_controller (STM32/Domain 5)
    ├─ Subscribes (D5): /tpc_chassis_cmd
    └─▶ Executes motor control + publishes IMU: /tpc_chassis_imu (10 Hz)
 ```
@@ -672,7 +656,7 @@ The system uses ROS2 domain isolation for performance optimization and modularit
        • /tpc_gnss_mission_active (Bool): Mission status
        • /tpc_gnss_mission_remain_dist (Float64): Distance remaining (km)
        
-3. node_chassis_controller (ws_rpi/Domain 2,5)
+3. node_chassis_controller (ws_rpi/Domain 2)
    ├─ Subscribes (D2): /tpc_gnss_mission_active
    └─▶ Enables/disables cruise control based on mission state
 ```
@@ -685,7 +669,7 @@ The system uses ROS2 domain isolation for performance optimization and modularit
    ├─ Publishes every 10 samples (100 ms interval)
    └─▶ Topic: /tpc_chassis_imu (accel_x,y,z + gyro_x,y,z) (10 Hz)
    
-2. sensors_node (STM32-Sensors/Domain 6)
+2. sensors_node (STM32-Sensors/Domain 5)
    ├─ Polls: Motor encoders + INA226 power monitor
    └─▶ Topic: /tpc_chassis_sensors (encoder + battery data) (10 Hz)
    
@@ -693,7 +677,7 @@ The system uses ROS2 domain isolation for performance optimization and modularit
    ├─ Subscribes: /tpc_chassis_imu
    └─▶ Processes and republishes: /tpc_chassis_imu_processed
    
-4. node_chassis_sensors (ws_rpi/Domain 6)
+4. node_chassis_sensors (ws_rpi/Domain 5)
    ├─ Subscribes: /tpc_chassis_sensors
    └─▶ Processes and republishes: /tpc_chassis_sensors_processed
 ```
@@ -917,38 +901,39 @@ Comprehensive documentation available in workspace-specific README files:
 
 ---
 
-## Recent Updates (November 4, 2025)
+## Recent Updates
 
-### ws_jetson Vision Navigation
-- **Separate Launch Files**: Created `vision_nav_gui.launch.py` and `vision_nav_headless.launch.py`
-  - GUI mode for development (displays camera stream and lane detection windows)
-  - Headless mode for production (no GUI windows for reduced overhead)
-- **YAML Configuration** (Best Practice): Migrated from config.py to YAML files
-  - System configurations: `vision_nav_gui.yaml` and `vision_nav_headless.yaml` (camera + lane detection params)
-  - Steering control: `steering_control_params.yaml` (separate for easy tuning)
-  - No parameter duplication: each parameter in exactly one file
-- **Build Scripts**: Created helper scripts for development workflow
-  - `build_clean.sh` - Full clean rebuild with artifact removal and environment variable cleanup
-  - `build_inc.sh` - Incremental build preserving previous artifacts
-  - Both scripts auto-source `setup.bash` after build
-- **GUI/Headless Mode Support**: Implemented `open_cam` parameter in camera_stream_node.py
-  - Conditional window display and proper cleanup on shutdown
-  - Reduced resource overhead for headless deployments
-- **Build Warning Fixes**: Removed AMENT_PREFIX_PATH colcon warnings by clearing stale environment variables
+### November 6, 2025 - Domain Architecture Consolidation
+- **Major Refactoring:** Consolidated rover system from 3 domains (2, 5, 6) to 2 domains (2, 5)
+  - Removed unnecessary Domain 6 separation for STM32 sensors board
+  - Both STM32 boards now communicate on Domain 5 (main rover domain)
+  - Eliminated node_domain_bridge complexity (completely removed)
+- **Root Cause Analysis:** mROS2 limitation is per-board participant count (10 max), not per-domain
+  - Previous multi-domain architecture was based on incorrect assumption
+  - Consolidation reduces complexity without sacrificing functionality or performance
+- **Changes Made:**
+  - Updated STM32 sensors board (mros2-mbed-sensors-gnss) from Domain 6 → Domain 5
+  - Simplified node_chassis_controller to operate only in Domain 2
+  - Removed node_domain_bridge.cpp entirely from codebase
+  - Updated launch files (rover_startup.launch.py and launch_rover_tmux.sh)
+  - All changes backward compatible, no data loss or functionality changes
+- **Documentation:**
+  - Created `DOMAIN_CONSOLIDATION_SUMMARY.md` with complete refactoring details
+  - Updated README.md with new domain architecture
+  - Testing checklist and rollback plan included
 
-### mros2-mbed-chassis-dynamics
-- Refactored from monolithic to modular 4-file architecture
-- Motor control logic isolated (motor_control.h/cpp)
-- LED status control isolated (led_status.h/cpp)
-- Improved API design and thread safety
-- Comprehensive module documentation
-
-### Documentation
-- Consolidated session notes into single comprehensive file
-- Removed redundant markdown files
-- Professional README structure across all workspaces
-- Updated configuration management section to document YAML approach
-- Added separate launch file and build script documentation
+### November 4, 2025 - Vision Navigation & Modular Architecture
+- **ws_jetson Vision Navigation**
+  - Separate Launch Files: Created `vision_nav_gui.launch.py` and `vision_nav_headless.launch.py`
+  - YAML Configuration (Best Practice): Migrated from config.py to YAML files
+  - Build Scripts: Created `build_clean.sh` and `build_inc.sh` for development workflow
+  - GUI/Headless Mode Support with conditional window display
+- **mros2-mbed-chassis-dynamics**
+  - Refactored from monolithic to modular 4-file architecture
+  - Motor control and LED status isolated into separate modules
+- **Documentation**
+  - Consolidated session notes into single comprehensive file
+  - Professional README structure across all workspaces
 
 ---
 
@@ -1007,7 +992,9 @@ For issues, questions, or contributions, refer to workspace-specific documentati
 
 ---
 
-**Last Updated:** November 4, 2025
-**Repository:** github.com/RoboticsGG/almondmatcha
-**Branch:** main
+**Last Updated:** November 6, 2025  
+**Latest Change:** Domain Architecture Consolidation (Domains 2, 5)  
+**Repository:** github.com/RoboticsGG/almondmatcha  
+**Branch:** main  
+**License:** Apache 2.0
 
