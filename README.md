@@ -1,20 +1,22 @@
 # Almondmatcha - Autonomous Mobile Rover System
 
-Distributed ROS2-based control system for autonomous mobile rover with vision navigation, chassis control, and multi-domain sensor integration. The system consists of heterogeneous computing nodes (Raspberry Pi, Jetson, STM32 microcontrollers) connected via Ethernet for real-time control and telemetry.
+Distributed ROS2-based control system for autonomous mobile rover with vision navigation, chassis control, and advanced sensor fusion (EKF). The system consists of heterogeneous computing nodes (Raspberry Pi, Jetson, STM32 microcontrollers) connected via Ethernet for real-time control and telemetry.
 
 ## System Architecture
 
 ### Overview
 
-The rover system employs a distributed architecture with role-specific computing nodes:
+The rover system employs a distributed architecture with role-specific computing nodes and two-domain isolation:
 
-- **ws_rpi (Raspberry Pi 4)**: Main on-board computer for rover coordination, mission control, and sensor fusion
+- **ws_rpi (Raspberry Pi 4)**: Main on-board computer for rover coordination, sensor fusion (EKF), and mission control
 - **ws_jetson (Jetson Orin Nano)**: Vision processing computer for lane detection and navigation
 - **mros2-mbed-chassis-dynamics (STM32 Nucleo-F767ZI)**: Real-time motor control and IMU sensor reading
 - **mros2-mbed-sensors-gnss (STM32 Nucleo-F767ZI)**: Encoder reading, power monitoring, and GNSS positioning
 - **ws_base**: Ground station for telemetry monitoring and telecommand control
 
-All nodes communicate via Ethernet using ROS2 DDS middleware with domain-based isolation for performance and modularity.
+All nodes communicate via Ethernet using ROS2 DDS middleware with **two-domain isolation**:
+- **Domain 2**: Base station ↔ Rover bridge (telemetry/telecommand only)
+- **Domain 5**: All rover-internal nodes (sensor fusion, processing, STM32 communication)
 
 ### Network Topology
 
@@ -23,12 +25,15 @@ All nodes communicate via Ethernet using ROS2 DDS middleware with domain-based i
                               |
         +---------------------+---------------------+---------------------+
         |                     |                     |                     |
-   Raspberry Pi          Jetson Orin         STM32 Chassis          STM32 Sensors
-   192.168.1.1           192.168.1.5         192.168.1.2            192.168.1.6
-   (Main Control)     (Vision Navigation)  (Motor + IMU)       (Encoder + GNSS)
-   ROS2 Domains 2,5      ROS2 Domain 2      ROS2 Domain 5       ROS2 Domain 5
+   Raspberry Pi          Jetson Orin          STM32 Chassis          STM32 Sensors
+   192.168.1.1           192.168.1.5          192.168.1.2            192.168.1.6
+   (Main Control)     (Vision Processing)     (Motor + IMU)      (Encoder + GNSS)
+   ROS2 Domain 5        ROS2 Domain 5         ROS2 Domain 5         ROS2 Domain 5
         |                     |                     |                     |
         +---------------------+---------------------+---------------------+
+                              |
+                   [node_base_bridge]
+                   Domain 2 Bridge to ws_base
                               |
                       Base Station PC
                       (Telemetry/Telecommand)
@@ -38,10 +43,10 @@ All nodes communicate via Ethernet using ROS2 DDS middleware with domain-based i
 
 ### Computing Nodes
 
-| Node | Hardware | IP Address | Role | ROS2 Domains |
-|------|----------|------------|------|--------------|
-| **ws_rpi** | Raspberry Pi 4 | 192.168.1.1 | Main rover computer, coordination | 2, 5 |
-| **ws_jetson** | Jetson Orin Nano | 192.168.1.5 | Vision processing, lane detection | 2 |
+| Node | Hardware | IP Address | Role | ROS2 Domain |
+|------|----------|------------|------|-------------|
+| **ws_rpi** | Raspberry Pi 4 | 192.168.1.1 | Main rover computer, EKF sensor fusion | 5 (+ bridge to 2) |
+| **ws_jetson** | Jetson Orin Nano | 192.168.1.5 | Vision processing, lane detection | 5 |
 | **chassis-dynamics** | STM32 Nucleo-F767ZI | 192.168.1.2 | Motor control, IMU sensor | 5 |
 | **sensors-gnss** | STM32 Nucleo-F767ZI | 192.168.1.6 | Encoders, power, GNSS | 5 |
 | **ws_base** | Ground Station PC | Variable | Telemetry/telecommand | 2 |
@@ -219,14 +224,20 @@ almondmatcha/
 
 ### ws_rpi (Raspberry Pi 4) - Main Rover Computer
 
-**Purpose:** Central coordination, sensor fusion, mission planning, domain bridging
+**Purpose:** Central rover coordination, extended Kalman filter (EKF) sensor fusion, mission planning, and base station bridging
 
-**Running Nodes:**
-- `node_chassis_controller` - Coordinates motor commands and cruise control (Domain 2)
+**Running Nodes (Domain 5 - Rover Internal):**
+- `node_chassis_controller` - Coordinates motor commands and cruise control (Domain 5)
 - `node_chassis_imu` - Processes IMU sensor data (Domain 5)
 - `node_chassis_sensors` - Aggregates encoder and power data (Domain 5)
-- `node_gnss_spresense` - GNSS position processing (Domain 2)
-- `node_gnss_mission_monitor` - Mission waypoint tracking (Domain 2)
+- `node_gnss_spresense` - GNSS position processing (Domain 5)
+- `node_gnss_mission_monitor` - Mission waypoint tracking and EKF integration (Domain 5)
+- **[Future]** `node_ekf_fusion` - Extended Kalman Filter for multi-sensor fusion (Domain 5)
+
+**Bridge Node (Domain 2 - Base Station Bridge):**
+- `node_base_bridge` - Relays telemetry to ws_base and receives commands (Domain 2 ↔ Domain 5)
+
+**Architecture:** All rover-internal processing on Domain 5 enables centralized sensor fusion with direct access to all sensor streams (IMU, GNSS, encoders, vision).
 
 **Launch Command:**
 ```bash
@@ -246,12 +257,14 @@ bash build.sh
 
 ### ws_jetson (Jetson Orin Nano) - Vision Processing Computer
 
-**Purpose:** Real-time vision navigation, lane detection, steering parameter computation
+**Purpose:** Real-time vision processing for sensor fusion integration
 
-**Running Nodes:**
+**Running Nodes (Domain 5 - Rover Internal):**
 - `camera_stream` - Intel RealSense D415 RGB/depth streaming (30 FPS @ 1280x720, GUI/headless modes)
 - `lane_detection` - Lane marker detection and parameter calculation (theta, b)
 - `steering_control` - PID-based steering control with EMA filtering (50 Hz)
+
+**Architecture:** All vision nodes on Domain 5 enables direct integration with EKF sensor fusion node on ws_rpi.
 
 **Launch Commands:**
 
@@ -545,14 +558,24 @@ ros2 topic hz /tpc_rover_fmctl
 
 ## ROS2 Domain Architecture
 
-The system uses ROS2 domain isolation for performance optimization and modularity:
+The system uses two-domain isolation to enable centralized sensor fusion:
 
-| Domain ID | Purpose | Nodes |
-|-----------|---------|-------|
-| **2** | Base station & Chassis control bridge | ws_base telemetry/telecommand, node_chassis_controller, node_gnss_* |
-| **5** | Main rover domain (all sensors & STM32s) | chassis-dynamics STM32, sensors-gnss STM32, node_chassis_imu, node_chassis_sensors |
+| Domain ID | Purpose | Nodes | Use Case |
+|-----------|---------|-------|----------|
+| **2** | Base station bridge only | ws_base ↔ node_base_bridge | Telemetry/telecommand relay between ground station and rover |
+| **5** | All rover-internal processing | All STM32s, all ROS2 rover nodes | Sensor fusion (EKF), centralized control, low-latency data access |
 
-**Note:** Consolidated from 3 domains (2, 5, 6) to 2 domains (2, 5) on November 6, 2025. See `DOMAIN_CONSOLIDATION_SUMMARY.md` for details about the architectural simplification.
+**Architecture Benefits:**
+- **Domain 5 (Rover):** Direct inter-node communication for EKF sensor fusion (IMU → GNSS → encoders → vision)
+- **Domain 2 (Bridge):** Separate domain isolates base station from rover internals, improves scalability
+- **node_base_bridge:** Single bridge node translates between domains, handles telemetry aggregation
+
+**Future Sensor Fusion (EKF):**
+- Central `node_ekf_fusion` on Domain 5 will subscribe to all sensor streams
+- Produces fused state estimate: `[position, velocity, orientation, biases]`
+- All rover control nodes will consume fused estimates for coordinated decision-making
+
+**Note:** Refactored from 3 domains (2, 5, 6) to 2 domains (2, 5) on November 6, 2025. See `DOMAIN_CONSOLIDATION_SUMMARY.md` for architectural evolution details.
 
 ---
 
@@ -563,92 +586,111 @@ The system uses ROS2 domain isolation for performance optimization and modularit
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
 │                        AUTONOMOUS MOBILE ROVER SYSTEM                               │
-│                          ROS2 Multi-Domain Architecture                             │
+│              Two-Domain Architecture for Sensor Fusion (EKF)                         │
 └─────────────────────────────────────────────────────────────────────────────────────┘
 
                            ╔═══════════════════════════════════╗
                            ║     GROUND STATION (ws_base)      ║
-                           ║     Domain 2 (Telemetry)          ║
+                           ║     Domain 2 Only                 ║
                            ╚═══════════════════════════════════╝
                                       ▲         ▼
-                    Subscribes to telemetry / Publishes commands
+                              Telemetry / Commands
+                                      │         │
+                              [node_base_bridge]
+                              (D2 ↔ D5 Bridge)
                                       │         │
                     ┌─────────────────┴─────────┴─────────────────┐
                     │                                             │
-        ┌───────────────────────┐                    ┌───────────────────────┐
-        │   DOMAIN 2            │                    │   DOMAIN 5            │
-        │ (Chassis & Vision)    │                    │ (All Rover Sensors)   │
-        │                       │                    │                       │
-        │ • RPi (Chassis Ctrl)  │                    | • STM32 Chassis       │
-        │ • Jetson (Vision)     │                    │ • STM32 Sensors       │
-        │ • GNSS (Base)         │                    │ • RPi (IMU/Sensors)   │
-        │                       │                    │ • RPi (GNSS)          │
-        └───────────────────────┘                    └───────────────────────┘
+                    │            DOMAIN 5 (Rover)                │
+                    │        All Rover-Internal Nodes            │
                     │                                             │
-                    └─────────────────┬─────────────────────────┬─┘
-                                      │
-              (Consolidated from 3 domains: Nov 6, 2025)
+                    │  ┌─────────────────────────────────────┐   │
+                    │  │   SENSOR DATA STREAMS               │   │
+                    │  ├─────────────────────────────────────┤   │
+                    │  │ • STM32 Chassis: IMU @ 10 Hz        │   │
+                    │  │ • STM32 Sensors: Encoders @ 10 Hz   │   │
+                    │  │ • Jetson: Vision/Lane @ 30 FPS      │   │
+                    │  │ • RPi: GNSS Position @ 10 Hz        │   │
+                    │  └─────────────────────────────────────┘   │
+                    │                     │                       │
+                    │                     ▼                       │
+                    │  ┌─────────────────────────────────────┐   │
+                    │  │   EKF SENSOR FUSION (Future)        │   │
+                    │  │   node_ekf_fusion (Domain 5)        │   │
+                    │  │                                     │   │
+                    │  │  Fused State: [x, y, θ, vx, vy]   │   │
+                    │  └─────────────────────────────────────┘   │
+                    │                     │                       │
+                    │                     ▼                       │
+                    │  ┌─────────────────────────────────────┐   │
+                    │  │   ROVER CONTROL NODES               │   │
+                    │  │ • Chassis Controller                │   │
+                    │  │ • Mission Monitor                   │   │
+                    │  │ • Vision Navigation                 │   │
+                    │  └─────────────────────────────────────┘   │
+                    │                                             │
+                    └─────────────────────────────────────────────┘
 ```
 
 ### Topic Subscription/Publication Table
 
 | Node | Domain | Publishes | Subscribes | Message Type | Rate/QoS |
 |------|--------|-----------|-----------|--------------|----------|
-| **camera_stream** (ws_jetson) | 2 | `/tpc_rover_d415_rgb` | - | sensor_msgs/Image | 30 FPS (BEST_EFFORT) |
+| **camera_stream** (ws_jetson) | 5 | `/tpc_rover_d415_rgb` | - | sensor_msgs/Image | 30 FPS (BEST_EFFORT) |
 | | | `/tpc_rover_d415_depth` | - | sensor_msgs/Image | 30 FPS (BEST_EFFORT) |
-| **lane_detection** (ws_jetson) | 2 | `/tpc_rover_nav_lane` | `/tpc_rover_d415_rgb` | Float32MultiArray | 25-30 FPS |
-| **steering_control** (ws_jetson) | 2 | `/tpc_rover_fmctl` | `/tpc_rover_nav_lane` | Float32MultiArray | 50 Hz |
-| **node_chassis_controller** (ws_rpi) | 2 | `/tpc_chassis_ctrl_d2` (D2) | `/tpc_rover_fmctl` | ChassisCtrl | 50 Hz |
+| **lane_detection** (ws_jetson) | 5 | `/tpc_rover_nav_lane` | `/tpc_rover_d415_rgb` | Float32MultiArray | 25-30 FPS |
+| **steering_control** (ws_jetson) | 5 | `/tpc_rover_fmctl` | `/tpc_rover_nav_lane` | Float32MultiArray | 50 Hz |
+| **node_chassis_controller** (ws_rpi) | 5 | `/tpc_chassis_ctrl_d5` | `/tpc_rover_fmctl` | ChassisCtrl | 50 Hz |
 | | | | `/tpc_gnss_mission_active` | | |
-| **node_gnss_spresense** (ws_rpi) | 2 | `/tpc_gnss_spresense` | - | SpresenseGNSS | 10 Hz |
-| **node_gnss_mission_monitor** (ws_rpi) | 2 | `/tpc_gnss_mission_active` | `/tpc_rover_dest_coordinate` | Bool | 10 Hz |
+| **node_gnss_spresense** (ws_rpi) | 5 | `/tpc_gnss_spresense` | - | SpresenseGNSS | 10 Hz |
+| **node_gnss_mission_monitor** (ws_rpi) | 5 | `/tpc_gnss_mission_active` | `/tpc_rover_dest_coordinate` | Bool | 10 Hz |
 | | | `/tpc_gnss_mission_remain_dist` | `/tpc_gnss_spresense` | Float64 | |
 | | | `/tpc_rover_dest_coordinate` | Service: desigation | Float64MultiArray | |
+| **[Future] node_ekf_fusion** (ws_rpi) | 5 | `/tpc_ekf_state_estimate` | `/tpc_chassis_imu`, `/tpc_gnss_spresense`, `/tpc_chassis_sensors`, `/tpc_rover_nav_lane` | State (x,y,θ,vx,vy) | 10 Hz |
 | **chassis_controller** (mros2-mbed-chassis-dynamics) | 5 | `/tpc_chassis_imu` | `/tpc_chassis_cmd` | ChassisIMU | 10 Hz |
 | **sensors_node** (mros2-mbed-sensors-gnss) | 5 | `/tpc_chassis_sensors` | - | ChassisSensors | 10 Hz |
 | **node_chassis_imu** (ws_rpi) | 5 | `/tpc_chassis_imu_processed` | `/tpc_chassis_imu` | ChassisIMU | 10 Hz |
 | **node_chassis_sensors** (ws_rpi) | 5 | `/tpc_chassis_sensors_processed` | `/tpc_chassis_sensors` | ChassisSensors | 10 Hz |
-| **mission_monitoring_node** (ws_base) | 2 | - | `/tpc_gnss_mission_active` | Bool | Telemetry only |
-| | | | `/tpc_gnss_mission_remain_dist` | Float64 | |
-| | | | `/tpc_gnss_spresense` | SpresenseGNSS | |
-| | | | `/tpc_rover_dest_coordinate` | Float64MultiArray | |
-| | | | `/tpc_chassis_ctrl_d2` | ChassisCtrl | |
+| **node_base_bridge** (ws_rpi) | 2↔5 | `/tpc_telemetry` (D2) | `/tpc_chassis_imu_processed`, `/tpc_gnss_spresense`, `/tpc_chassis_sensors_processed` (D5) | Custom | 10 Hz |
+| | | | `/tpc_command` (D2) | | |
+| **mission_monitoring_node** (ws_base) | 2 | - | `/tpc_telemetry` | Custom | Telemetry only |
+| | | | `/tpc_command` (Service) | | |
 
 ### Data Flow Sequences
 
-#### Vision-Based Lane Following
+#### Vision-Based Lane Following (Domain 5 - Rover Internal)
 
 ```
-1. camera_stream (ws_jetson/Domain 2)
+1. camera_stream (ws_jetson/Domain 5)
    └─▶ Publishes RGB frames: /tpc_rover_d415_rgb (30 FPS)
        
-2. lane_detection (ws_jetson/Domain 2)
+2. lane_detection (ws_jetson/Domain 5)
    ├─ Subscribes: /tpc_rover_d415_rgb
    └─▶ Publishes: /tpc_rover_nav_lane [theta, b, detected] (25-30 FPS)
        
-3. steering_control (ws_jetson/Domain 2)
+3. steering_control (ws_jetson/Domain 5)
    ├─ Subscribes: /tpc_rover_nav_lane
    ├─ Applies PID controller (Kp, Ki, Kd)
    └─▶ Publishes: /tpc_rover_fmctl [steering_angle, detected] (50 Hz)
        
-4. node_chassis_controller (ws_rpi/Domain 2)
-   ├─ Subscribes (D2): /tpc_rover_fmctl
+4. node_chassis_controller (ws_rpi/Domain 5)
+   ├─ Subscribes: /tpc_rover_fmctl
    ├─ Provides cruise control logic
-   └─▶ Publishes (D2): /tpc_chassis_ctrl_d2 (50 Hz)
+   └─▶ Publishes: /tpc_chassis_ctrl_d5 (50 Hz)
        
 5. chassis_controller (STM32/Domain 5)
-   ├─ Subscribes (D5): /tpc_chassis_cmd
+   ├─ Subscribes: /tpc_chassis_cmd
    └─▶ Executes motor control + publishes IMU: /tpc_chassis_imu (10 Hz)
 ```
 
-#### GNSS-Based Navigation
+#### GNSS-Based Navigation (Domain 5 - Rover Internal)
 
 ```
-1. node_gnss_spresense (ws_rpi/Domain 2)
+1. node_gnss_spresense (ws_rpi/Domain 5)
    ├─ Reads: Sony Spresense GNSS via serial
    └─▶ Publishes: /tpc_gnss_spresense (lat, long, accuracy) (10 Hz)
        
-2. node_gnss_mission_monitor (ws_rpi/Domain 2)
+2. node_gnss_mission_monitor (ws_rpi/Domain 5)
    ├─ Subscribes: /tpc_gnss_spresense
    ├─ Listens for: /tpc_rover_dest_coordinate (target waypoint)
    ├─ Calculates: Distance to waypoint, mission progress
@@ -656,12 +698,12 @@ The system uses ROS2 domain isolation for performance optimization and modularit
        • /tpc_gnss_mission_active (Bool): Mission status
        • /tpc_gnss_mission_remain_dist (Float64): Distance remaining (km)
        
-3. node_chassis_controller (ws_rpi/Domain 2)
-   ├─ Subscribes (D2): /tpc_gnss_mission_active
+3. node_chassis_controller (ws_rpi/Domain 5)
+   ├─ Subscribes: /tpc_gnss_mission_active
    └─▶ Enables/disables cruise control based on mission state
 ```
 
-#### Sensor Data Acquisition
+#### Sensor Data Acquisition (Domain 5 - Rover Internal)
 
 ```
 1. chassis_controller (STM32-Dynamics/Domain 5)
@@ -680,6 +722,31 @@ The system uses ROS2 domain isolation for performance optimization and modularit
 4. node_chassis_sensors (ws_rpi/Domain 5)
    ├─ Subscribes: /tpc_chassis_sensors
    └─▶ Processes and republishes: /tpc_chassis_sensors_processed
+   
+5. [FUTURE] node_ekf_fusion (ws_rpi/Domain 5) - Centralized Sensor Fusion
+   ├─ Subscribes to all sensors:
+   │   • /tpc_chassis_imu_processed (accelerometer, gyroscope)
+   │   • /tpc_gnss_spresense (GPS position, fix quality)
+   │   • /tpc_chassis_sensors_processed (wheel odometry)
+   │   • /tpc_rover_nav_lane (vision-based lane offset)
+   ├─ Implements: Extended Kalman Filter (EKF)
+   └─▶ Publishes: /tpc_ekf_state_estimate [x, y, θ, vx, vy, biases] (10 Hz)
+```
+
+#### Base Station Bridge (Domain 2 ↔ Domain 5 Bridge)
+
+```
+1. node_base_bridge (ws_rpi - Multi-domain node)
+   ├─ Domain 5 (Rover) Subscriptions:
+   │   • /tpc_chassis_imu_processed
+   │   • /tpc_gnss_spresense
+   │   • /tpc_chassis_sensors_processed
+   ├─ Domain 2 (Base) Publications:
+   │   • /tpc_telemetry (aggregated sensor telemetry)
+   ├─ Domain 2 (Base) Subscriptions:
+   │   • /tpc_command (rover control commands)
+   └─▶ Domain 5 (Rover) Publications:
+       • Motor commands to Domain 5 control nodes
 ```
 
 ---
@@ -903,7 +970,28 @@ Comprehensive documentation available in workspace-specific README files:
 
 ## Recent Updates
 
-### November 6, 2025 - Domain Architecture Consolidation
+### November 6, 2025 (Continued) - Sensor Fusion Architecture Refactoring
+- **Critical Architecture Fix:** Refactored from mixed-domain to centralized sensor fusion architecture
+  - **Domain 5 (Rover Internal):** ALL rover nodes - chassis, GNSS, vision, sensor fusion
+  - **Domain 2 (Bridge Only):** ONLY base station bridge (ws_base communication)
+  - Removed node_chassis_controller from Domain 2, moved to Domain 5
+  - Moved GNSS nodes (node_gnss_spresense, node_gnss_mission_monitor) from Domain 2 → Domain 5
+  - Moved ws_jetson vision nodes (camera_stream, lane_detection, steering_control) from Domain 2 → Domain 5
+- **New Bridge Node:** Created node_base_bridge for Domain 2 ↔ Domain 5 communication
+  - Single bridge node simplifies telemetry/telecommand relay to ws_base
+  - All rover-internal processing isolated in Domain 5 for low-latency data access
+- **EKF Sensor Fusion Preparation:** Architecture now supports centralized Extended Kalman Filter
+  - All sensor streams available on same domain (IMU, GNSS, encoders, vision)
+  - Future node_ekf_fusion node will fuse all measurements into single state estimate
+  - Enable advanced autonomous capabilities: adaptive control, fault detection, state prediction
+- **Updated Documentation:**
+  - Revised network topology diagram showing sensor fusion integration
+  - Updated ROS2 domain architecture section with rationale
+  - Added data flow diagram showing EKF integration points
+  - Updated topic subscription/publication table with sensor fusion nodes
+  - Added base station bridge documentation
+
+### November 6, 2025 - Domain Architecture Consolidation (Part 1)
 - **Major Refactoring:** Consolidated rover system from 3 domains (2, 5, 6) to 2 domains (2, 5)
   - Removed unnecessary Domain 6 separation for STM32 sensors board
   - Both STM32 boards now communicate on Domain 5 (main rover domain)
@@ -911,16 +999,13 @@ Comprehensive documentation available in workspace-specific README files:
 - **Root Cause Analysis:** mROS2 limitation is per-board participant count (10 max), not per-domain
   - Previous multi-domain architecture was based on incorrect assumption
   - Consolidation reduces complexity without sacrificing functionality or performance
-- **Changes Made:**
+- **Initial Changes:**
   - Updated STM32 sensors board (mros2-mbed-sensors-gnss) from Domain 6 → Domain 5
-  - Simplified node_chassis_controller to operate only in Domain 2
+  - Simplified initial node_chassis_controller to operate only in Domain 2
   - Removed node_domain_bridge.cpp entirely from codebase
   - Updated launch files (rover_startup.launch.py and launch_rover_tmux.sh)
-  - All changes backward compatible, no data loss or functionality changes
 - **Documentation:**
   - Created `DOMAIN_CONSOLIDATION_SUMMARY.md` with complete refactoring details
-  - Updated README.md with new domain architecture
-  - Testing checklist and rollback plan included
 
 ### November 4, 2025 - Vision Navigation & Modular Architecture
 - **ws_jetson Vision Navigation**
@@ -967,7 +1052,8 @@ Comprehensive documentation available in workspace-specific README files:
 
 ---
 
-**Last Updated:** November 4, 2025  
+**Last Updated:** November 6, 2025  
+**Latest Change:** Sensor Fusion Architecture (Domain 5 centralized, Domain 2 bridge only)  
 **Repository:** github.com/RoboticsGG/almondmatcha  
 **Branch:** main  
 **License:** Apache 2.0
