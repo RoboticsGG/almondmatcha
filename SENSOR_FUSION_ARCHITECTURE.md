@@ -176,42 +176,40 @@ Previous architecture had sensors and control spread across Domains 2, 5, 6:
 
 | Topic | Type | Rate | Publisher | Subscribers |
 |-------|------|------|-----------|-------------|
-| `/tpc_chassis_imu` | ChassisIMU (accel, gyro) | 10 Hz | chassis_controller (STM32) | node_chassis_imu, node_ekf_fusion |
-| `/tpc_chassis_sensors` | ChassisSensors (encoders, power) | 10 Hz | sensors_node (STM32) | node_chassis_sensors, node_ekf_fusion |
-| `/tpc_gnss_spresense` | SpresenseGNSS (lat, lon, alt, fix) | 10 Hz | node_gnss_spresense | node_gnss_mission_monitor, **node_ekf_fusion** |
-| `/tpc_rover_d415_rgb` | sensor_msgs/Image | 30 FPS | camera_stream_node | lane_detection_node |
-| `/tpc_rover_d415_depth` | sensor_msgs/Image | 30 FPS | camera_stream_node | (reserved) |
+| `tpc_chassis_imu` | ChassisIMU (accel, gyro) | 10 Hz | chassis_controller (STM32) | node_chassis_imu (logs), node_ekf_fusion |
+| `tpc_chassis_sensors` | ChassisSensors (encoders, power) | 10 Hz | sensors_node (STM32) | node_chassis_sensors (logs), node_ekf_fusion |
+| `tpc_gnss_spresense` | SpresenseGNSS (lat, lon, alt, fix) | 10 Hz | node_gnss_spresense | node_gnss_mission_monitor, **node_ekf_fusion** |
+| `tpc_rover_d415_rgb` | sensor_msgs/Image | 30 FPS | camera_stream_node | lane_detection_node |
+| `tpc_rover_d415_depth` | sensor_msgs/Image | 30 FPS | camera_stream_node | (reserved) |
 
-#### Processed Sensor Streams
+#### Vision Processed Stream
 
 | Topic | Type | Rate | Publisher | Subscribers |
 |-------|------|------|-----------|-------------|
-| `/tpc_chassis_imu_processed` | ChassisIMU (calibrated) | 10 Hz | node_chassis_imu | **node_ekf_fusion**, (future: diagnostics) |
-| `/tpc_chassis_sensors_processed` | ChassisSensors (processed) | 10 Hz | node_chassis_sensors | **node_ekf_fusion**, (future: diagnostics) |
-| `/tpc_rover_nav_lane` | Float32MultiArray [theta, b, conf] | 30 FPS | lane_detection_node | steering_control_node, **node_ekf_fusion** |
+| `tpc_rover_nav_lane` | Float32MultiArray [theta, b, conf] | 30 FPS | lane_detection_node | steering_control_node, **node_ekf_fusion** |
 
 #### Fusion Output (Future)
 
 | Topic | Type | Rate | Publisher | Subscribers |
 |-------|------|------|-----------|-------------|
-| **`/tpc_ekf_state_estimate`** | **Fused State** | **10 Hz** | **node_ekf_fusion** | **all control nodes** |
-| **`/tpc_ekf_covariance`** | **Uncertainty Matrix** | **10 Hz** | **node_ekf_fusion** | **diagnostics, health monitoring** |
+| **`tpc_ekf_state_estimate`** | **Fused State** | **10 Hz** | **node_ekf_fusion** | **all control nodes** |
+| **`tpc_ekf_covariance`** | **Uncertainty Matrix** | **10 Hz** | **node_ekf_fusion** | **diagnostics, health monitoring** |
 
 #### Control Commands
 
 | Topic | Type | Rate | Publisher | Subscribers |
 |-------|------|------|-----------|-------------|
-| `/tpc_rover_fmctl` | Float32MultiArray [steering, detect] | 50 Hz | steering_control_node | node_chassis_controller |
-| `/tpc_chassis_ctrl_d5` | ChassisCtrl (fdr, ro_ctrl, spd, bdr) | 50 Hz | node_chassis_controller | chassis_controller (STM32) |
-| `/tpc_gnss_mission_active` | Bool | 10 Hz | node_gnss_mission_monitor | node_chassis_controller |
-| `/tpc_gnss_mission_remain_dist` | Float64 | 10 Hz | node_gnss_mission_monitor | (diagnostics) |
+| `tpc_rover_fmctl` | Float32MultiArray [steering, detect] | 50 Hz | steering_control_node | node_chassis_controller |
+| `tpc_chassis_cmd` | ChassisCtrl (fdr, ro_ctrl, spd, bdr) | 50 Hz | node_chassis_controller | chassis_controller (STM32) |
+| `tpc_gnss_mission_active` | Bool | 10 Hz | node_gnss_mission_monitor | node_chassis_controller |
+| `tpc_gnss_mission_remain_dist` | Float64 | 10 Hz | node_gnss_mission_monitor | (diagnostics) |
 
 ### Domain 2 - Base Station Bridge Topics
 
 | Topic | Type | Rate | Publisher | Subscribers |
 |-------|------|------|-----------|-------------|
-| `/tpc_telemetry` | TelemetryMsg (aggregated) | 10 Hz | node_base_bridge | mission_monitoring_node (ws_base) |
-| `/tpc_command` | CommandMsg (waypoints, modes) | Event-driven | mission_control_node (ws_base) | node_base_bridge |
+| `tpc_telemetry` | TelemetryMsg (aggregated) | 10 Hz | node_base_bridge | mission_monitoring_node (ws_base) |
+| `tpc_command` | CommandMsg (waypoints, modes) | Event-driven | mission_control_node (ws_base) | node_base_bridge |
 
 ---
 

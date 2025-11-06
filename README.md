@@ -330,10 +330,10 @@ cd ~/almondmatcha/ws_jetson
   - Non-blocking I2C operations
 
 **Subscribed Topics:**
-- `/tpc_chassis_cmd` (msgs_ifaces/ChassisCtrl) - Motor and steering commands
+- `tpc_chassis_cmd` (msgs_ifaces/ChassisCtrl) - Motor and steering commands
 
 **Published Topics:**
-- `/tpc_chassis_imu` (msgs_ifaces/ChassisIMU) - IMU sensor data
+- `tpc_chassis_imu` (msgs_ifaces/ChassisIMU) - IMU sensor data
 
 **Build:**
 ```bash
@@ -370,7 +370,7 @@ cd ~/almondmatcha/mros2-mbed-chassis-dynamics
   - Provides positioning data
 
 **Published Topics:**
-- `/tpc_chassis_sensors` (msgs_ifaces/ChassisSensors) - Encoder and power data
+- `tpc_chassis_sensors` (msgs_ifaces/ChassisSensors) - Encoder and power data
 
 **Build:**
 ```bash
@@ -519,19 +519,19 @@ ros2 node list
 ros2 topic list
 
 # Monitor camera stream
-ros2 topic hz /tpc_rover_d415_rgb
+ros2 topic hz tpc_rover_d415_rgb
 
 # Monitor lane detection
-ros2 topic echo /tpc_rover_nav_lane
+ros2 topic echo tpc_rover_nav_lane
 
 # Monitor steering commands
-ros2 topic echo /tpc_rover_fmctl
+ros2 topic echo tpc_rover_fmctl
 
 # Monitor IMU data
-ros2 topic echo /tp_imu_data_d5
+ros2 topic echo tp_imu_data_d5
 
 # Monitor sensor data
-ros2 topic echo /tpc_chassis_sensors
+ros2 topic echo tpc_chassis_sensors
 ```
 
 **Manual Motor Control Test:**
@@ -540,20 +540,20 @@ ros2 topic echo /tpc_chassis_sensors
 export ROS_DOMAIN_ID=5
 
 # Send motor command (speed: 100, steering: 0.5, forward)
-ros2 topic pub /tpc_chassis_cmd msgs_ifaces/msg/ChassisCtrl \
+ros2 topic pub tpc_chassis_cmd msgs_ifaces/msg/ChassisCtrl \
   '{fdr_msg: 2, ro_ctrl_msg: 0.5, spd_msg: 100, bdr_msg: 1}'
 ```
 
 **Vision System Test:**
 ```bash
 # Check camera stream availability
-ros2 topic hz /tpc_rover_d415_rgb
+ros2 topic hz tpc_rover_d415_rgb
 
 # Monitor lane detection output
-ros2 topic echo /tpc_rover_nav_lane
+ros2 topic echo tpc_rover_nav_lane
 
 # Verify steering control is publishing
-ros2 topic hz /tpc_rover_fmctl
+ros2 topic hz tpc_rover_fmctl
 ```
 
 ## ROS2 Domain Architecture
@@ -636,25 +636,25 @@ The system uses two-domain isolation to enable centralized sensor fusion:
 
 | Node | Domain | Publishes | Subscribes | Message Type | Rate/QoS |
 |------|--------|-----------|-----------|--------------|----------|
-| **camera_stream** (ws_jetson) | 5 | `/tpc_rover_d415_rgb` | - | sensor_msgs/Image | 30 FPS (BEST_EFFORT) |
-| | | `/tpc_rover_d415_depth` | - | sensor_msgs/Image | 30 FPS (BEST_EFFORT) |
-| **lane_detection** (ws_jetson) | 5 | `/tpc_rover_nav_lane` | `/tpc_rover_d415_rgb` | Float32MultiArray | 25-30 FPS |
-| **steering_control** (ws_jetson) | 5 | `/tpc_rover_fmctl` | `/tpc_rover_nav_lane` | Float32MultiArray | 50 Hz |
-| **node_chassis_controller** (ws_rpi) | 5 | `/tpc_chassis_ctrl_d5` | `/tpc_rover_fmctl` | ChassisCtrl | 50 Hz |
-| | | | `/tpc_gnss_mission_active` | | |
-| **node_gnss_spresense** (ws_rpi) | 5 | `/tpc_gnss_spresense` | - | SpresenseGNSS | 10 Hz |
-| **node_gnss_mission_monitor** (ws_rpi) | 5 | `/tpc_gnss_mission_active` | `/tpc_rover_dest_coordinate` | Bool | 10 Hz |
-| | | `/tpc_gnss_mission_remain_dist` | `/tpc_gnss_spresense` | Float64 | |
-| | | `/tpc_rover_dest_coordinate` | Service: desigation | Float64MultiArray | |
-| **[Future] node_ekf_fusion** (ws_rpi) | 5 | `/tpc_ekf_state_estimate` | `/tpc_chassis_imu`, `/tpc_gnss_spresense`, `/tpc_chassis_sensors`, `/tpc_rover_nav_lane` | State (x,y,θ,vx,vy) | 10 Hz |
-| **chassis_controller** (mros2-mbed-chassis-dynamics) | 5 | `/tpc_chassis_imu` | `/tpc_chassis_cmd` | ChassisIMU | 10 Hz |
-| **sensors_node** (mros2-mbed-sensors-gnss) | 5 | `/tpc_chassis_sensors` | - | ChassisSensors | 10 Hz |
-| **node_chassis_imu** (ws_rpi) | 5 | `/tpc_chassis_imu_processed` | `/tpc_chassis_imu` | ChassisIMU | 10 Hz |
-| **node_chassis_sensors** (ws_rpi) | 5 | `/tpc_chassis_sensors_processed` | `/tpc_chassis_sensors` | ChassisSensors | 10 Hz |
-| **node_base_bridge** (ws_rpi) | 2↔5 | `/tpc_telemetry` (D2) | `/tpc_chassis_imu_processed`, `/tpc_gnss_spresense`, `/tpc_chassis_sensors_processed` (D5) | Custom | 10 Hz |
-| | | | `/tpc_command` (D2) | | |
-| **mission_monitoring_node** (ws_base) | 2 | - | `/tpc_telemetry` | Custom | Telemetry only |
-| | | | `/tpc_command` (Service) | | |
+| **camera_stream** (ws_jetson) | 5 | `tpc_rover_d415_rgb` | - | sensor_msgs/Image | 30 FPS (BEST_EFFORT) |
+| | | `tpc_rover_d415_depth` | - | sensor_msgs/Image | 30 FPS (BEST_EFFORT) |
+| **lane_detection** (ws_jetson) | 5 | `tpc_rover_nav_lane` | `tpc_rover_d415_rgb` | Float32MultiArray | 25-30 FPS |
+| **steering_control** (ws_jetson) | 5 | `tpc_rover_fmctl` | `tpc_rover_nav_lane` | Float32MultiArray | 50 Hz |
+| **node_chassis_controller** (ws_rpi) | 5 | `tpc_chassis_cmd` | `tpc_rover_fmctl` | ChassisCtrl | 50 Hz |
+| | | | `tpc_gnss_mission_active` | | |
+| **node_gnss_spresense** (ws_rpi) | 5 | `tpc_gnss_spresense` | - | SpresenseGNSS | 10 Hz |
+| **node_gnss_mission_monitor** (ws_rpi) | 5 | `tpc_gnss_mission_active` | `tpc_rover_dest_coordinate` | Bool | 10 Hz |
+| | | `tpc_gnss_mission_remain_dist` | `tpc_gnss_spresense` | Float64 | |
+| | | `tpc_rover_dest_coordinate` | Service: desigation | Float64MultiArray | |
+| **[Future] node_ekf_fusion** (ws_rpi) | 5 | `tpc_ekf_state_estimate` | `tpc_chassis_imu`, `tpc_gnss_spresense`, `tpc_chassis_sensors`, `tpc_rover_nav_lane` | State (x,y,θ,vx,vy) | 10 Hz |
+| **chassis_controller** (mros2-mbed-chassis-dynamics) | 5 | `tpc_chassis_imu` | `tpc_chassis_cmd` | ChassisIMU | 10 Hz |
+| **sensors_node** (mros2-mbed-sensors-gnss) | 5 | `tpc_chassis_sensors` | - | ChassisSensors | 10 Hz |
+| **node_chassis_imu** (ws_rpi) | 5 | (logs to CSV) | `tpc_chassis_imu` | - | CSV write @ 1 Hz |
+| **node_chassis_sensors** (ws_rpi) | 5 | (logs to CSV) | `tpc_chassis_sensors` | - | CSV write @ 1 Hz |
+| **node_base_bridge** (ws_rpi) | 2↔5 | `tpc_telemetry` (D2) | `tpc_gnss_spresense`, `tpc_chassis_sensors` (D5) | Custom | 10 Hz |
+| | | | `tpc_command` (D2) | | |
+| **mission_monitoring_node** (ws_base) | 2 | - | `tpc_telemetry` | Custom | Telemetry only |
+| | | | `tpc_command` (Service) | | |
 
 ### Data Flow Sequences
 
@@ -662,25 +662,25 @@ The system uses two-domain isolation to enable centralized sensor fusion:
 
 ```
 1. camera_stream (ws_jetson/Domain 5)
-   └─▶ Publishes RGB frames: /tpc_rover_d415_rgb (30 FPS)
+   └─▶ Publishes RGB frames: tpc_rover_d415_rgb (30 FPS)
        
 2. lane_detection (ws_jetson/Domain 5)
-   ├─ Subscribes: /tpc_rover_d415_rgb
-   └─▶ Publishes: /tpc_rover_nav_lane [theta, b, detected] (25-30 FPS)
+   ├─ Subscribes: tpc_rover_d415_rgb
+   └─▶ Publishes: tpc_rover_nav_lane [theta, b, detected] (25-30 FPS)
        
 3. steering_control (ws_jetson/Domain 5)
-   ├─ Subscribes: /tpc_rover_nav_lane
+   ├─ Subscribes: tpc_rover_nav_lane
    ├─ Applies PID controller (Kp, Ki, Kd)
-   └─▶ Publishes: /tpc_rover_fmctl [steering_angle, detected] (50 Hz)
+   └─▶ Publishes: tpc_rover_fmctl [steering_angle, detected] (50 Hz)
        
 4. node_chassis_controller (ws_rpi/Domain 5)
-   ├─ Subscribes: /tpc_rover_fmctl
+   ├─ Subscribes: tpc_rover_fmctl
    ├─ Provides cruise control logic
-   └─▶ Publishes: /tpc_chassis_ctrl_d5 (50 Hz)
+   └─▶ Publishes: tpc_chassis_cmd (50 Hz)
        
 5. chassis_controller (STM32/Domain 5)
-   ├─ Subscribes: /tpc_chassis_cmd
-   └─▶ Executes motor control + publishes IMU: /tpc_chassis_imu (10 Hz)
+   ├─ Subscribes: tpc_chassis_cmd
+   └─▶ Executes motor control + publishes IMU: tpc_chassis_imu (10 Hz)
 ```
 
 #### GNSS-Based Navigation (Domain 5 - Rover Internal)
@@ -688,18 +688,18 @@ The system uses two-domain isolation to enable centralized sensor fusion:
 ```
 1. node_gnss_spresense (ws_rpi/Domain 5)
    ├─ Reads: Sony Spresense GNSS via serial
-   └─▶ Publishes: /tpc_gnss_spresense (lat, long, accuracy) (10 Hz)
+   └─▶ Publishes: tpc_gnss_spresense (lat, long, accuracy) (10 Hz)
        
 2. node_gnss_mission_monitor (ws_rpi/Domain 5)
-   ├─ Subscribes: /tpc_gnss_spresense
-   ├─ Listens for: /tpc_rover_dest_coordinate (target waypoint)
+   ├─ Subscribes: tpc_gnss_spresense
+   ├─ Listens for: tpc_rover_dest_coordinate (target waypoint)
    ├─ Calculates: Distance to waypoint, mission progress
    └─▶ Publishes:
-       • /tpc_gnss_mission_active (Bool): Mission status
-       • /tpc_gnss_mission_remain_dist (Float64): Distance remaining (km)
+       • tpc_gnss_mission_active (Bool): Mission status
+       • tpc_gnss_mission_remain_dist (Float64): Distance remaining (km)
        
 3. node_chassis_controller (ws_rpi/Domain 5)
-   ├─ Subscribes: /tpc_gnss_mission_active
+   ├─ Subscribes: tpc_gnss_mission_active
    └─▶ Enables/disables cruise control based on mission state
 ```
 
@@ -709,28 +709,28 @@ The system uses two-domain isolation to enable centralized sensor fusion:
 1. chassis_controller (STM32-Dynamics/Domain 5)
    ├─ Polls: LSM6DSV16X IMU sensor @ 100 Hz
    ├─ Publishes every 10 samples (100 ms interval)
-   └─▶ Topic: /tpc_chassis_imu (accel_x,y,z + gyro_x,y,z) (10 Hz)
+   └─▶ Topic: tpc_chassis_imu (accel_x,y,z + gyro_x,y,z) (10 Hz)
    
 2. sensors_node (STM32-Sensors/Domain 5)
    ├─ Polls: Motor encoders + INA226 power monitor
-   └─▶ Topic: /tpc_chassis_sensors (encoder + battery data) (10 Hz)
+   └─▶ Topic: tpc_chassis_sensors (encoder + battery data) (10 Hz)
    
 3. node_chassis_imu (ws_rpi/Domain 5)
-   ├─ Subscribes: /tpc_chassis_imu
-   └─▶ Processes and republishes: /tpc_chassis_imu_processed
+   ├─ Subscribes: tpc_chassis_imu (from STM32)
+   └─▶ Logs to CSV file (no republish)
    
 4. node_chassis_sensors (ws_rpi/Domain 5)
-   ├─ Subscribes: /tpc_chassis_sensors
-   └─▶ Processes and republishes: /tpc_chassis_sensors_processed
+   ├─ Subscribes: tpc_chassis_sensors (from STM32)
+   └─▶ Logs to CSV file (no republish)
    
 5. [FUTURE] node_ekf_fusion (ws_rpi/Domain 5) - Centralized Sensor Fusion
    ├─ Subscribes to all sensors:
-   │   • /tpc_chassis_imu_processed (accelerometer, gyroscope)
-   │   • /tpc_gnss_spresense (GPS position, fix quality)
-   │   • /tpc_chassis_sensors_processed (wheel odometry)
-   │   • /tpc_rover_nav_lane (vision-based lane offset)
+   │   • tpc_chassis_imu (raw accelerometer, gyroscope from STM32)
+   │   • tpc_gnss_spresense (GPS position, fix quality)
+   │   • tpc_chassis_sensors (raw wheel odometry from STM32)
+   │   • tpc_rover_nav_lane (vision-based lane offset)
    ├─ Implements: Extended Kalman Filter (EKF)
-   └─▶ Publishes: /tpc_ekf_state_estimate [x, y, θ, vx, vy, biases] (10 Hz)
+   └─▶ Publishes: tpc_ekf_state_estimate [x, y, θ, vx, vy, biases] (10 Hz)
 ```
 
 #### Base Station Bridge (Domain 2 ↔ Domain 5 Bridge)
@@ -738,13 +738,14 @@ The system uses two-domain isolation to enable centralized sensor fusion:
 ```
 1. node_base_bridge (ws_rpi - Multi-domain node)
    ├─ Domain 5 (Rover) Subscriptions:
-   │   • /tpc_chassis_imu_processed
-   │   • /tpc_gnss_spresense
-   │   • /tpc_chassis_sensors_processed
+   │   • tpc_chassis_imu (raw sensor data)
+   │   • tpc_gnss_spresense (GNSS position)
+   │   • tpc_chassis_sensors (raw odometry data)
+   │   • tpc_ekf_state_estimate (fusion result, when available)
    ├─ Domain 2 (Base) Publications:
-   │   • /tpc_telemetry (aggregated sensor telemetry)
+   │   • tpc_telemetry (aggregated sensor telemetry)
    ├─ Domain 2 (Base) Subscriptions:
-   │   • /tpc_command (rover control commands)
+   │   • tpc_command (rover control commands)
    └─▶ Domain 5 (Rover) Publications:
        • Motor commands to Domain 5 control nodes
 ```
@@ -903,13 +904,6 @@ time_sec,theta_ema,b_ema,u,e_sum
 ---
 
 ## Development Workflow
-
-### Code Quality Standards
-
-- Python: PEP 8 naming conventions, 100% type hints, comprehensive docstrings
-- C++: snake_case naming, modular architecture, clear separation of concerns
-- Documentation: Professional README files in each workspace/module
-- Version Control: All work committed to main branch with clear commit messages
 
 ### Git Workflow
 
