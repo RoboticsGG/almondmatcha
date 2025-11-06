@@ -21,14 +21,15 @@
 /**
  * @brief Rover Chassis Low-Level Controller Node
  * 
- * This node manages low-level chassis control in Domain ID 2:
- * - Receives control commands and provides services
- * - Publishes chassis control messages
+ * This node manages low-level chassis control in Domain ID 5 (rover internal):
+ * - Receives control commands from vision navigation
+ * - Provides speed limit service
+ * - Publishes chassis control messages to STM32 boards
  */
 class ChassisController : public rclcpp::Node {
 public:
     ChassisController() : Node("chassis_controller") {
-        RCLCPP_INFO(this->get_logger(), "Initializing Chassis Controller (Domain 2)");
+        RCLCPP_INFO(this->get_logger(), "Initializing Chassis Controller (Domain 5 - Rover Internal)");
         
         // Create speed limit service
         srv_spd_limit_ = this->create_service<services_ifaces::srv::SpdLimit>(
@@ -51,9 +52,9 @@ public:
                      this, std::placeholders::_1)
         );
         
-        // Create publisher in Domain ID 2
-        pub_rocon_d2_ = this->create_publisher<msgs_ifaces::msg::ChassisCtrl>(
-            "tpc_chassis_ctrl_d2", 10
+        // Create publisher to STM32 chassis (Domain 5)
+        pub_chassis_cmd_ = this->create_publisher<msgs_ifaces::msg::ChassisCtrl>(
+            "tpc_chassis_cmd", 10
         );
         
         RCLCPP_INFO(this->get_logger(), "Chassis Controller initialized");
@@ -70,7 +71,7 @@ private:
     rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr sub_fmctl_;
     
     // === Publishers ===
-    rclcpp::Publisher<msgs_ifaces::msg::ChassisCtrl>::SharedPtr pub_rocon_d2_;
+    rclcpp::Publisher<msgs_ifaces::msg::ChassisCtrl>::SharedPtr pub_chassis_cmd_;
     
     // === State Variables ===
     float steer_msg_;                    // Steering command (-1.0 to 1.0)
@@ -144,7 +145,7 @@ private:
      * - Handles cruise control override
      * - Processes steering commands
      * - Manages detection-based speed control
-     * - Publishes to Domain 2
+     * - Publishes directly to STM32 chassis (Domain 5)
      */
     void processAndPublishControl() {
         auto chassis_ctrl = msgs_ifaces::msg::ChassisCtrl();
@@ -171,8 +172,8 @@ private:
                 chassis_ctrl.bdr_msg = 1;  // Move forward
             }
 
-            // Publish to Domain 2
-            pub_rocon_d2_->publish(chassis_ctrl);
+            // Publish directly to STM32 chassis on Domain 5
+            pub_chassis_cmd_->publish(chassis_ctrl);
         }
 
         // Log published control values

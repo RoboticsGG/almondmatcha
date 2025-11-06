@@ -35,7 +35,8 @@ from vision_navigation_pkg.config import (
 
 def generate_launch_description():
     # ==================== ROS2 Domain Configuration ====================
-    set_domain_id = SetEnvironmentVariable('ROS_DOMAIN_ID', '2')
+    # Domain 5: All rover nodes for sensor fusion (vision, GNSS, IMU, encoders)
+    set_domain_id = SetEnvironmentVariable('ROS_DOMAIN_ID', '5')
     
     # ==================== Config File Paths ====================
     system_config = PathJoinSubstitution([

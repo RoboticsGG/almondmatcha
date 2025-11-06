@@ -14,11 +14,12 @@ set_custom_log_dir = SetEnvironmentVariable(
 
 def generate_launch_description():
 
-    # 1. Group for nodes running on ROS_DOMAIN_ID=2 (GNSS & Navigation)
-    domain_2_group = GroupAction(
+    # All nodes run on ROS_DOMAIN_ID=5 (rover internal for sensor fusion)
+    # Future: add a bridge node for Domain 2 (ws_base communication)
+    domain_5_group = GroupAction(
         actions=[
-            # Manual Command Equivalent: export ROS_DOMAIN_ID=2
-            SetEnvironmentVariable(name='ROS_DOMAIN_ID', value='2'),
+            # Manual Command Equivalent: export ROS_DOMAIN_ID=5
+            SetEnvironmentVariable(name='ROS_DOMAIN_ID', value='5'),
 
             # Command: ros2 run pkg_gnss_navigation node_gnss_spresense
             Node(
@@ -46,14 +47,6 @@ def generate_launch_description():
                 output='log',
                 emulate_tty=True
             ),
-        ]
-    )
-
-    # 2. Group for nodes running on ROS_DOMAIN_ID=5 (Chassis IMU & Sensors)
-    domain_5_group = GroupAction(
-        actions=[
-            # Manual Command Equivalent: export ROS_DOMAIN_ID=5
-            SetEnvironmentVariable(name='ROS_DOMAIN_ID', value='5'),
 
             # Command: ros2 run pkg_chassis_sensors node_chassis_imu
             Node(
@@ -75,9 +68,8 @@ def generate_launch_description():
         ]
     )
 
-    # Return the full launch description, executing all groups and nodes simultaneously
+    # Return the full launch description, executing all nodes in Domain 5
     return LaunchDescription([
         set_custom_log_dir,
-        domain_2_group,
         domain_5_group,
     ])
