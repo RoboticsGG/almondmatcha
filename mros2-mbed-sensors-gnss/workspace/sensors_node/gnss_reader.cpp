@@ -1,6 +1,10 @@
 /**
  * @file gnss_reader.cpp
  * @brief SimpleRTK2b GNSS reader implementation using Mbed OS UnbufferedSerial
+ * 
+ * Pin Configuration:
+ * - PG_14: USART6_TX (Alternate Function)
+ * - PG_9:  USART6_RX (Alternate Function + Pull-Up)
  */
 
 #include "gnss_reader.h"
@@ -28,9 +32,37 @@ static const char* default_nmea = "$GNRMC,,,,,,,,,,,N*71";
 // ============================================================================
 
 void gnss_reader_init() {
-    // Configure baud rate (should already be set in constructor)
+    printf("[GNSS] ===== USART6 Initialization Starting =====\r\n");
+    
+    // Step 1: Configure pins using DigitalInOut with alternate function
+    // PG_9 = RX (with pull-up)
+    // PG_14 = TX (standard output)
+    printf("[GNSS] Step 1: Configuring GPIO pins...\r\n");
+    
+    // Create pin objects to configure them
+    DigitalInOut rx_pin(PG_9);
+    DigitalOut tx_pin(PG_14);
+    
+    // Set RX pin mode to pull-up
+    rx_pin.mode(PullUp);
+    printf("[GNSS]   - PG_9 (RX): Pull-up resistor ENABLED\r\n");
+    
+    printf("[GNSS]   - PG_14 (TX): Standard GPIO output\r\n");
+    
+    // Step 2: Configure serial port
+    printf("[GNSS] Step 2: Configuring USART6 serial port...\r\n");
     gnss_serial.baud(GNSS_USART_BAUD_RATE);
-    printf("[GNSS] USART6 initialized (PG_14=TX, PG_9=RX) at %d baud\r\n", GNSS_USART_BAUD_RATE);
+    printf("[GNSS]   - Baud rate: %d bps\r\n", GNSS_USART_BAUD_RATE);
+    
+    // Step 3: Verify configuration
+    printf("[GNSS] ===== USART6 Configuration Complete =====\r\n");
+    printf("[GNSS] TX:   PG_14\r\n");
+    printf("[GNSS] RX:   PG_9 (with Pull-Up)\r\n");
+    printf("[GNSS] Baud: %d bps\r\n", GNSS_USART_BAUD_RATE);
+    printf("[GNSS] Ready to receive NMEA sentences\r\n");
+    
+    // Give interface time to stabilize
+    osDelay(100);
 }
 
 // ============================================================================
