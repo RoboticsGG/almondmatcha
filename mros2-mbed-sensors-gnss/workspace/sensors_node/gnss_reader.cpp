@@ -2,16 +2,19 @@
  * @file gnss_reader.cpp
  * @brief SimpleRTK2b GNSS reader implementation using Mbed OS UnbufferedSerial
  * 
- * Pin Configuration:
- * OPTION 1 (Current): PG_14=TX, PG_9=RX (USART6 AF8)
- * OPTION 2 (Try if failing): PC6=TX, PC7=RX (USART6 AF8 - default pins)
+ * Pin Configuration for Arduino Shield Mount:
+ * - Arduino D0 (PG_9)  = USART6_RX (receives data FROM SimpleRTK2b)
+ * - Arduino D1 (PG_14) = USART6_TX (sends data TO SimpleRTK2b)
  * 
- * NOTE: If PG_14/PG_9 don't work, try PC6/PC7 by changing the constructor below
+ * NOTE: SimpleRTK2b as Arduino shield uses D0/D1, cannot use alternate pins
  */
 
 #include "gnss_reader.h"
 #include "mbed.h"
 #include <cstring>
+
+// Include STM32 HAL for direct GPIO configuration
+#include "stm32f7xx_hal.h"
 
 // ============================================================================
 // SERIAL INTERFACE & BUFFERS
@@ -19,37 +22,21 @@
 
 /** 
  * @brief USART6 serial port instance
+ * Arduino Shield Configuration:
+ * - D0 (PG_9)  = USART6_RX (AF8)
+ * - D1 (PG_14) = USART6_TX (AF8)
  * 
- * NUCLEO-F767ZI USART6 pin options:
- * Option 1: TX=PG_14 (D1), RX=PG_9  (D0) <- Arduino header pins
- * Option 2: TX=PC_6  (D51),RX=PC_7 (D52) <- Morpho connector
- * 
- * Currently using Option 1 (Arduino D0/D1 pins for easy access)
- * If this doesn't work, try Option 2 by changing to: UnbufferedSerial gnss_serial(PC_6, PC_7, ...)
+ * Constructor order: (TX, RX, baudrate)
+ * Try both TX,RX and RX,TX if one doesn't work
  */
 static UnbufferedSerial gnss_serial(PG_14, PG_9, GNSS_USART_BAUD_RATE);
+// Alternative if swapped: static UnbufferedSerial gnss_serial(PG_9, PG_14, GNSS_USART_BAUD_RATE);
 
 /** @brief Internal NMEA sentence buffer */
 static char nmea_buffer[GNSS_NMEA_BUFFER_SIZE];
 
 /** @brief Current write position in nmea_buffer */
 static size_t nmea_buffer_index = 0;
-
-// ============================================================================
-// DIAGNOSTIC COUNTERS
-// ============================================================================
-
-static uint32_t read_attempts = 0;
-static uint32_t bytes_received_total = 0;
-static uint32_t nmea_sentences_completed = 0;
-static uint8_t last_raw_byte = 0;
-static uint32_t consecutive_no_data = 0;
-
-// Diagnostic counters
-static volatile uint32_t gnss_total_read_calls = 0;
-static volatile uint32_t gnss_total_readable_true = 0;
-static volatile uint32_t gnss_total_bytes = 0;
-static volatile uint32_t gnss_total_read_errors = 0;
 
 /** @brief Default NMEA sentence (RMC format with no fix) */
 static const char* default_nmea = "$GNRMC,,,,,,,,,,,N*71";
@@ -58,40 +45,49 @@ static const char* default_nmea = "$GNRMC,,,,,,,,,,,N*71";
 // GNSS INITIALIZATION
 // ============================================================================
 
+/**
+ * @brief Configure GPIO pins for USART6 using STM32 HAL
+ * Must be called before gnss_serial operations
+ */
+static void configure_usart6_gpio() {
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    
+    // Enable GPIO Port G clock
+    __HAL_RCC_GPIOG_CLK_ENABLE();
+    
+    // Configure PG9 (USART6_RX) - Arduino D0
+    GPIO_InitStruct.Pin = GPIO_PIN_9;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;        // Alternate Function Push-Pull
+    GPIO_InitStruct.Pull = GPIO_PULLUP;            // Enable pull-up resistor
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF8_USART6;   // AF8 for USART6
+    HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
+    
+    // Configure PG14 (USART6_TX) - Arduino D1
+    GPIO_InitStruct.Pin = GPIO_PIN_14;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;        // Alternate Function Push-Pull
+    GPIO_InitStruct.Pull = GPIO_NOPULL;            // No pull-up needed for TX
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF8_USART6;   // AF8 for USART6
+    HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
+}
+
 void gnss_reader_init() {
-    printf("[GNSS] ===== USART6 Initialization Starting =====\r\n");
+    // Configure GPIO pins using STM32 HAL (explicit AF8)
+    configure_usart6_gpio();
     
-    // Step 1: Configure pins using DigitalInOut with alternate function
-    // PG_9 = RX (with pull-up)
-    // PG_14 = TX (standard output)
-    printf("[GNSS] Step 1: Configuring GPIO pins...\r\n");
-    
-    // Create pin objects to configure them
-    DigitalInOut rx_pin(PG_9);
-    DigitalOut tx_pin(PG_14);
-    
-    // Set RX pin mode to pull-up
-    rx_pin.mode(PullUp);
-    printf("[GNSS]   - PG_9 (RX): Pull-up resistor ENABLED\r\n");
-    
-    printf("[GNSS]   - PG_14 (TX): Standard GPIO output\r\n");
-    
-    // Step 2: Configure serial port
-    printf("[GNSS] Step 2: Configuring USART6 serial port...\r\n");
+    // Configure serial port
     gnss_serial.baud(GNSS_USART_BAUD_RATE);
-    printf("[GNSS]   - Baud rate: %d bps\r\n", GNSS_USART_BAUD_RATE);
+    gnss_serial.format(
+        /* bits */ 8,
+        /* parity */ SerialBase::None,
+        /* stop bits */ 1
+    );
     
-    // Step 3: Verify configuration
-    printf("[GNSS] ===== USART6 Configuration Complete =====\r\n");
-    printf("[GNSS] TX:   PG_14\r\n");
-    printf("[GNSS] RX:   PG_9 (with Pull-Up)\r\n");
-    printf("[GNSS] Baud: %d bps\r\n", GNSS_USART_BAUD_RATE);
-    printf("[GNSS] Ready to receive NMEA sentences\r\n");
+    printf("[GNSS] USART6 initialized on Arduino D0/D1 (115200 bps, 8N1)\r\n");
     
     // Give interface time to stabilize
     osDelay(100);
-    
-    printf("[GNSS] Starting reception test - waiting for data...\r\n");
 }
 
 // ============================================================================
@@ -102,44 +98,22 @@ size_t gnss_reader_read_nmea(char* output_buffer, size_t buffer_size) {
     if (output_buffer == NULL || buffer_size == 0) {
         return 0;  // Invalid parameters
     }
-    gnss_total_read_calls++;
 
     // Check if serial port is readable
     if (!gnss_serial.readable()) {
-        // Occasionally print status to help debugging (every 256 calls)
-        if ((gnss_total_read_calls & 0xFF) == 0) {
-            printf("[GNSS-DBG] read_calls=%lu readable=0 total_bytes=%lu errors=%lu\r\n",
-                   (unsigned long)gnss_total_read_calls,
-                   (unsigned long)gnss_total_bytes,
-                   (unsigned long)gnss_total_read_errors);
-        }
         return 0;  // No data available
     }
 
-    // serial is readable
-    gnss_total_readable_true++;
-
     // Read all available data from serial port
-    uint32_t bytes_read = 0;
     while (gnss_serial.readable()) {
         uint8_t ch_buffer;
         ssize_t read_result = gnss_serial.read(&ch_buffer, 1);
         
         if (read_result <= 0) {
-            gnss_total_read_errors++;
-            // read returned 0 or negative; break to avoid busy-loop
             break;  // No data available or error
         }
 
-        bytes_read++;
-        gnss_total_bytes++;
         char ch = static_cast<char>(ch_buffer);
-        
-        // Debug: Print every character received to help diagnose
-        printf("[GNSS-BYTE] #%lu: 0x%02X ('%c')\r\n", 
-               (unsigned long)gnss_total_bytes,
-               (unsigned char)ch, 
-               (ch >= 32 && ch < 127) ? ch : '?');
         
         // Start of a new NMEA sentence
         if (ch == '$') {
@@ -167,21 +141,6 @@ size_t gnss_reader_read_nmea(char* output_buffer, size_t buffer_size) {
         else if (nmea_buffer_index > 0 && nmea_buffer_index < GNSS_NMEA_BUFFER_SIZE - 1) {
             nmea_buffer[nmea_buffer_index++] = ch;
         }
-    }
-    // If we read bytes but didn't form a complete sentence, print a brief summary
-    if (bytes_read > 0) {
-        // Print first few bytes in hex to help identify data
-        printf("[GNSS-DBG] bytes_read=%lu total_bytes=%lu\r\n",
-               (unsigned long)bytes_read, (unsigned long)gnss_total_bytes);
-        // Optionally print raw bytes (print at most 32 bytes)
-        // (uncomment the loop below if you need detailed raw output)
-        /*
-        size_t preview = (bytes_read < 32) ? bytes_read : 32;
-        for (size_t i = 0; i < preview; ++i) {
-            printf("%02X ", (unsigned char)nmea_buffer[i]);
-        }
-        printf("\r\n");
-        */
     }
 
     return 0;  // No complete NMEA sentence available yet

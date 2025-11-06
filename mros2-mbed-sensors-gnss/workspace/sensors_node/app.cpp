@@ -133,40 +133,18 @@ void power_monitor_task() {
  */
 void gnss_reader_task() {
     MROS2_INFO("GNSS reader task started");
-    uint32_t nmea_received_count = 0;
-    uint32_t read_attempts = 0;
     
     while (true) {
         // Read NMEA data from serial port
         char nmea_sentence[GNSS_NMEA_BUFFER_SIZE];
         size_t nmea_length = gnss_reader_read_nmea(nmea_sentence, GNSS_NMEA_BUFFER_SIZE);
         
-        read_attempts++;
-        
         if (nmea_length > 0) {
-            nmea_received_count++;
             // Valid NMEA sentence received, store it with mutex protection
             sensor_data_mutex.lock();
             strncpy(sensor_data.nmea_sentence, nmea_sentence, GNSS_NMEA_BUFFER_SIZE - 1);
             sensor_data.nmea_sentence[GNSS_NMEA_BUFFER_SIZE - 1] = '\0';
             sensor_data_mutex.unlock();
-            
-            // Debug: Print immediately when NMEA sentence is received
-            printf("[GNSS] Received NMEA #%lu (%lu bytes): %s\r\n", 
-                   nmea_received_count, nmea_length, nmea_sentence);
-            
-            // TODO: Add NMEA sentence parsing here
-            // Examples of common NMEA sentences:
-            // $GPRMC - Recommended Minimum Navigation Information
-            // $GPGGA - Global Positioning System Fix Data
-            // $GPGSA - GPS DOP and Active Satellites
-            // $GPGSV - GPS Satellites in View
-        }
-        
-        // Print status every 10 read attempts (1 second = 10 * 100ms)
-        if (read_attempts % 10 == 0) {
-            printf("[GNSS-STATUS] Read attempts: %lu, Sentences received: %lu\r\n", 
-                   read_attempts, nmea_received_count);
         }
         
         // Sleep before next read
@@ -248,14 +226,8 @@ int main()
   // ---- Main Sensor Publishing Loop ----
   // Main loop focuses on aggregating data from the three independent tasks
   // and publishing to ROS2 at 4 Hz (250ms interval).
-  // All console printing is centralized here.
-  
-  uint32_t print_counter = 0;  // Counter to throttle GNSS printing
-  uint32_t loop_count = 0;      // Track main loop iterations for diagnostics
   
   while (true) {
-    loop_count++;
-    
     // Read all sensor data from shared structure with mutex protection
     sensor_data_mutex.lock();
     int32_t enc_A = sensor_data.encoder_A;
@@ -275,16 +247,9 @@ int main()
     msgs.sys_volt_msg = vbus;           // Bus voltage (V)
     PubSensData.publish(msgs);
 
-    // Print main sensor debug information (every loop)
-    printf("[LOOP %lu] MotorA: %ld | MotorB: %ld | Vbus: %.3f V | I: %.3f A\r\n", 
-           loop_count, enc_A, enc_B, vbus, curr);
-    
-    // Print GNSS NMEA sentence every GNSS_PRINT_INTERVAL main loops (1 second)
-    print_counter++;
-    if (print_counter >= GNSS_PRINT_INTERVAL) {
-        print_counter = 0;
-        printf("[GNSS-MAIN] Current NMEA: %s\r\n", gnss_data);
-    }
+    // Print sensor status (compact format)
+    printf("[SENSORS] Enc(A:%ld B:%ld) Power(%.2fV %.2fA) GNSS:%s\r\n", 
+           enc_A, enc_B, vbus, curr, gnss_data);
 
     // Main loop runs at MAIN_LOOP_PERIOD_MS (4 Hz)
     ThisThread::sleep_for(chrono::milliseconds(MAIN_LOOP_PERIOD_MS));
