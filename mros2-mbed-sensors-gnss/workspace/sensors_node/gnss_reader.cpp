@@ -99,18 +99,19 @@ size_t gnss_reader_read_nmea(char* output_buffer, size_t buffer_size) {
         return 0;  // Invalid parameters
     }
 
-    // Check if serial port is readable
-    if (!gnss_serial.readable()) {
-        return 0;  // No data available
-    }
-
-    // Read all available data from serial port
-    while (gnss_serial.readable()) {
+    // Read all available data from serial port without checking readable() repeatedly
+    // This prevents us from sleeping mid-sentence
+    static const int MAX_READ_ITERATIONS = 200;  // Safety limit to prevent infinite loop
+    int iterations = 0;
+    
+    while (iterations++ < MAX_READ_ITERATIONS) {
+        // Try to read one byte
         uint8_t ch_buffer;
         ssize_t read_result = gnss_serial.read(&ch_buffer, 1);
         
         if (read_result <= 0) {
-            break;  // No data available or error
+            // No more data available
+            break;
         }
 
         char ch = static_cast<char>(ch_buffer);
