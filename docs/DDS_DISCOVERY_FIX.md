@@ -2,12 +2,13 @@
 
 ## Problem Summary
 
-**Symptom:** Intermittent message delivery from STM32 mros2 nodes to ROS2 subscribers in `ws_rpi`
+**Symptom:** Intermittent message delivery from STM32 mros2 nodes to ROS2 subscribers in `ws_rpi` and `ws_jetson`
 - Sometimes: No messages received at all
 - Sometimes: Messages appear after long delay (30+ seconds)
 - Sometimes: Works immediately from system start
 - Network connectivity (ping) confirmed OK
 - Power supply confirmed stable
+- All components (ws_rpi, ws_jetson, 2x STM32) run on the same rover
 
 ## Root Cause Analysis
 
@@ -22,15 +23,17 @@ Both STM32 boards were creating publishers/subscribers immediately after `mros2:
 
 **Race Condition:**
 ```
-Boot Order A:        Boot Order B:        Boot Order C:
-ws_rpi → STM32       STM32 → ws_rpi       ws_rpi ⟷ STM32 (simultaneous)
-❌ Mismatch          ❌ Mismatch          ⚠️ Timing-dependent
+Boot Order A:               Boot Order B:               Boot Order C:
+ws_rpi → ws_jetson → STM32  STM32 → ws_rpi → ws_jetson  All simultaneous
+❌ Mismatch                 ❌ Mismatch                 ⚠️ Timing-dependent
 ```
+With 4 components (ws_rpi + ws_jetson + chassis STM32 + sensors STM32), the timing dependencies are even more complex.
 
 ### 2. **Insufficient Participant Capacity**
 - `MAX_NUM_PARTICIPANTS = 5` (previous)
-- System has: 2 STM32 boards + multiple ws_rpi nodes + ws_jetson nodes
+- System has: 2 STM32 boards + multiple ws_rpi nodes + multiple ws_jetson nodes (all on the same rover)
 - If total participants exceed 5, new nodes cannot join DDS network
+- Typical rover node count: 2 STM32 + 3-5 ws_rpi nodes + 2-3 ws_jetson nodes = 7-10 participants
 
 ### 3. **Slow Discovery Announcement Rate**
 - SPDP announcements every 1000ms meant 3-4 seconds minimum for full discovery
@@ -38,10 +41,11 @@ ws_rpi → STM32       STM32 → ws_rpi       ws_rpi ⟷ STM32 (simultaneous)
 - No explicit discovery confirmation before starting data transmission
 
 ### 4. **No Startup Coordination**
-The 3-component system (ws_rpi, chassis STM32, sensors STM32) had no synchronization:
+The 4-component system (ws_rpi, ws_jetson, chassis STM32, sensors STM32) had no synchronization:
 - No wait for remote participants
 - No verification that subscriptions are matched
 - No confirmation that publishers have connected readers
+- All components run on the same rover but boot independently
 
 ## Implemented Fixes
 
@@ -62,7 +66,7 @@ MROS2_INFO("Discovery wait complete - initializing sensors");
 - With new 500ms SPDP period: 12 discovery cycles
 - Allows 3 complete heartbeat periods (at 2000ms)
 - Provides buffer for network latency and processing delays
-- Empirically sufficient for 3-component systems
+- Empirically sufficient for 4-component rover systems (ws_rpi + ws_jetson + 2x STM32)
 
 ### Fix 2: Optimize Discovery Timing
 
@@ -97,8 +101,9 @@ const uint8_t SPDP_MAX_NUMBER_FOUND_PARTICIPANTS = 10;
 
 **Supports:**
 - 2 STM32 boards (chassis + sensors)
-- Multiple ws_rpi nodes (can be 3-5 nodes)
-- Multiple ws_jetson nodes (can be 2-3 nodes)
+- Multiple ws_rpi nodes (typically 3-5 nodes, all on rover)
+- Multiple ws_jetson nodes (typically 2-3 nodes, all on rover)
+- Total typical participant count: 7-10 participants
 - Safety margin for future expansion
 
 ## Testing Instructions
@@ -162,26 +167,32 @@ ros2 topic echo /tpc_chassis_sensors
 
 **Try different startup sequences:**
 
-**Test A - ws_rpi first:**
+**Test A - ROS2 nodes first:**
 1. Start ws_rpi nodes
-2. Wait 10 seconds
-3. Power on STM32 boards
-4. ✅ Messages should appear within 6-8 seconds
+2. Start ws_jetson nodes
+3. Wait 10 seconds
+4. Power on STM32 boards
+5. ✅ Messages should appear within 6-8 seconds
 
 **Test B - STM32 first:**
 1. Power on STM32 boards
 2. Wait 10 seconds  
-3. Start ws_rpi nodes
+3. Start ws_rpi and ws_jetson nodes
 4. ✅ Messages should appear within 2-3 seconds
 
 **Test C - Simultaneous:**
-1. Start everything at once
+1. Start everything at once (ws_rpi, ws_jetson, both STM32 boards)
 2. ✅ Messages should appear within 8-10 seconds
 
 **Test D - Stress test (reboot STM32 only):**
-1. System running normally
+1. System running normally (all 4 components active)
 2. Reset/power-cycle one STM32 board
 3. ✅ Board should rejoin and resume publishing within 6-8 seconds
+
+**Test E - Partial system restart:**
+1. System running normally
+2. Restart ws_jetson nodes only
+3. ✅ STM32 messages should continue flowing, ws_jetson should reconnect within 3-5 seconds
 
 ## Expected Results
 
@@ -242,12 +253,21 @@ ros2 topic list
 
 # Check topic info
 ros2 topic info /tpc_chassis_imu -v
-# Should show: Publisher count: 1 (from STM32)
-#              Subscriber count: N (ws_rpi nodes)
+# Should show: Publisher count: 1 (from chassis STM32)
+#              Subscriber count: N (from ws_rpi + ws_jetson nodes)
 
 # Monitor message rate
 ros2 topic hz /tpc_chassis_imu
 # Should show: ~20 Hz (expected IMU publish rate)
+
+# Check node list to verify all participants discovered
+export ROS_DOMAIN_ID=5
+ros2 node list
+# Should show: rover_node (STM32) + ws_rpi nodes + ws_jetson nodes
+
+export ROS_DOMAIN_ID=6
+ros2 node list
+# Should show: mros2_node_sensors_d6 (STM32) + ws_rpi nodes + ws_jetson nodes
 ```
 
 ### If Issues Persist
@@ -272,7 +292,16 @@ ros2 topic list  # Should only show /tpc_chassis_sensors
 **3. Check for participant overflow:**
 ```bash
 # Count total ROS2 nodes across all domains
-ros2 node list  # If > 10 nodes, increase MAX_NUM_PARTICIPANTS further
+# Domain 5 (chassis):
+export ROS_DOMAIN_ID=5
+ros2 node list | wc -l
+
+# Domain 6 (sensors):
+export ROS_DOMAIN_ID=6
+ros2 node list | wc -l
+
+# If total count in any domain > 10, increase MAX_NUM_PARTICIPANTS further
+# Typical rover setup: 1 STM32 + 3-5 ws_rpi + 2-3 ws_jetson = 6-9 nodes per domain
 ```
 
 **4. Increase discovery delay if needed:**
@@ -330,15 +359,17 @@ osDelay(8000);  // 8 seconds = 16 SPDP cycles
 ### When to Adjust Discovery Delay
 
 **Increase delay (8-10s) if:**
-- Total node count increases significantly (>10 participants)
+- Total node count increases significantly (>10 participants per domain)
+- Adding more ws_rpi or ws_jetson nodes to the rover
 - Network has high latency (>50ms round-trip)
 - Running over WiFi instead of Ethernet
 - Still seeing occasional discovery failures
 
 **Decrease delay (4-5s) if:**
 - All nodes on same Ethernet switch (low latency)
-- Total node count is small (<5 participants)
+- Total node count is small (<5 participants per domain)
 - Need faster startup time and system is stable
+- Note: Current rover typically has 6-9 participants per domain, so 6s is appropriate
 
 ### When to Adjust SPDP/Heartbeat Periods
 
