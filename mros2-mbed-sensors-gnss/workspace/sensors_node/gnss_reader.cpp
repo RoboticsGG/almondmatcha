@@ -2,9 +2,9 @@
  * @file gnss_reader.cpp
  * @brief SimpleRTK2b GNSS reader implementation using Mbed OS UnbufferedSerial
  * 
- * Pin Configuration for Arduino Shield Mount:
- * - Arduino D0 (PG_9)  = USART6_RX (receives data FROM SimpleRTK2b)
- * - Arduino D1 (PG_14) = USART6_TX (sends data TO SimpleRTK2b)
+ * Pin Configuration for Arduino Shield Mount: 
+ * - Arduino D0 (PG_9)  = USART6_RX (receives data FROM SimpleRTK2b UART1)
+ * - Arduino D1 (PG_14) = USART6_TX (sends data TO SimpleRTK2b UART1)
  * 
  * NOTE: SimpleRTK2b as Arduino shield uses D0/D1, cannot use alternate pins
  */

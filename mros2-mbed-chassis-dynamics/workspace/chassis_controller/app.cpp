@@ -147,9 +147,11 @@ void imu_reader_task() {
             // Publish to ROS2
             imu_pub_ptr->publish(imu_msg);
             
-            MROS2_INFO("[imu_reader_task] Accel: X=%ld Y=%ld Z=%ld | Gyro: X=%ld Y=%ld Z=%ld",
-                       imu_msg.accel_x, imu_msg.accel_y, imu_msg.accel_z,
-                       imu_msg.gyro_x, imu_msg.gyro_y, imu_msg.gyro_z);
+            // Print IMU values in the same line (overwrite previous output)
+            printf("\r[imu_reader_task] Accel: X=%ld\tY=%ld\tZ=%ld\t| Gyro: X=%ld\tY=%ld\tZ=%ld",
+                   imu_msg.accel_x, imu_msg.accel_y, imu_msg.accel_z,
+                   imu_msg.gyro_x, imu_msg.gyro_y, imu_msg.gyro_z);
+            fflush(stdout);
         }
         
         // IMU polling rate
