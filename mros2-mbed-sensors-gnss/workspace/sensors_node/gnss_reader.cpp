@@ -30,6 +30,7 @@ static const char* default_nmea = "$GNRMC,,,,,,,,,,,N*71";
 void gnss_reader_init() {
     // Configure baud rate (should already be set in constructor)
     gnss_serial.baud(GNSS_USART_BAUD_RATE);
+    printf("[GNSS] USART6 initialized (PG_14=TX, PG_9=RX) at %d baud\r\n", GNSS_USART_BAUD_RATE);
 }
 
 // ============================================================================
