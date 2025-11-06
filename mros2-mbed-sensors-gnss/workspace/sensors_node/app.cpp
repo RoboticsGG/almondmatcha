@@ -159,7 +159,7 @@ void gnss_reader_task() {
 int main()
 {
   // ---- Network Initialization ----
-  setenv("ROS_DOMAIN_ID", "6", 6);
+  setenv("ROS_DOMAIN_ID", "5", 5);
   
   if (mros2_platform::network_connect()) {
     MROS2_ERROR("failed to connect and setup network! aborting,,,");
@@ -170,7 +170,7 @@ int main()
 
   // ---- Platform and mROS2 Initialization ----
   MROS2_INFO("%s start!", MROS2_PLATFORM_NAME);
-  MROS2_INFO("app name: STM32 Sensors Node (Domain 6)");
+  MROS2_INFO("app name: STM32 Sensors Node (Domain 5)");
 
   mros2::init(0, NULL);
   MROS2_DEBUG("mROS 2 initialization is completed");

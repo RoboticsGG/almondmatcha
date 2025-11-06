@@ -21,94 +21,24 @@
 /**
  * @brief Rover Chassis Low-Level Controller Node
  * 
- * This node manages low-level chassis control, bridging communication between two ROS2 domains:
- * - Domain ID 2: Receives control commands and provides services
- * - Domain ID 5: Publishes chassis control messages
+ * This node manages low-level chassis control in Domain ID 2:
+ * - Receives control commands and provides services
+ * - Publishes chassis control messages
  */
 class ChassisController : public rclcpp::Node {
 public:
     ChassisController() : Node("chassis_controller") {
-        // Initialize Domain ID 2 (Subscriber Domain)
-        initializeSubscriberDomain();
-        
-        // Initialize Domain ID 5 (Publisher Domain)
-        initializePublisherDomain();
-        
-        // Start executor thread for multi-domain communication
-        executor_.add_node(sub_node_);
-        executor_.add_node(pub_node_);
-        executor_thread_ = std::thread([this]() { executor_.spin(); });
-        
-        RCLCPP_INFO(this->get_logger(), 
-                    "Chassis Controller initialized (Subscriber: Domain 2, Publisher: Domain 5)");
-    }
-
-    ~ChassisController() {
-        executor_.cancel();
-        if (executor_thread_.joinable()) {
-            executor_thread_.join();
-        }
-    }
-
-private:
-    // === Domain Nodes ===
-    rclcpp::Node::SharedPtr sub_node_;  // Domain ID 2
-    rclcpp::Node::SharedPtr pub_node_;  // Domain ID 5
-    
-    // === Services ===
-    rclcpp::Service<services_ifaces::srv::SpdLimit>::SharedPtr srv_spd_limit_;
-    
-    // === Subscribers ===
-    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_cc_rcon_;
-    rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr sub_fmctl_;
-    
-    // === Publishers ===
-    rclcpp::Publisher<msgs_ifaces::msg::ChassisCtrl>::SharedPtr pub_rocon_d5_;
-    rclcpp::Publisher<msgs_ifaces::msg::ChassisCtrl>::SharedPtr pub_rocon_d2_;
-    
-    // === Executor ===
-    rclcpp::executors::MultiThreadedExecutor executor_;
-    std::thread executor_thread_;
-    
-    // === State Variables ===
-    float steer_msg_;                    // Steering command (-1.0 to 1.0)
-    float detect_msg_;                   // Detection status
-    uint8_t spd_msg_;                    // Speed limit
-    bool cc_rcon_msg_ = true;            // Cruise control/remote control flag
-    
-    // === Timer Variables ===
-    bool detect_zero_active_ = false;    // Detection zero state tracking
-    rclcpp::Time detect_zero_start_time_;
-    
-    // === Thread Safety ===
-    std::mutex data_lock_;
-    
-    // === Initialization Methods ===
-    
-    /**
-     * @brief Initialize subscriber domain (Domain ID 2)
-     * Creates node, service, and subscriptions in Domain ID 2
-     */
-    void initializeSubscriberDomain() {
-        rclcpp::InitOptions init_options;
-        init_options.set_domain_id(2);
-        
-        auto context = std::make_shared<rclcpp::Context>();
-        context->init(0, nullptr, init_options);
-        
-        rclcpp::NodeOptions node_options;
-        node_options.context(context);
-        sub_node_ = std::make_shared<rclcpp::Node>("sub_node", node_options);
+        RCLCPP_INFO(this->get_logger(), "Initializing Chassis Controller (Domain 2)");
         
         // Create speed limit service
-        srv_spd_limit_ = sub_node_->create_service<services_ifaces::srv::SpdLimit>(
+        srv_spd_limit_ = this->create_service<services_ifaces::srv::SpdLimit>(
             "srv_spd_limit",
             std::bind(&ChassisController::handleSpeedLimitRequest, 
                      this, std::placeholders::_1, std::placeholders::_2)
         );
         
         // Create mission active subscription
-        sub_cc_rcon_ = sub_node_->create_subscription<std_msgs::msg::Bool>(
+        sub_cc_rcon_ = this->create_subscription<std_msgs::msg::Bool>(
             "tpc_gnss_mission_active", 10,
             std::bind(&ChassisController::cruiseControlCallback, 
                      this, std::placeholders::_1)
@@ -122,31 +52,38 @@ private:
         );
         
         // Create publisher in Domain ID 2
-        pub_rocon_d2_ = sub_node_->create_publisher<msgs_ifaces::msg::ChassisCtrl>(
+        pub_rocon_d2_ = this->create_publisher<msgs_ifaces::msg::ChassisCtrl>(
             "tpc_chassis_ctrl_d2", 10
         );
+        
+        RCLCPP_INFO(this->get_logger(), "Chassis Controller initialized");
     }
+
+    ~ChassisController() = default;
+
+private:
+    // === Services ===
+    rclcpp::Service<services_ifaces::srv::SpdLimit>::SharedPtr srv_spd_limit_;
     
-    /**
-     * @brief Initialize publisher domain (Domain ID 5)
-     * Creates node and publishers in Domain ID 5
-     */
-    void initializePublisherDomain() {
-        rclcpp::InitOptions init_options;
-        init_options.set_domain_id(5);
-        
-        auto context = std::make_shared<rclcpp::Context>();
-        context->init(0, nullptr, init_options);
-        
-        rclcpp::NodeOptions node_options;
-        node_options.context(context);
-        pub_node_ = std::make_shared<rclcpp::Node>("pub_node", node_options);
-        
-        // Create publisher in Domain ID 5
-        pub_rocon_d5_ = pub_node_->create_publisher<msgs_ifaces::msg::ChassisCtrl>(
-            "tpc_chassis_cmd", 10
-        );
-    }
+    // === Subscribers ===
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_cc_rcon_;
+    rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr sub_fmctl_;
+    
+    // === Publishers ===
+    rclcpp::Publisher<msgs_ifaces::msg::ChassisCtrl>::SharedPtr pub_rocon_d2_;
+    
+    // === State Variables ===
+    float steer_msg_;                    // Steering command (-1.0 to 1.0)
+    float detect_msg_;                   // Detection status
+    uint8_t spd_msg_;                    // Speed limit
+    bool cc_rcon_msg_ = true;            // Cruise control/remote control flag
+    
+    // === Timer Variables ===
+    bool detect_zero_active_ = false;    // Detection zero state tracking
+    rclcpp::Time detect_zero_start_time_;
+    
+    // === Thread Safety ===
+    std::mutex data_lock_;
     
     // === Callback Methods ===
     
@@ -207,7 +144,7 @@ private:
      * - Handles cruise control override
      * - Processes steering commands
      * - Manages detection-based speed control
-     * - Publishes to both domains
+     * - Publishes to Domain 2
      */
     void processAndPublishControl() {
         auto chassis_ctrl = msgs_ifaces::msg::ChassisCtrl();
@@ -234,8 +171,7 @@ private:
                 chassis_ctrl.bdr_msg = 1;  // Move forward
             }
 
-            // Publish to both domains
-            pub_rocon_d5_->publish(chassis_ctrl);
+            // Publish to Domain 2
             pub_rocon_d2_->publish(chassis_ctrl);
         }
 

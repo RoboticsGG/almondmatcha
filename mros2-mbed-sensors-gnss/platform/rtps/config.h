@@ -45,7 +45,7 @@ const VendorId_t VENDOR_ID = {13, 37};
 extern std::array<uint8_t, 4> IP_ADDRESS;
 const GuidPrefix_t BASE_GUID_PREFIX{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12};
 
-const uint8_t DOMAIN_ID = 6; // 230 possible with UDP
+const uint8_t DOMAIN_ID = 5; // 230 possible with UDP
 const uint8_t NUM_STATELESS_WRITERS = 4;
 const uint8_t NUM_STATELESS_READERS = 4;
 const uint8_t NUM_STATEFUL_READERS = 8;

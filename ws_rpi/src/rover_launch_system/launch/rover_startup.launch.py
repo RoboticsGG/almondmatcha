@@ -49,7 +49,7 @@ def generate_launch_description():
         ]
     )
 
-    # 2. Group for nodes running on ROS_DOMAIN_ID=5 (IMU Data & Domain Bridge)
+    # 2. Group for nodes running on ROS_DOMAIN_ID=5 (Chassis IMU & Sensors)
     domain_5_group = GroupAction(
         actions=[
             # Manual Command Equivalent: export ROS_DOMAIN_ID=5
@@ -63,23 +63,6 @@ def generate_launch_description():
                 output='log',
                 emulate_tty=True
             ),
-
-            # Command: ros2 run pkg_chassis_control node_domain_bridge
-            Node(
-                package='pkg_chassis_control',
-                executable='node_domain_bridge',
-                name='domain_bridge_node',
-                output='log',
-                emulate_tty=True
-            ),
-        ]
-    )
-
-    # 3. Group for node running on ROS_DOMAIN_ID=6 (Chassis Sensors)
-    domain_6_group = GroupAction(
-        actions=[
-            # Manual Command Equivalent: export ROS_DOMAIN_ID=6
-            SetEnvironmentVariable(name='ROS_DOMAIN_ID', value='6'),
 
             # Command: ros2 run pkg_chassis_sensors node_chassis_sensors
             Node(
@@ -97,5 +80,4 @@ def generate_launch_description():
         set_custom_log_dir,
         domain_2_group,
         domain_5_group,
-        domain_6_group,
     ])

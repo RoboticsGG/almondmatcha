@@ -31,19 +31,6 @@ target_compile_features(node_chassis_controller PUBLIC c_std_99 cxx_std_17)  # R
 
 install(TARGETS node_chassis_controller
   DESTINATION lib/${PROJECT_NAME})
-
-#-------------------domain_bridge-------------------
-
-add_executable(node_domain_bridge src/node_domain_bridge.cpp)
-ament_target_dependencies(node_domain_bridge rclcpp msgs_ifaces)
-
-target_include_directories(node_domain_bridge PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>)
-target_compile_features(node_domain_bridge PUBLIC c_std_99 cxx_std_17)
-
-install(TARGETS node_domain_bridge
-  DESTINATION lib/${PROJECT_NAME})
   
 #------------------------------------------------------------------------------------#
 
