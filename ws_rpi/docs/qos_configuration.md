@@ -221,7 +221,7 @@ qos.reliable().transient_local();
 
 | Publisher QoS          | Subscriber QoS         | Compatible? | Notes |
 |------------------------|------------------------|-------------|-------|
-| best_effort + volatile | best_effort + volatile | ✅ Yes | Perfect match |
+| best_effort + volatile | best_effort + volatile | ✅ Yes  | Perfect match |
 | best_effort + volatile | reliable + volatile    | ❌ No | Subscriber too strict |
 | reliable + transient   | reliable + transient   | ✅ Yes | Perfect match |
 | reliable + transient   | best_effort + volatile | ❌ No | Subscriber too lenient |

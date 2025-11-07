@@ -38,7 +38,7 @@ public:
                      this, std::placeholders::_1, std::placeholders::_2)
         );
         
-        // Create mission active subscription
+        // Create mission active subscription (from ws_rpi node)
         rclcpp::QoS qos_reliable(10);
         qos_reliable.reliable().transient_local();
         
@@ -48,9 +48,13 @@ public:
                      this, std::placeholders::_1)
         );
         
-        // Create flight mode control subscription
+        // Create flight mode control subscription (from Jetson node)
+        // Jetson Python publisher uses default: reliable + volatile
+        rclcpp::QoS qos_jetson(10);
+        qos_jetson.reliable();  // volatile is default
+        
         sub_fmctl_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
-            "tpc_rover_fmctl", qos_reliable,
+            "tpc_rover_fmctl", qos_jetson,
             std::bind(&ChassisController::flightModeControlCallback, 
                      this, std::placeholders::_1)
         );
@@ -58,6 +62,15 @@ public:
         // Create publisher to STM32 chassis (Domain 5)
         pub_chassis_cmd_ = this->create_publisher<msgs_ifaces::msg::ChassisCtrl>(
             "tpc_chassis_cmd", qos_reliable
+        );
+        
+        // Status timer to show node is alive
+        status_timer_ = this->create_wall_timer(
+            std::chrono::seconds(10),
+            [this]() {
+                RCLCPP_INFO(this->get_logger(), 
+                    "Chassis Controller alive - waiting for vision commands on tpc_rover_fmctl");
+            }
         );
         
         RCLCPP_INFO(this->get_logger(), "Chassis Controller initialized");
@@ -75,6 +88,9 @@ private:
     
     // === Publishers ===
     rclcpp::Publisher<msgs_ifaces::msg::ChassisCtrl>::SharedPtr pub_chassis_cmd_;
+    
+    // === Timers ===
+    rclcpp::TimerBase::SharedPtr status_timer_;
     
     // === State Variables ===
     float steer_msg_;                    // Steering command (-1.0 to 1.0)
