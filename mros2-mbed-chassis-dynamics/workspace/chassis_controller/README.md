@@ -255,7 +255,7 @@ nano workspace/chassis_controller/motor_control.cpp
 sudo ./build.bash all NUCLEO_F767ZI chassis_controller
 
 # 3. Flash to board
-cp build/NUCLEO_F767ZI/mros2-mbed.bin /media/DAPLINK/
+cp build/NUCLEO_F767ZI/mros2-mbed.bin /media/yupi/NOD_F767ZI1
 
 # 4. Monitor output
 minicom -D /dev/ttyACM0 -b 115200

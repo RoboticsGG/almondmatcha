@@ -371,9 +371,9 @@ sudo ./build.bash all NUCLEO_F767ZI sensors_node
 lsblk  # Identify mount point (typically /media/DAPLINK)
 ```
 
-**Copy Binary to Board:**
+**Copy Binary to Board:** (NOD_F767ZI)
 ```bash
-cp build/NUCLEO_F767ZI/mros2-mbed.bin /media/DAPLINK/
+cp build/NUCLEO_F767ZI/mros2-mbed.bin /media/yupi/NOD_F767ZI
 ```
 
 **Alternative: Using STLINK Programmer**

@@ -316,7 +316,7 @@ Total Static RAM memory (data + bss): 104,344 bytes (102 KB)
 ```
 
 ### Flash to Board
-1. Connect NUCLEO-F767ZI via USB
+1. Connect NUCLEO-F767ZI via USB (NOD_F767ZI1 mount point appears)
 2. Use STM32 STLink Utility or drag .bin to board mount point
 3. Monitor serial output at 115200 baud for debug logs
 
