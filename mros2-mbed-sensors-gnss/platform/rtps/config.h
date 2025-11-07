@@ -50,7 +50,7 @@ const uint8_t NUM_STATELESS_WRITERS = 4;
 const uint8_t NUM_STATELESS_READERS = 4;
 const uint8_t NUM_STATEFUL_READERS = 8;
 const uint8_t NUM_STATEFUL_WRITERS = 8;
-const uint8_t MAX_NUM_PARTICIPANTS = 10; // Increased from 5 to support ws_rpi + ws_jetson + STM32 nodes
+const uint8_t MAX_NUM_PARTICIPANTS = 20; // Increased to 20 to support ws_rpi (7) + bridge (2) + ws_jetson (3) + STM32 (2) + base (3)
 const uint8_t NUM_WRITERS_PER_PARTICIPANT = 16;
 const uint8_t NUM_READERS_PER_PARTICIPANT = 16;
 const uint8_t NUM_WRITER_PROXIES_PER_READER = 6;
@@ -78,7 +78,7 @@ const uint16_t SPDP_RESEND_PERIOD_MS = 500;   // Reduced from 1000ms for faster 
 const uint8_t SPDP_CYCLECOUNT_HEARTBEAT =
     2; // skip x SPDP rounds before checking liveliness
 const uint8_t SPDP_WRITER_PRIO = 24;
-const uint8_t SPDP_MAX_NUMBER_FOUND_PARTICIPANTS = 10; // Increased from 5
+const uint8_t SPDP_MAX_NUMBER_FOUND_PARTICIPANTS = 20; // Increased to 20 to match MAX_NUM_PARTICIPANTS
 const uint8_t SPDP_MAX_NUM_LOCATORS = 5;
 const Duration_t SPDP_DEFAULT_REMOTE_LEASE_DURATION = {
     100, 0}; // Default lease duration for remote participants, usually
