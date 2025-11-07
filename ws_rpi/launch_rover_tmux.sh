@@ -12,14 +12,15 @@ tmux kill-session -t $SESSION_NAME 2>/dev/null
 # Create new tmux session
 tmux new-session -d -s $SESSION_NAME
 
-# Create 4x2 grid layout (8 panes total, 7 used)
-tmux split-window -h
-tmux split-window -v
-tmux split-window -v
+# Create 4x2 grid (7 panes used, 1 reserved)
+tmux split-window -h  # Split into left and right columns
 tmux select-pane -t 0
-tmux split-window -v
-tmux split-window -v
-tmux split-window -v
+tmux split-window -v  # Split left column into 2
+tmux split-window -v  # Split left column into 3
+tmux split-window -v  # Split left column into 4 (final)
+tmux select-pane -t 4
+tmux split-window -v  # Split right column into 2
+tmux split-window -v  # Split right column into 3 (final)
 
 # Wait for panes to be created
 sleep 0.5
@@ -78,6 +79,9 @@ tmux send-keys -t $SESSION_NAME:0.6 "cd ~/almondmatcha/ws_rpi && source install/
 tmux send-keys -t $SESSION_NAME:0.6 "export ROS_DOMAIN_ID=2" C-m
 tmux send-keys -t $SESSION_NAME:0.6 "clear && echo -e '\\e[1;93m>>> [7/7] BASE BRIDGE (Domain 2 Publisher) <<<\\e[0m' && sleep 1" C-m
 tmux send-keys -t $SESSION_NAME:0.6 "ros2 run pkg_base_bridge node_base_bridge" C-m
+
+# Attach to the tmux session
+tmux attach-session -t $SESSION_NAME
 
 # Pane 7 (bottom-right): Reserved for monitoring or future EKF
 tmux select-pane -t 7 -T "Reserved_Monitor"

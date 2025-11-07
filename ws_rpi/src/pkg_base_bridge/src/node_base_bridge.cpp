@@ -94,33 +94,41 @@ private:
     void init_domain5_subscribers() {
         RCLCPP_INFO(this->get_logger(), "Initializing Domain 5 subscribers...");
         
+        // Create QoS profile matching sensor nodes (sensor_data with transient_local)
+        rclcpp::QoS qos_sensor_profile(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_sensor_data));
+        qos_sensor_profile.transient_local();
+        
+        // Create QoS profile for standard topics (reliable, transient_local)
+        rclcpp::QoS qos_standard_profile(10);
+        qos_standard_profile.reliable().transient_local();
+        
         // IMU data from STM32
         sub_d5_imu_ = this->create_subscription<msgs_ifaces::msg::ChassisIMU>(
-            "tpc_chassis_imu", 10,
+            "tpc_chassis_imu", qos_sensor_profile,
             std::bind(&BaseBridgeNode::on_d5_imu, this, std::placeholders::_1)
         );
         
         // Encoder/power data from STM32
         sub_d5_sensors_ = this->create_subscription<msgs_ifaces::msg::ChassisSensors>(
-            "tpc_chassis_sensors", 10,
+            "tpc_chassis_sensors", qos_sensor_profile,
             std::bind(&BaseBridgeNode::on_d5_sensors, this, std::placeholders::_1)
         );
         
         // GNSS position data
         sub_d5_gnss_ = this->create_subscription<msgs_ifaces::msg::SpresenseGNSS>(
-            "tpc_gnss_spresense", 10,
+            "tpc_gnss_spresense", qos_standard_profile,
             std::bind(&BaseBridgeNode::on_d5_gnss, this, std::placeholders::_1)
         );
         
         // Chassis motor commands
         sub_d5_chassis_cmd_ = this->create_subscription<msgs_ifaces::msg::ChassisCtrl>(
-            "tpc_chassis_cmd", 10,
+            "tpc_chassis_cmd", qos_standard_profile,
             std::bind(&BaseBridgeNode::on_d5_chassis_cmd, this, std::placeholders::_1)
         );
         
         // Mission active status
             sub_d5_mission_active_ = this->create_subscription<std_msgs::msg::Bool>(
-                "tpc_gnss_mission_active", 10,
+                "tpc_gnss_mission_active", qos_standard_profile,
                 [this](const std::shared_ptr<const std_msgs::msg::Bool> msg) {
                     pub_d2_mission_active_->publish(*msg);
                 }
@@ -128,7 +136,7 @@ private:
 
             // Distance remaining
             sub_d5_distance_ = this->create_subscription<std_msgs::msg::Float64>(
-                "tpc_gnss_mission_remain_dist", 10,
+                "tpc_gnss_mission_remain_dist", qos_standard_profile,
                 [this](const std::shared_ptr<const std_msgs::msg::Float64> msg) {
                     pub_d2_distance_->publish(*msg);
                 }
@@ -150,28 +158,36 @@ private:
     void init_domain2_publishers() {
         RCLCPP_INFO(this->get_logger(), "Initializing relay publishers...");
         
+        // Create QoS profile matching sensor nodes (sensor_data with transient_local)
+        rclcpp::QoS qos_sensor_profile(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_sensor_data));
+        qos_sensor_profile.transient_local();
+        
+        // Create QoS profile for standard topics (reliable, transient_local for last value)
+        rclcpp::QoS qos_standard_profile(10);
+        qos_standard_profile.reliable().transient_local();
+        
         pub_d2_imu_ = this->create_publisher<msgs_ifaces::msg::ChassisIMU>(
-            "tpc_chassis_imu", 10
+            "tpc_chassis_imu", qos_sensor_profile
         );
         
         pub_d2_sensors_ = this->create_publisher<msgs_ifaces::msg::ChassisSensors>(
-            "tpc_chassis_sensors", 10
+            "tpc_chassis_sensors", qos_sensor_profile
         );
         
         pub_d2_gnss_ = this->create_publisher<msgs_ifaces::msg::SpresenseGNSS>(
-            "tpc_gnss_spresense", 10
+            "tpc_gnss_spresense", qos_standard_profile
         );
         
         pub_d2_chassis_cmd_ = this->create_publisher<msgs_ifaces::msg::ChassisCtrl>(
-            "tpc_chassis_cmd", 10
+            "tpc_chassis_cmd", qos_standard_profile
         );
         
         pub_d2_mission_active_ = this->create_publisher<std_msgs::msg::Bool>(
-            "tpc_gnss_mission_active", 10
+            "tpc_gnss_mission_active", qos_standard_profile
         );
         
         pub_d2_distance_ = this->create_publisher<std_msgs::msg::Float64>(
-            "tpc_gnss_mission_remain_dist", 10
+            "tpc_gnss_mission_remain_dist", qos_standard_profile
         );
         
         RCLCPP_INFO(this->get_logger(), "Relay publishers initialized (6 topics)");
