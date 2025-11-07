@@ -17,7 +17,11 @@ const std::string LOG_DIR = "/home/curry/almondmatcha/runs/logs/";
 class SpresenseGNSSNode : public rclcpp::Node {
 public:
     SpresenseGNSSNode() : Node("spresense_gnss_node") {
-        pub_gnss_spresense_ = this->create_publisher<msgs_ifaces::msg::SpresenseGNSS>("tpc_gnss_spresense", 10);
+        // Use reliable + transient_local for GNSS data
+        rclcpp::QoS qos_reliable(10);
+        qos_reliable.reliable().transient_local();
+        
+        pub_gnss_spresense_ = this->create_publisher<msgs_ifaces::msg::SpresenseGNSS>("tpc_gnss_spresense", qos_reliable);
 
         if (!rcpputils::fs::exists(LOG_DIR)) {
             try {

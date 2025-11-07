@@ -94,49 +94,51 @@ private:
     void init_domain5_subscribers() {
         RCLCPP_INFO(this->get_logger(), "Initializing Domain 5 subscribers...");
         
-        // Create QoS profile matching sensor nodes (sensor_data with transient_local)
+        // QoS for sensor topics from STM32 (best_effort + volatile to match mbed mros2)
+        // STM32 mbed publishers use default: best_effort + volatile
         rclcpp::QoS qos_sensor_profile(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_sensor_data));
-        qos_sensor_profile.transient_local();
+        qos_sensor_profile.best_effort();
+        // Volatile is default, no need to explicitly set
         
-        // Create QoS profile for standard topics (reliable, transient_local)
-        rclcpp::QoS qos_standard_profile(10);
-        qos_standard_profile.reliable().transient_local();
+        // QoS for application-level topics from ws_rpi nodes (reliable + transient_local)
+        rclcpp::QoS qos_reliable(10);
+        qos_reliable.reliable().transient_local();
         
-        // IMU data from STM32
+        // IMU data from STM32 (uses sensor QoS: best_effort + volatile)
         sub_d5_imu_ = this->create_subscription<msgs_ifaces::msg::ChassisIMU>(
             "tpc_chassis_imu", qos_sensor_profile,
             std::bind(&BaseBridgeNode::on_d5_imu, this, std::placeholders::_1)
         );
         
-        // Encoder/power data from STM32
+        // Encoder/power data from STM32 (uses sensor QoS: best_effort + volatile)
         sub_d5_sensors_ = this->create_subscription<msgs_ifaces::msg::ChassisSensors>(
             "tpc_chassis_sensors", qos_sensor_profile,
             std::bind(&BaseBridgeNode::on_d5_sensors, this, std::placeholders::_1)
         );
         
-        // GNSS position data
+        // GNSS position data from ws_rpi (uses reliable + transient_local)
         sub_d5_gnss_ = this->create_subscription<msgs_ifaces::msg::SpresenseGNSS>(
-            "tpc_gnss_spresense", qos_standard_profile,
+            "tpc_gnss_spresense", qos_reliable,
             std::bind(&BaseBridgeNode::on_d5_gnss, this, std::placeholders::_1)
         );
         
-        // Chassis motor commands
+        // Chassis motor commands from ws_rpi (uses reliable + transient_local)
         sub_d5_chassis_cmd_ = this->create_subscription<msgs_ifaces::msg::ChassisCtrl>(
-            "tpc_chassis_cmd", qos_standard_profile,
+            "tpc_chassis_cmd", qos_reliable,
             std::bind(&BaseBridgeNode::on_d5_chassis_cmd, this, std::placeholders::_1)
         );
         
-        // Mission active status
+        // Mission active status from ws_rpi (uses reliable + transient_local)
             sub_d5_mission_active_ = this->create_subscription<std_msgs::msg::Bool>(
-                "tpc_gnss_mission_active", qos_standard_profile,
+                "tpc_gnss_mission_active", qos_reliable,
                 [this](const std::shared_ptr<const std_msgs::msg::Bool> msg) {
                     pub_d2_mission_active_->publish(*msg);
                 }
             );
 
-            // Distance remaining
+            // Distance remaining from ws_rpi (uses reliable + transient_local)
             sub_d5_distance_ = this->create_subscription<std_msgs::msg::Float64>(
-                "tpc_gnss_mission_remain_dist", qos_standard_profile,
+                "tpc_gnss_mission_remain_dist", qos_reliable,
                 [this](const std::shared_ptr<const std_msgs::msg::Float64> msg) {
                     pub_d2_distance_->publish(*msg);
                 }
@@ -158,13 +160,15 @@ private:
     void init_domain2_publishers() {
         RCLCPP_INFO(this->get_logger(), "Initializing relay publishers...");
         
-        // Create QoS profile matching sensor nodes (sensor_data with transient_local)
+        // QoS for sensor topics (best_effort + volatile to match STM32 sources)
+        // Domain 2 base station will receive sensor data with same QoS as Domain 5
         rclcpp::QoS qos_sensor_profile(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_sensor_data));
-        qos_sensor_profile.transient_local();
+        qos_sensor_profile.best_effort();
+        // Volatile is default
         
-        // Create QoS profile for standard topics (reliable, transient_local for last value)
-        rclcpp::QoS qos_standard_profile(10);
-        qos_standard_profile.reliable().transient_local();
+        // QoS for application-level topics (reliable + transient_local)
+        rclcpp::QoS qos_reliable(10);
+        qos_reliable.reliable().transient_local();
         
         pub_d2_imu_ = this->create_publisher<msgs_ifaces::msg::ChassisIMU>(
             "tpc_chassis_imu", qos_sensor_profile
@@ -175,19 +179,19 @@ private:
         );
         
         pub_d2_gnss_ = this->create_publisher<msgs_ifaces::msg::SpresenseGNSS>(
-            "tpc_gnss_spresense", qos_standard_profile
+            "tpc_gnss_spresense", qos_reliable
         );
         
         pub_d2_chassis_cmd_ = this->create_publisher<msgs_ifaces::msg::ChassisCtrl>(
-            "tpc_chassis_cmd", qos_standard_profile
+            "tpc_chassis_cmd", qos_reliable
         );
         
         pub_d2_mission_active_ = this->create_publisher<std_msgs::msg::Bool>(
-            "tpc_gnss_mission_active", qos_standard_profile
+            "tpc_gnss_mission_active", qos_reliable
         );
         
         pub_d2_distance_ = this->create_publisher<std_msgs::msg::Float64>(
-            "tpc_gnss_mission_remain_dist", qos_standard_profile
+            "tpc_gnss_mission_remain_dist", qos_reliable
         );
         
         RCLCPP_INFO(this->get_logger(), "Relay publishers initialized (6 topics)");
@@ -200,9 +204,13 @@ private:
     void init_domain2_subscribers() {
         RCLCPP_INFO(this->get_logger(), "Initializing Domain 2 subscribers...");
         
+        // Use reliable QoS for command topics
+        rclcpp::QoS qos_reliable(10);
+        qos_reliable.reliable().transient_local();
+        
         // Destination coordinate commands from base station
         sub_d2_dest_coord_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
-            "tpc_rover_dest_coordinate", 10,
+            "tpc_rover_dest_coordinate", qos_reliable,
             std::bind(&BaseBridgeNode::on_d2_dest_coord, this, std::placeholders::_1)
         );
         
@@ -216,9 +224,13 @@ private:
     void init_domain5_publishers() {
         RCLCPP_INFO(this->get_logger(), "Initializing Domain 5 publishers...");
         
+        // Use reliable QoS for command topics
+        rclcpp::QoS qos_reliable(10);
+        qos_reliable.reliable().transient_local();
+        
         // Relay destination coordinates to rover
         pub_d5_dest_coord_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(
-            "tpc_rover_dest_coordinate", 10
+            "tpc_rover_dest_coordinate", qos_reliable
         );
         
         RCLCPP_INFO(this->get_logger(), "Domain 5 publishers initialized (1 topic)");

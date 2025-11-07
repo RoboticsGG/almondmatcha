@@ -40,9 +40,10 @@ private:
     std::ofstream csv_file_;
 
     void setupSubscriber() {
+        // QoS must match STM32 mbed publishers: best_effort + volatile
         rclcpp::QoS qos_profile(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_sensor_data));
         qos_profile.best_effort();
-        qos_profile.transient_local();
+        // Note: mbed mros2 uses volatile (default), so we use volatile here too
 
         sub_chassis_imu_ = this->create_subscription<msgs_ifaces::msg::ChassisIMU>(
             "/tpc_chassis_imu", qos_profile,

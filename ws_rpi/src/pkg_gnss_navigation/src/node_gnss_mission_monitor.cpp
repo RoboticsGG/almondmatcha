@@ -15,6 +15,10 @@ public:
     using GoalHandleDesData = rclcpp_action::ServerGoalHandle<DesData>;
 
     GNSSMissionMonitor() : Node("gnss_mission_monitor"), des_lat_(0.0), des_long_(0.0) {
+        // Use reliable + transient_local QoS for all topics
+        rclcpp::QoS qos_reliable(10);
+        qos_reliable.reliable().transient_local();
+        
         action_server_ = rclcpp_action::create_server<DesData>(
             this, "des_data",
             std::bind(&GNSSMissionMonitor::handle_goal, this, std::placeholders::_1, std::placeholders::_2),
@@ -23,15 +27,15 @@ public:
         );
 
         sub_current_position_ = this->create_subscription<msgs_ifaces::msg::SpresenseGNSS>(
-            "tpc_gnss_spresense", 10,
+            "tpc_gnss_spresense", qos_reliable,
             std::bind(&GNSSMissionMonitor::topic_cur_callback, this, std::placeholders::_1)
         );
 
-        pub_mission_active_ = this->create_publisher<std_msgs::msg::Bool>("tpc_gnss_mission_active", 10);
+        pub_mission_active_ = this->create_publisher<std_msgs::msg::Bool>("tpc_gnss_mission_active", qos_reliable);
 
-        pub_distance_remaining_ = this->create_publisher<std_msgs::msg::Float64>("tpc_gnss_mission_remain_dist", 10);
+        pub_distance_remaining_ = this->create_publisher<std_msgs::msg::Float64>("tpc_gnss_mission_remain_dist", qos_reliable);
 
-        pub_destination_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("tpc_rover_dest_coordinate", 10);
+        pub_destination_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("tpc_rover_dest_coordinate", qos_reliable);
 
         RCLCPP_INFO(this->get_logger(), "GNSS Mission Monitor Action Server Initialized.");
         RCLCPP_INFO(this->get_logger(), "Waiting for goals...");

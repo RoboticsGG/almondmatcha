@@ -39,22 +39,25 @@ public:
         );
         
         // Create mission active subscription
+        rclcpp::QoS qos_reliable(10);
+        qos_reliable.reliable().transient_local();
+        
         sub_cc_rcon_ = this->create_subscription<std_msgs::msg::Bool>(
-            "tpc_gnss_mission_active", 10,
+            "tpc_gnss_mission_active", qos_reliable,
             std::bind(&ChassisController::cruiseControlCallback, 
                      this, std::placeholders::_1)
         );
         
         // Create flight mode control subscription
         sub_fmctl_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
-            "tpc_rover_fmctl", 10,
+            "tpc_rover_fmctl", qos_reliable,
             std::bind(&ChassisController::flightModeControlCallback, 
                      this, std::placeholders::_1)
         );
         
         // Create publisher to STM32 chassis (Domain 5)
         pub_chassis_cmd_ = this->create_publisher<msgs_ifaces::msg::ChassisCtrl>(
-            "tpc_chassis_cmd", 10
+            "tpc_chassis_cmd", qos_reliable
         );
         
         RCLCPP_INFO(this->get_logger(), "Chassis Controller initialized");
