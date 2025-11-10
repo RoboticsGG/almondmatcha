@@ -55,7 +55,7 @@ private:
     bool goal_reached_;
 
     rclcpp_action::GoalResponse handle_goal(const rclcpp_action::GoalUUID&, std::shared_ptr<const DesData::Goal> goal) {
-        //RCLCPP_INFO(this->get_logger(), "Received new goal: Lat=%.6f, Lon=%.6f", goal->des_lat, goal->des_long);
+        RCLCPP_INFO(this->get_logger(), "Received new goal: Lat=%.6f, Lon=%.6f", goal->des_lat, goal->des_long);
         des_lat_ = goal->des_lat;
         des_long_ = goal->des_long;
 
@@ -110,13 +110,21 @@ private:
         auto feedback = std::make_shared<DesData::Feedback>();
         std_msgs::msg::Bool mission_active_msg;
 
+        RCLCPP_INFO(this->get_logger(), "Executing mission to destination: Lat=%.6f, Lon=%.6f", des_lat_, des_long_);
+
         while (rclcpp::ok()) {
             if (current_position_.latitude == 0.0 && current_position_.longitude == 0.0) {
+                RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000, 
+                    "Waiting for GNSS position data...");
                 mission_active_msg.data = true;
+                pub_mission_active_->publish(mission_active_msg);
+                std::this_thread::sleep_for(std::chrono::seconds(2));
                 continue;
             } else if (des_lat_ == 0.0 && des_long_ == 0.0) {
                 RCLCPP_WARN(this->get_logger(), "Waiting for Destination Data...");
                 mission_active_msg.data = true;
+                pub_mission_active_->publish(mission_active_msg);
+                std::this_thread::sleep_for(std::chrono::seconds(2));
                 continue;
             }
             else{
