@@ -56,34 +56,6 @@ tmux send-keys -t $SESSION_NAME:0.2 "clear && echo -e '\\e[1;33m>>> [3/5] CHASSI
 tmux send-keys -t $SESSION_NAME:0.2 "ros2 run pkg_chassis_control node_chassis_controller" C-m
 
 # Pane 3 (bottom-left): Chassis IMU (Domain 5)
-tmux select-pane -t 3 -T "Chassis_IMU"
-tmux send-keys -t $SESSION_NAME:0.3 "cd ~/almondmatcha/ws_rpi && source install/setup.bash" C-m
-tmux send-keys -t $SESSION_NAME:0.3 "export ROS_DOMAIN_ID=5" C-m
-tmux send-keys -t $SESSION_NAME:0.3 "clear && echo -e '\\e[1;35m>>> [4/5] CHASSIS IMU (Domain 5) <<<\\e[0m' && sleep 1" C-m
-tmux send-keys -t $SESSION_NAME:0.3 "ros2 run pkg_chassis_data node_chassis_imu" C-m
-
-# Pane 4 (top-right): Chassis Sensors (Domain 5)
-tmux select-pane -t 4 -T "Chassis_Sensors"
-tmux send-keys -t $SESSION_NAME:0.4 "cd ~/almondmatcha/ws_rpi && source install/setup.bash" C-m
-tmux send-keys -t $SESSION_NAME:0.4 "export ROS_DOMAIN_ID=5" C-m
-tmux send-keys -t $SESSION_NAME:0.4 "clear && echo -e '\\e[1;34m>>> [5/5] CHASSIS SENSORS (Domain 5) <<<\\e[0m' && sleep 1" C-m
-tmux send-keys -t $SESSION_NAME:0.4 "ros2 run pkg_chassis_data node_chassis_sensors" C-m
-
-# Pane 1 (second from top-left): GNSS Mission Monitor (Domain 5)
-tmux select-pane -t 1 -T "GNSS_Mission_Monitor_D5"
-tmux send-keys -t $SESSION_NAME:0.1 "cd ~/almondmatcha/ws_rpi && source install/setup.bash" C-m
-tmux send-keys -t $SESSION_NAME:0.1 "export ROS_DOMAIN_ID=5" C-m
-tmux send-keys -t $SESSION_NAME:0.1 "clear && echo -e '\\e[1;32m>>> [2/7] GNSS MISSION MONITOR (Domain 5) <<<\\e[0m' && sleep 1" C-m
-tmux send-keys -t $SESSION_NAME:0.1 "ros2 run pkg_gnss_navigation node_gnss_mission_monitor" C-m
-
-# Pane 2 (third from top-left): Chassis Controller (Domain 5)
-tmux select-pane -t 2 -T "Chassis_Controller_D5"
-tmux send-keys -t $SESSION_NAME:0.2 "cd ~/almondmatcha/ws_rpi && source install/setup.bash" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "export ROS_DOMAIN_ID=5" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "clear && echo -e '\\e[1;33m>>> [3/7] CHASSIS CONTROLLER (Domain 5) <<<\\e[0m' && sleep 1" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "ros2 run pkg_chassis_control node_chassis_controller" C-m
-
-# Pane 3 (bottom-left): Chassis IMU (Domain 5)
 tmux select-pane -t 3 -T "Chassis_IMU_D5"
 tmux send-keys -t $SESSION_NAME:0.3 "cd ~/almondmatcha/ws_rpi && source install/setup.bash" C-m
 tmux send-keys -t $SESSION_NAME:0.3 "export ROS_DOMAIN_ID=5" C-m
