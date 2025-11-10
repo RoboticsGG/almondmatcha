@@ -48,37 +48,38 @@ const GuidPrefix_t BASE_GUID_PREFIX{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12};
 const uint8_t DOMAIN_ID = 5; // 230 possible with UDP
 const uint8_t NUM_STATELESS_WRITERS = 4;
 const uint8_t NUM_STATELESS_READERS = 4;
-const uint8_t NUM_STATEFUL_READERS = 10;
-const uint8_t NUM_STATEFUL_WRITERS = 10;
-const uint8_t MAX_NUM_PARTICIPANTS = 16; // Support ws_base(2) + ws_rpi(6) + ws_jetson(3) + STM32(2) + headroom(3)
-const uint8_t NUM_WRITERS_PER_PARTICIPANT = 10; // Max used is 7, add 3 for headroom
-const uint8_t NUM_READERS_PER_PARTICIPANT = 10; // Max used is 7, add 3 for headroom
-const uint8_t NUM_WRITER_PROXIES_PER_READER = 8;
-const uint8_t NUM_READER_PROXIES_PER_WRITER = 8;
+// MAXIMUM LIMITS - Full system with ws_base monitoring (uses ~280-300 KB RAM, ~200 KB free)
+const uint8_t NUM_STATEFUL_READERS = 32;  // Was 28 → Now 32 (absolute maximum for all remotes)
+const uint8_t NUM_STATEFUL_WRITERS = 28;  // Was 24 → Now 28 (publish to all subscribers including monitoring)
+const uint8_t MAX_NUM_PARTICIPANTS = 14; // ws_rpi(5) + ws_base(2) + ws_jetson(3) + STM32(2) + headroom(2)
+const uint8_t NUM_WRITERS_PER_PARTICIPANT = 20;  // Was 16 → Now 20 (ws_base has many subscriptions)
+const uint8_t NUM_READERS_PER_PARTICIPANT = 20;  // Was 16 → Now 20 (ws_base has many subscriptions)
+const uint8_t NUM_WRITER_PROXIES_PER_READER = 24;  // Was 20 → Now 24 (CRITICAL: track all remote writers)
+const uint8_t NUM_READER_PROXIES_PER_WRITER = 24;  // Was 20 → Now 24 (GNSS publishes to monitoring too)
 
-const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 20;
-const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 20;
+const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 14; // Match MAX_NUM_PARTICIPANTS
+const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 14; // Match MAX_NUM_PARTICIPANTS
     
-const uint8_t MAX_NUM_READER_CALLBACKS = 5;
+const uint8_t MAX_NUM_READER_CALLBACKS = 2;  // This board has no callbacks (publish-only)
 
 
 const uint8_t HISTORY_SIZE_STATELESS = 2; 
-const uint8_t HISTORY_SIZE_STATEFUL = 10; 
+const uint8_t HISTORY_SIZE_STATEFUL = 5;  // Reduced for memory efficiency 
 
 const uint8_t MAX_TYPENAME_LENGTH = 60;
 const uint8_t MAX_TOPICNAME_LENGTH = 40;
 
-const int HEARTBEAT_STACKSIZE = 4096 * 2;          // byte
-const int THREAD_POOL_WRITER_STACKSIZE = 4096 * 2; // byte 
-const int THREAD_POOL_READER_STACKSIZE = 4096 * 2; // byte 
-const uint16_t SPDP_WRITER_STACKSIZE = 4096 * 2;    // byte 
+const int HEARTBEAT_STACKSIZE = 4096;              // byte - Halved from 8192, sufficient for mbed
+const int THREAD_POOL_WRITER_STACKSIZE = 4096;     // byte - Halved from 8192, sufficient for mbed
+const int THREAD_POOL_READER_STACKSIZE = 4096;     // byte - Halved from 8192, sufficient for mbed
+const uint16_t SPDP_WRITER_STACKSIZE = 4096;       // byte - Halved from 8192, critical memory savings
 
-const uint16_t SF_WRITER_HB_PERIOD_MS = 2000; // Reduced from 4000ms for faster writer detection
-const uint16_t SPDP_RESEND_PERIOD_MS = 500;   // Reduced from 1000ms for faster participant discovery
+const uint16_t SF_WRITER_HB_PERIOD_MS = 2000; // 2s heartbeat for writer detection
+const uint16_t SPDP_RESEND_PERIOD_MS = 500;   // 500ms SPDP announcements for faster discovery
 const uint8_t SPDP_CYCLECOUNT_HEARTBEAT =
     2; // skip x SPDP rounds before checking liveliness
 const uint8_t SPDP_WRITER_PRIO = 24;
-const uint8_t SPDP_MAX_NUMBER_FOUND_PARTICIPANTS = 16; // Match MAX_NUM_PARTICIPANTS
+const uint8_t SPDP_MAX_NUMBER_FOUND_PARTICIPANTS = 14; // Match MAX_NUM_PARTICIPANTS
 const uint8_t SPDP_MAX_NUM_LOCATORS = 5;
 const Duration_t SPDP_DEFAULT_REMOTE_LEASE_DURATION = {
     100, 0}; // Default lease duration for remote participants, usually
