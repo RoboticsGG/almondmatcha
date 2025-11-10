@@ -15,8 +15,8 @@ source install/setup.bash
 
 - **Purpose:** Monitor rover telemetry and send commands from base station
 - **Platform:** Linux PC (Ubuntu 20.04/22.04)
-- **Domain:** ROS2 Domain 2 (base station bridge)
-- **Communication:** Ethernet to rover network via `node_base_bridge`
+- **Domain:** ROS2 Domain 5 (unified with rover)
+- **Communication:** Direct Ethernet to rover network (192.168.1.0/24)
 
 ## Nodes
 
@@ -61,7 +61,7 @@ source install/setup.bash
 ### Manual Launch
 
 ```bash
-export ROS_DOMAIN_ID=2
+export ROS_DOMAIN_ID=5
 cd ~/almondmatcha/ws_base
 source install/setup.bash
 
@@ -75,7 +75,7 @@ ros2 run mission_control mission_monitoring_node
 ### ROS2 Launch File
 
 ```bash
-export ROS_DOMAIN_ID=2
+export ROS_DOMAIN_ID=5
 ros2 launch mission_control node_comlaunch.py
 ```
 
@@ -129,9 +129,9 @@ sudo ufw disable
 
 ## Communication
 
-### Topics from Rover (Domain 2)
+### Topics from Rover (Domain 5)
 
-Relayed by `node_base_bridge` on Raspberry Pi:
+Direct access to rover network:
 
 | Topic | Type | Content |
 |-------|------|---------|
@@ -139,8 +139,10 @@ Relayed by `node_base_bridge` on Raspberry Pi:
 | `tpc_gnss_mission_active` | Bool | Mission status |
 | `tpc_gnss_mission_remain_dist` | Float64 | Distance to waypoint |
 | `tpc_chassis_cmd` | ChassisCtrl | Motor commands (monitoring) |
+| `tpc_chassis_imu` | ChassisIMU | IMU sensor data from STM32 |
+| `tpc_chassis_sensors` | ChassisSensors | GNSS/encoders from STM32 |
 
-### Commands to Rover (Domain 2)
+### Commands to Rover (Domain 5)
 
 | Interface | Type | Purpose |
 |-----------|------|---------|
@@ -152,19 +154,22 @@ Relayed by `node_base_bridge` on Raspberry Pi:
 ### Verify Domain Configuration
 
 ```bash
-export ROS_DOMAIN_ID=2
+export ROS_DOMAIN_ID=5
 ros2 node list
 
-# Expected:
+# Expected (when rover is running):
 # /mission_command_node
 # /mission_monitoring_node
-# /node_base_bridge (if rover is running)
+# /chassis_controller
+# /gnss_mission_monitor
+# /spresense_gnss_node
+# ... and other rover nodes
 ```
 
 ### Monitor Rover Telemetry
 
 ```bash
-export ROS_DOMAIN_ID=2
+export ROS_DOMAIN_ID=5
 
 # GPS position
 ros2 topic echo tpc_gnss_spresense
@@ -174,6 +179,12 @@ ros2 topic echo tpc_gnss_mission_active
 
 # Distance remaining
 ros2 topic echo tpc_gnss_mission_remain_dist
+
+# STM32 IMU data
+ros2 topic echo tpc_chassis_imu
+
+# STM32 GNSS/encoder data
+ros2 topic echo tpc_chassis_sensors
 ```
 
 ### Send Commands
@@ -199,14 +210,14 @@ ros2 service call /spd_limit services_ifaces/srv/SpdLimit \
 **Solutions:**
 ```bash
 # Verify domain
-echo $ROS_DOMAIN_ID  # Should be 2
+echo $ROS_DOMAIN_ID  # Should be 5
 
 # Check network connectivity
 ping 192.168.1.1  # Raspberry Pi
 
-# Verify bridge node running on rover
-ssh pi@192.168.1.1
-ros2 node list | grep base_bridge
+# Verify rover nodes running
+export ROS_DOMAIN_ID=5
+ros2 node list
 
 # Restart ROS2 daemon
 ros2 daemon stop
@@ -249,20 +260,20 @@ ls install/mission_control/lib/mission_control/
 
 **Solutions:**
 ```bash
-# Check bridge node is running
-export ROS_DOMAIN_ID=2
-ros2 node info /node_base_bridge
+# Verify domain is set correctly
+export ROS_DOMAIN_ID=5
 
 # Verify action server available
 ros2 action list
+# Should show: /des_data
 
 # Verify service available
-ros2 service list
+ros2 service list | grep spd
+# Should show: /srv_spd_limit
 
-# Check rover is in Domain 5
-ssh pi@192.168.1.1
-export ROS_DOMAIN_ID=5
+# Check rover nodes are running
 ros2 node list
+# Should show: /gnss_mission_monitor, /chassis_controller, etc.
 ```
 
 ## Directory Structure
@@ -297,19 +308,24 @@ ws_base/
 ## System Integration
 
 **Base Station Role:**
-- Isolated from rover-internal processing (Domain 2 vs Domain 5)
-- Receives aggregated telemetry via `node_base_bridge`
+- Unified with rover network on Domain 5
+- Direct access to all rover telemetry and control interfaces
 - Sends high-level commands (waypoints, speed limits)
-- No direct access to low-level control (motor commands)
+- Can monitor all topics including STM32 sensor data
 
-**Bridge Architecture:**
+**Unified Architecture:**
 ```
-Rover (Domain 5) ←→ node_base_bridge ←→ ws_base (Domain 2)
+Domain 5: ws_base ←→ ws_rpi ←→ ws_jetson
+                      ↕
+                 STM32 Boards (Chassis + GNSS)
 ```
 
-Bridge node runs on Raspberry Pi and relays:
-- Telemetry: Rover → Base (GPS, mission status, sensor data)
-- Commands: Base → Rover (waypoints, speed limits)
+All systems communicate directly on Domain 5:
+- ws_base: Mission command and monitoring
+- ws_rpi: Rover control, GNSS navigation, action/service servers
+- ws_jetson: Vision processing, lane detection
+- STM32 Chassis: Motor control, IMU data (mROS2)
+- STM32 GNSS: GPS, encoders, power monitor (mROS2)
 
 ## Detailed Documentation
 
@@ -324,5 +340,5 @@ See `docs/` subdirectory for:
 
 **Platform:** Linux PC (Ubuntu 20.04+)  
 **ROS2:** Humble or Iron  
-**Domain:** 2 (base station bridge)  
+**Domain:** 5 (unified with rover)  
 **Network:** 192.168.1.0/24 (rover network)

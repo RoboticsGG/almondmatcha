@@ -1,6 +1,6 @@
 # ROS2 Topics Reference
 
-Complete topic reference for Almondmatcha rover system (Domain 5 rover-internal, Domain 2 base-bridge).
+Complete topic reference for Almondmatcha rover system (Domain 5 unified architecture).
 
 ## Topic Naming Convention
 
@@ -304,31 +304,59 @@ data: [7.007286, 100.502030]    # Target waypoint in Thailand
 
 ---
 
-## Base Station Bridge Topics (Domain 2)
+## Actions and Services (Domain 5)
 
-### `tpc_telemetry`
+### `/des_data` (Action)
 
-**Type:** Custom `TelemetryMsg` (future)  
-**Publisher:** `node_base_bridge`  
-**Subscribers:** `mission_monitoring_node` (ws_base)  
-**Rate:** 10 Hz  
-**QoS:** Reliable, Depth 10  
-**Domain:** 2  
+**Type:** `action_ifaces/DesData`  
+**Client:** `mission_command_node` (ws_base)  
+**Server:** `node_gnss_mission_monitor` (ws_rpi)  
+**Domain:** 5  
 
-Aggregated telemetry from rover to base station.
+Navigation goal action for waypoint missions.
 
-**Planned Fields:**
+**Goal:**
+```yaml
+float64 des_lat     # Target latitude
+float64 des_long    # Target longitude
 ```
-# Position
-float64 latitude
-float64 longitude
-float64 heading
 
-# Velocity
-float32 speed_mps
-float32 steering_angle
+**Feedback:**
+```yaml
+float64 dis_remain  # Distance remaining (km)
+```
 
-# Sensors
+**Result:**
+```yaml
+uint8 result_fser   # Result code
+```
+
+### `/srv_spd_limit` (Service)
+
+**Type:** `services_ifaces/SpdLimit`  
+**Client:** `mission_command_node` (ws_base)  
+**Server:** `node_chassis_controller` (ws_rpi)  
+**Domain:** 5  
+
+Speed limit command service.
+
+**Request:**
+```yaml
+uint8 rover_spd     # Speed limit (0-100%)
+```
+
+**Response:**
+```yaml
+uint8 ack           # Acknowledgment
+```
+
+---
+
+## Archived Topics (No Longer Used)
+
+### `tpc_telemetry` (Removed)
+
+This topic was planned for aggregated telemetry but is no longer needed with Domain 5 unification. All telemetry topics are directly accessible to ws_base.# Sensors
 float32 battery_voltage
 float32 system_current
 
@@ -339,23 +367,13 @@ uint8 lane_detected
 ```
 
 ---
+### `tpc_command` (Archived - No Longer Used)
 
-### `tpc_command`
+Commands from base station are now sent directly via actions and services on Domain 5:
+- Navigation goals: `/des_data` action
+- Speed limits: `/srv_spd_limit` service
 
-**Type:** Custom `CommandMsg` (future)  
-**Publisher:** `mission_control_node` (ws_base)  
-**Subscribers:** `node_base_bridge`  
-**Rate:** Event-driven  
-**QoS:** Reliable, Depth 10  
-**Domain:** 2  
-
-Commands from base station to rover.
-
-**Planned Fields:**
-```
-uint8 command_type      # 0=stop, 1=set_waypoint, 2=set_speed
-float64 param1          # Latitude or speed value
-float64 param2          # Longitude (if waypoint)
+This topic is no longer needed with Domain 5 unification.float64 param2          # Longitude (if waypoint)
 ```
 
 ---

@@ -17,7 +17,7 @@ Almondmatcha rover system architecture: distributed heterogeneous computing with
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                     ROVER SYSTEM ARCHITECTURE                   │
-│                      (Domain 5 - Internal)                      │
+│                    (Domain 5 - Unified System)                  │
 └─────────────────────────────────────────────────────────────────┘
 
 ┌──────────────┐      ┌──────────────┐      ┌──────────────┐
@@ -29,13 +29,13 @@ Almondmatcha rover system architecture: distributed heterogeneous computing with
 │              │      │ Mission Ctrl │      │ Control      │
 └──────────────┘      └──────┬───────┘      └──────────────┘
                              │
-                             │ Bridge Node
-                             │ (Domain 2↔5)
+                             │ Direct DDS
+                             │ (Domain 5)
                              │
                       ┌──────▼───────┐
                       │ Base Station │
                       │   (ws_base)  │
-                      │  Domain 2    │
+                      │  Domain 5    │
                       └──────────────┘
 ```
 
@@ -77,37 +77,28 @@ Almondmatcha rover system architecture: distributed heterogeneous computing with
 Two-domain architecture for sensor fusion:
 
 **Domain 5 (Rover Internal):**
-- All rover-internal processing
-- Direct low-latency sensor access
-- Enables centralized EKF fusion
-- Nodes: All STM32s, all RPi nodes, all Jetson nodes
+- All system processing (rover, base, vision, STM32)
+- Direct low-latency communication
+- Native action/service support
+- Simplified architecture without relays
+- Nodes: All systems on same domain
 
-**Domain 2 (Base Station Bridge):**
-- Telemetry/command relay only
-- Isolates base station from rover internals
-- Nodes: ws_base, node_base_bridge
-
-**Rationale:** Centralized fusion requires all sensor data on same domain. Previous multi-domain architecture (Domains 2, 5, 6) required bridge nodes that added latency and complexity.
+**Rationale:** Unified domain eliminates bridge overhead, enables native ROS2 features (actions/services), and simplifies system architecture.
 
 ### Node Distribution
 
-**Raspberry Pi 4 (192.168.1.1):**
+**Raspberry Pi 4 (192.168.1.1 - Domain 5):**
 ```
-Domain 5 Nodes:
 ├── node_chassis_controller - Motor command coordination
 ├── node_chassis_imu - IMU data logging
 ├── node_chassis_sensors - Encoder/power data logging
 ├── node_gnss_spresense - GPS position processing
 ├── node_gnss_mission_monitor - Waypoint navigation
 └── [FUTURE] node_ekf_fusion - Multi-sensor fusion
-
-Domain 2 + 5 Bridge:
-└── node_base_bridge - Telemetry relay to base station
 ```
 
-**Jetson Orin Nano (192.168.1.5):**
+**Jetson Orin Nano (192.168.1.5 - Domain 5):**
 ```
-Domain 5 Nodes:
 ├── camera_stream_node - D415 RGB/depth streaming
 ├── lane_detection_node - Lane feature extraction
 └── steering_control_node - PID steering control

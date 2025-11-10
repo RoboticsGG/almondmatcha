@@ -134,7 +134,7 @@ send_command_to_pane() {
     
     tmux select-pane -t $SESSION_NAME:$pane -T "$title"
     tmux send-keys -t $SESSION_NAME:$pane "cd $WS_PATH && source install/setup.bash" C-m
-    tmux send-keys -t $SESSION_NAME:$pane "export ROS_DOMAIN_ID=2" C-m
+    tmux send-keys -t $SESSION_NAME:$pane "export ROS_DOMAIN_ID=5" C-m
     sleep 0.2
     tmux send-keys -t $SESSION_NAME:$pane "clear" C-m
     sleep 0.1
@@ -186,8 +186,8 @@ display_info() {
     echo ""
     
     echo -e "${YELLOW}Domain Configuration:${NC}"
-    echo -e "  ROS_DOMAIN_ID = 2 (Base Station)"
-    echo -e "  Requires: pkg_base_bridge on ws_rpi (Domain 5 ↔ 2 relay)"
+    echo -e "  ROS_DOMAIN_ID = 5 (Unified Architecture)"
+    echo -e "  Direct communication with ws_rpi, ws_jetson, and STM32 boards"
     echo ""
     
     echo -e "${YELLOW}To reconnect to this session later:${NC}"

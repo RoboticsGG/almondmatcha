@@ -31,18 +31,18 @@ screen -d -m -S $SESSION -t "Mission_Cmd"
 sleep 0.3
 
 # Window 0: Command node
-screen -S $SESSION -X send-keys "cd $WS && source install/setup.bash && export ROS_DOMAIN_ID=2" C-m
+screen -S $SESSION -X send-keys "cd $WS && source install/setup.bash && export ROS_DOMAIN_ID=5" C-m
 sleep 0.2
-screen -S $SESSION -X send-keys "clear && echo -e '\\e[1;36m>>> MISSION COMMAND (Domain 2) <<<\\e[0m'" C-m
+screen -S $SESSION -X send-keys "clear && echo -e '\\e[1;36m>>> MISSION COMMAND (Domain 5) <<<\\e[0m'" C-m
 sleep 0.2
 screen -S $SESSION -X send-keys "ros2 run mission_control mission_command_node" C-m
 
 # Window 1: Monitoring node
 screen -S $SESSION -X screen -t "Mission_Mon"
 sleep 0.3
-screen -S $SESSION -X send-keys "cd $WS && source install/setup.bash && export ROS_DOMAIN_ID=2" C-m
+screen -S $SESSION -X send-keys "cd $WS && source install/setup.bash && export ROS_DOMAIN_ID=5" C-m
 sleep 0.2
-screen -S $SESSION -X send-keys "clear && echo -e '\\e[1;32m>>> MISSION MONITORING (Domain 2) <<<\\e[0m'" C-m
+screen -S $SESSION -X send-keys "clear && echo -e '\\e[1;32m>>> MISSION MONITORING (Domain 5) <<<\\e[0m'" C-m
 sleep 0.2
 screen -S $SESSION -X send-keys "ros2 run mission_control mission_monitoring_node" C-m
 
@@ -59,8 +59,8 @@ echo -e "  Ctrl+a d    - Detach"
 echo -e "  Ctrl+a [    - Scroll (ESC=exit)"
 echo -e "\n${Y}Reconnect:${N} screen -r $SESSION"
 echo -e "${Y}Kill:${N} screen -S $SESSION -X quit"
-echo -e "\n${B}Domain:${N} ROS_DOMAIN_ID=2 (Base Station)"
-echo -e "${B}Bridge:${N} Requires pkg_base_bridge running on ws_rpi\n"
+echo -e "\n${B}Domain:${N} ROS_DOMAIN_ID=5 (Unified Architecture)"
+echo -e "${B}Communication:${N} Direct DDS with ws_rpi on Domain 5\n"
 
 info "Attaching to session..."
 sleep 1

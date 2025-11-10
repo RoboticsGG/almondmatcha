@@ -68,7 +68,7 @@ Window 1: mission_monitoring_node → Shows telemetry
 ## Features
 
 ✅ Auto-sources workspace  
-✅ Sets `ROS_DOMAIN_ID=2`  
+✅ Sets `ROS_DOMAIN_ID=5`  
 ✅ Pre-flight validation  
 ✅ Color-coded output  
 ✅ Session persistence (detach/reattach)
@@ -95,7 +95,7 @@ source /opt/ros/humble/setup.bash
 ```bash
 cd ~/almondmatcha/ws_base
 source install/setup.bash
-export ROS_DOMAIN_ID=2
+export ROS_DOMAIN_ID=5
 
 # Terminal 1
 ros2 run mission_control mission_command_node

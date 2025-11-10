@@ -16,7 +16,7 @@ source install/setup.bash
 - **Platform:** Raspberry Pi 4B (4-8 GB RAM)
 - **Network:** Static IP 192.168.1.1
 - **Peripherals:** Sony Spresense GNSS module (USB port)
-- **Domain:** ROS2 Domain 5 (rover-internal) + Domain 2 bridge (base station)
+- **Domain:** ROS2 Domain 5 (unified architecture - all systems)
 
 ## Packages
 

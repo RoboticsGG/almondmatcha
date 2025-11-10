@@ -114,7 +114,7 @@ private:
         RCLCPP_INFO(this->get_logger(), "Initializing ROS2 clients...");
         
         // Initialize speed limit service client
-        spd_limit_client_ = this->create_client<SpdLimitService>("spd_limit");
+        spd_limit_client_ = this->create_client<SpdLimitService>("srv_spd_limit");
         RCLCPP_DEBUG(this->get_logger(), "Speed limit service client created.");
         
         // Initialize destination action client

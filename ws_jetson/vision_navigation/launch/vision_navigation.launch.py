@@ -37,8 +37,8 @@ from vision_navigation_pkg.config import (
 def generate_launch_description():
     # ==================== ROS2 Domain Configuration ====================
     
-    # Set domain ID for vision navigation system (Domain 2: Chassis control and vision)
-    set_domain_id = SetEnvironmentVariable('ROS_DOMAIN_ID', '2')
+    # Set domain ID for vision navigation system (Domain 5: Unified rover domain)
+    set_domain_id = SetEnvironmentVariable('ROS_DOMAIN_ID', '5')
     
     # ==================== Launch Arguments (Auto-synced from config.py) ====================
     

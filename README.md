@@ -8,7 +8,7 @@ Distributed ROS2-based autonomous rover system with vision navigation, chassis d
 
 **Architecture:** Heterogeneous distributed computing (Raspberry Pi, Jetson Orin Nano, STM32 microcontrollers)
 
-**Communication:** ROS2 DDS over Ethernet with two-domain isolation for sensor fusion
+**Communication:** ROS2 DDS over Ethernet with unified Domain 5 architecture
 
 ## Hardware Components
 
@@ -39,24 +39,24 @@ Distributed ROS2-based autonomous rover system with vision navigation, chassis d
    Raspberry Pi          Jetson Orin          STM32 Boards
    192.168.1.1           192.168.1.5          .2 (Chassis)
    (ROS2 Domain 5)       (ROS2 Domain 5)      .6 (Sensors)
-   + Bridge (Domain 2)                        (ROS2 Domain 5)
+                                              (ROS2 Domain 5)
         |
-        └─── Base Station PC (ROS2 Domain 2)
+        └─── Base Station PC (ROS2 Domain 5)
 ```
 
 ## ROS2 Domain Architecture
 
-Two-domain design for centralized sensor fusion:
+Unified Domain 5 architecture for seamless communication:
 
 | Domain | Purpose | Nodes |
 |--------|---------|-------|
-| **Domain 5** | Rover-internal processing | All rover nodes (STM32s, RPi, Jetson) |
-| **Domain 2** | Base station bridge | ws_base ↔ bridge node only |
+| **Domain 5** | All systems | ws_rpi, ws_base, ws_jetson, STM32 boards |
 
 **Benefits:**
-- All sensor data accessible on same domain (enables EKF fusion)
-- Low-latency direct communication between rover nodes
-- Isolated telemetry/command interface to base station
+- Direct DDS discovery - no bridge needed
+- Native action/service support across all systems
+- Lower latency (no relay overhead)
+- Simplified architecture
 
 See [docs/DOMAINS.md](docs/DOMAINS.md) for detailed architecture.
 
@@ -163,7 +163,7 @@ ping 192.168.1.6  # Sensors
 ### 3. Launch System
 
 ```bash
-# Raspberry Pi (Domain 5 + bridge to Domain 2)
+# Raspberry Pi (Domain 5)
 cd ~/almondmatcha/ws_rpi
 ./launch_rover_tmux.sh
 
@@ -171,7 +171,7 @@ cd ~/almondmatcha/ws_rpi
 cd ~/almondmatcha/ws_jetson
 ./launch_headless.sh  # or ./launch_gui.sh for development
 
-# Base Station (Domain 2)
+# Base Station (Domain 5)
 cd ~/almondmatcha/ws_base
 ./launch_base_screen.sh
 ```

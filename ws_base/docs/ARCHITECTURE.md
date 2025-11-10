@@ -2,13 +2,13 @@
 
 ## Overview
 
-Base station for rover mission control (Domain 2).
+Base station for rover mission control (Domain 5 - Unified Architecture).
 
 ```
-ROVER (D5) ←─ pkg_base_bridge ─→ BASE STATION (D2)
+BASE STATION (D5) ←─ Direct DDS ─→ ROVER (D5)
 ```
 
-**Bridge:** Requires `pkg_base_bridge` running on ws_rpi to relay topics between Domain 5 (rover internal) and Domain 2 (base station).
+**No Bridge Needed:** All systems communicate directly on Domain 5. Actions and services work natively without relay nodes.
 
 ## Nodes
 
@@ -47,16 +47,19 @@ DDS:  Cyclone DDS (RTPS)
 Net:  Ethernet | WiFi
 ```
 
-## Domains
+## Domain Architecture
 
-- **D5**: ws_rpi (Rover internal - all sensors & control)
-- **D2**: ws_base (Base station - this workspace)
-- **D7**: ws_jetson (Vision system)
+**Unified Domain 5:**
+- **ws_rpi**: GNSS, Chassis, Sensors (5 nodes)
+- **ws_base**: Mission Command, Monitoring (2 nodes)
+- **ws_jetson**: Vision Navigation (3 nodes)
+- **STM32 Boards**: Chassis + GNSS (mROS2)
 
-**Bridge Communication:**
-- `pkg_base_bridge` on ws_rpi relays topics between D5 ↔ D2
-- **D5→D2 (Telemetry):** tpc_chassis_imu, tpc_chassis_sensors, tpc_gnss_spresense, tpc_chassis_cmd, tpc_gnss_mission_active, tpc_gnss_mission_remain_dist
-- **D2→D5 (Commands):** tpc_rover_dest_coordinate
+**Direct Communication:**
+- **Actions:** `/des_data` (BASE→ROVER navigation goals)
+- **Services:** `/srv_spd_limit` (BASE→ROVER speed limits)
+- **Topics:** All telemetry topics visible to all nodes
+- **Discovery:** Native DDS/RTPS - no relay needed
 
 ## Structure
 

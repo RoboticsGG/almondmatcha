@@ -46,7 +46,7 @@ Continuous telemetry monitoring and status reporting.
 - `/tpc_gnss_mission_remain_dist` (Float64) - Remaining distance (km)
 - `/tpc_gnss_spresense` (SpresenseGNSS) - Current GPS position
 - `/tpc_rover_dest_coordinate` (Float64MultiArray) - Target [lat, long]
-- `/tpc_chassis_ctrl_d2` (ChassisCtrl) - Rover control state
+- `/tpc_chassis_cmd` (ChassisCtrl) - Rover control state (relayed from Domain 5)
 
 ### Message Interfaces
 

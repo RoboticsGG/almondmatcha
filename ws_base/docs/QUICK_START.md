@@ -1,7 +1,7 @@
 # ws_base Quick Start
 
 ## Overview
-Mission control base station (Domain 2) for rover command and telemetry monitoring.
+Mission control base station (Domain 5 - Unified Architecture) for rover command and telemetry monitoring.
 
 ## Launch
 
@@ -19,19 +19,19 @@ cd ~/almondmatcha/ws_base
 
 | Node | Purpose | Domain |
 |------|---------|--------|
-| `mission_command_node` | Generate navigation goals and speed limits | 6 |
-| `mission_monitoring_node` | Display rover telemetry | 6 |
+| `mission_command_node` | Generate navigation goals and speed limits | 5 |
+| `mission_monitoring_node` | Display rover telemetry | 5 |
 
 ## Configuration
 
 Edit `src/mission_control/config/params.yaml`:
 
 ```yaml
-node_commands:
+mission_command_node:
   ros__parameters:
     rover_spd: 15      # Speed limit (0-100%)
-    des_lat: 500.0     # Target latitude
-    des_long: 500.0    # Target longitude
+    des_lat: 7.007286  # Target latitude (Thailand)
+    des_long: 100.50203 # Target longitude
 ```
 
 ## Controls
@@ -74,7 +74,7 @@ echo $ROS_DISTRO
 source /opt/ros/humble/setup.bash
 
 # Manual run
-export ROS_DOMAIN_ID=2
+export ROS_DOMAIN_ID=5
 ros2 run mission_control mission_command_node
 ros2 run mission_control mission_monitoring_node
 

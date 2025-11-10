@@ -1,7 +1,5 @@
-node_commands:
+mission_command_node:
   ros__parameters:
-    rover_spd: 15
-    des_lat: 500.0 #7.007286
-    des_long: 500.0 #100.50203 
-
-#
+    rover_spd: 15              # Speed limit 0-100%
+    des_lat: 7.007286          # Target latitude (Thailand)
+    des_long: 100.50203        # Target longitude (Thailand)

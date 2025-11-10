@@ -22,7 +22,7 @@ colcon build
 source install/setup.bash
 
 # 4. Set domain
-export ROS_DOMAIN_ID=2
+export ROS_DOMAIN_ID=5
 ```
 
 ## Build Issues
@@ -83,7 +83,7 @@ ls ~/almondmatcha/ws_base/install/mission_control/lib/mission_control/
 
 **Check domain:**
 ```bash
-echo $ROS_DOMAIN_ID    # Should be 6
+echo $ROS_DOMAIN_ID    # Should be 5
 ```
 
 **Check network:**
@@ -174,14 +174,14 @@ Add to `~/.bashrc`:
 ```bash
 source /opt/ros/humble/setup.bash
 source ~/almondmatcha/ws_base/install/setup.bash
-export ROS_DOMAIN_ID=2
+export ROS_DOMAIN_ID=5
 ```
 
 ### Change mission parameters
 
 Edit `src/mission_control/config/params.yaml`:
 ```yaml
-node_commands:
+mission_command_node:
   ros__parameters:
     rover_spd: 15      # Speed (0-100%)
     des_lat: 7.007286  # Target latitude
@@ -207,7 +207,7 @@ colcon list
 ros2 pkg executables mission_control
 
 # Test node
-export ROS_DOMAIN_ID=2
+export ROS_DOMAIN_ID=5
 ros2 run mission_control mission_command_node
 
 # Expected output:

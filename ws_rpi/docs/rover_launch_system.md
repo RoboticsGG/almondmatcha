@@ -2,51 +2,44 @@
 
 ## Overview
 
-Centralized launch system for the Almondmatcha rover, managing all ROS2 nodes across multiple domains for optimal sensor fusion and base station communication.
+Centralized launch system for the Almondmatcha rover, managing all ROS2 nodes on unified Domain 5 for seamless communication across all systems (rover, base station, vision).
 
 ## Architecture
 
-### Domain 5 - Rover Internal (Sensor Fusion Enabled)
-All rover-internal nodes operate on Domain 5 for direct, low-latency communication:
+### Domain 5 - Unified Architecture
+All systems operate on Domain 5 for direct, low-latency communication without bridges:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│              Domain 5 (Rover Internal)                  │
+│              Domain 5 (Unified System)                  │
 ├─────────────────────────────────────────────────────────┤
 │ ws_rpi (Raspberry Pi):                                  │
 │   ├─ node_gnss_spresense         (GNSS positioning)    │
 │   ├─ node_gnss_mission_monitor   (Mission tracking)    │
 │   ├─ node_chassis_controller     (Motor coordination)  │
 │   ├─ node_chassis_imu            (IMU logging)         │
-│   ├─ node_chassis_sensors        (Encoder logging)     │
-│   └─ node_base_bridge (D5 side)  (Topic subscriber)    │
+│   └─ node_chassis_sensors        (Encoder logging)     │
 │                                                          │
 │ ws_jetson (Jetson Orin):                                │
 │   ├─ camera_stream_node          (D415 RGB/Depth)      │
 │   ├─ lane_detection_node         (Vision processing)   │
 │   └─ steering_control_node       (PID control)         │
 │                                                          │
-│ STM32 Boards (mROS2):                                   │
-│   ├─ chassis_controller          (Motor+IMU)           │
-│   └─ sensors_node                (Encoders+Power)      │
-└─────────────────────────────────────────────────────────┘
-```
-
-### Domain 2 - Base Station Bridge
-Bridge node relays telemetry to ground station:
-
-```
-┌─────────────────────────────────────────────────────────┐
-│         Domain 2 (Base Station Communication)           │
-├─────────────────────────────────────────────────────────┤
-│ ws_rpi (Raspberry Pi):                                  │
-│   └─ node_base_bridge (D2 side)  (Topic publisher)     │
-│                                                          │
 │ ws_base (Ground Station):                               │
-│   ├─ node_monitoring             (Telemetry display)   │
-│   └─ node_commands               (Mission commands)    │
+│   ├─ mission_command_node        (Send goals/speed)    │
+│   └─ mission_monitoring_node     (Telemetry display)   │
+│                                                          │
+│ STM32 Boards (mROS2):                                   │
+│   ├─ chassis_dynamics            (Motor+IMU)           │
+│   └─ sensors_gnss                (Encoders+GNSS)       │
 └─────────────────────────────────────────────────────────┘
 ```
+
+**Key Benefits:**
+- Direct DDS/RTPS discovery - no bridge needed
+- Native action/service support (ws_base ↔ ws_rpi)
+- Lower latency (no relay overhead)
+- Simplified architecture
 
 ## Usage
 
@@ -54,13 +47,21 @@ Bridge node relays telemetry to ground station:
 
 ```bash
 cd ~/almondmatcha/ws_rpi
+
+# Using tmux (recommended)
+./launch_rover_tmux.sh
+
+# Or using ros2 launch
 source install/setup.bash
 ros2 launch rover_launch_system rover_startup.launch.py
 ```
 
-This launches:
-- 5 rover nodes on Domain 5 (GNSS, chassis control, sensors)
-- 2 bridge node instances (one on D5, one on D2)
+This launches 5 rover nodes on Domain 5:
+- GNSS Spresense (positioning)
+- GNSS Mission Monitor (waypoint tracking)
+- Chassis Controller (motor coordination)
+- Chassis IMU (logging)
+- Chassis Sensors (logging)
 
 ### Launch with ws_jetson (Vision System)
 
@@ -77,9 +78,18 @@ ros2 launch jetson_launch_system jetson_startup.launch.py
 On base station computer:
 ```bash
 cd ~/almondmatcha/ws_base
+
+# Using screen
+./launch_base_screen.sh
+
+# Or using tmux
+./launch_base_tmux.sh
+
+# Or manual
 source install/setup.bash
-export ROS_DOMAIN_ID=2
-ros2 run mission_control node_monitoring
+export ROS_DOMAIN_ID=5
+ros2 run mission_control mission_command_node
+ros2 run mission_control mission_monitoring_node
 ```
 
 ## Node Details
@@ -93,17 +103,25 @@ ros2 run mission_control node_monitoring
 | **node_chassis_controller** | pkg_chassis_control | Motor command coordination | Subscribes: `tpc_rover_fmctl`, `tpc_gnss_mission_active`<br>Publishes: `tpc_chassis_cmd` |
 | **node_chassis_imu** | pkg_chassis_sensors | IMU data logger | Subscribes: `tpc_chassis_imu` |
 | **node_chassis_sensors** | pkg_chassis_sensors | Encoder/power logger | Subscribes: `tpc_chassis_sensors` |
-| **node_base_bridge (D5)** | pkg_base_bridge | Bridge subscriber side | Subscribes: All rover telemetry |
 
-### Domain 2 Nodes (ws_rpi)
+### Domain 5 Nodes (ws_base)
 
 | Node | Package | Purpose | Topics |
 |------|---------|---------|--------|
-| **node_base_bridge (D2)** | pkg_base_bridge | Bridge publisher side | Publishes: All rover telemetry to base |
+| **mission_command_node** | mission_control | Send navigation goals and speed limits | Action: `/des_data`<br>Service: `/srv_spd_limit` |
+| **mission_monitoring_node** | mission_control | Display telemetry | Subscribes: All rover telemetry topics |
 
-## Topics Relayed D5 → D2
+## Communication (Domain 5 - Direct)
 
-The bridge node relays these topics from Domain 5 to Domain 2:
+All communication happens directly on Domain 5 without bridges:
+
+**Actions (ws_base → ws_rpi):**
+- `/des_data` - Navigation goals (latitude/longitude)
+
+**Services (ws_base → ws_rpi):**
+- `/srv_spd_limit` - Speed limit commands (0-100%)
+
+**Topics (ws_rpi → all):**
 - `tpc_chassis_imu` - IMU sensor data (10 Hz)
 - `tpc_chassis_sensors` - Encoder/power data (10 Hz)
 - `tpc_gnss_spresense` - GNSS position (10 Hz)
@@ -111,50 +129,38 @@ The bridge node relays these topics from Domain 5 to Domain 2:
 - `tpc_gnss_mission_active` - Mission status (10 Hz)
 - `tpc_gnss_mission_remain_dist` - Distance to waypoint (10 Hz)
 
-## Topics Relayed D2 → D5
-
-Commands from base station:
+**Topics (ws_base → ws_rpi):**
 - `tpc_rover_dest_coordinate` - Target waypoint coordinates
 
 ## Verification
 
-### Check Domain 5 (Rover)
+### Check Domain 5 (All Systems)
 ```bash
 export ROS_DOMAIN_ID=5
-ros2 node list
-ros2 topic list
+ros2 node list          # Should show all rover + base + vision nodes
+ros2 topic list         # Should show all topics
 ros2 topic hz tpc_chassis_imu
 ros2 topic hz tpc_gnss_spresense
+ros2 action list        # Should show /des_data
+ros2 service list       # Should show /srv_spd_limit
 ```
 
-### Check Domain 2 (Base)
-```bash
-export ROS_DOMAIN_ID=2
-ros2 node list
-ros2 topic list
-ros2 topic echo tpc_chassis_imu
-```
-
-### Monitor Bridge Node
+### Monitor Specific Topics
 ```bash
 export ROS_DOMAIN_ID=5
-ros2 node info /base_bridge_d5_node
-```
-
-```bash
-export ROS_DOMAIN_ID=2
-ros2 node info /base_bridge_d2_node
+ros2 topic echo tpc_chassis_imu
+ros2 topic echo tpc_gnss_spresense
 ```
 
 ## Network Configuration
 
-### Local Testing (Same Machine)
-Both domains will communicate via localhost. No special configuration needed.
+### Local Testing (Same Network)
+All systems on Domain 5 communicate via DDS discovery. Ensure all devices on same subnet.
 
 ### Remote Base Station
 For remote ws_base communication:
 
-1. **Network**: Ensure rover (192.168.1.1) and base station are on same subnet
+1. **Network**: Ensure rover (192.168.1.x) and base station are on same subnet or routable
 2. **Firewall**: Allow UDP ports 7400-7500 for DDS discovery
 3. **DDS Config**: Configure CycloneDDS multicast (optional):
 
@@ -162,37 +168,44 @@ For remote ws_base communication:
 export CYCLONEDDS_URI='<CycloneDDS><Domain><General><NetworkInterfaceAddress>auto</NetworkInterfaceAddress></General></Domain></CycloneDDS>'
 ```
 
+### STM32 Boards
+- **Chassis**: 192.168.1.2 (Domain 5, GUID ...10,13)
+- **GNSS**: 192.168.1.6 (Domain 5, GUID ...10,12)
+- Both boards configured for 16 participants max
+
 ## Troubleshooting
 
 ### Nodes not appearing
 ```bash
 # Check if nodes are running
 ps aux | grep ros2
+export ROS_DOMAIN_ID=5
 ros2 node list
 ```
 
-### No topics on Domain 2
-- Verify bridge nodes are running on both domains
-- Check network connectivity for remote base station
-- Ensure ROS_DOMAIN_ID is set correctly
+### No topics visible
+- Verify all systems set to Domain 5: `echo $ROS_DOMAIN_ID`
+- Check network connectivity between devices
+- Verify firewall allows DDS ports (UDP 7400-7500)
+
+### STM32 topics missing
+- Ensure ws_rpi is running (STM32 needs subscribers to appear)
+- Ping STM32 boards: `ping 192.168.1.2` and `ping 192.168.1.6`
+- Check serial console for memory errors
+
+### Action/Service not working
+```bash
+export ROS_DOMAIN_ID=5
+ros2 action list        # Should show /des_data
+ros2 action info /des_data
+ros2 service list       # Should show /srv_spd_limit
+ros2 service type /srv_spd_limit
+```
 
 ### High CPU usage
 - Check log output: `tail -f ~/.ros/log/latest/*/stdout.log`
 - Reduce topic rates if necessary
-- Monitor with: `htop` or `ros2 run demo_nodes_cpp talker --ros-args --log-level debug`
-
-### Bridge not relaying
-```bash
-# Domain 5 side
-export ROS_DOMAIN_ID=5
-ros2 topic hz tpc_chassis_imu
-
-# Domain 2 side (separate terminal)
-export ROS_DOMAIN_ID=2
-ros2 topic hz tpc_chassis_imu
-
-# Both should show ~10 Hz if bridge is working
-```
+- Monitor with: `htop` or `top`
 
 ## Log Files
 
@@ -203,9 +216,7 @@ Logs are automatically organized by timestamp:
 ├─ gnss_mission_monitor_node/
 ├─ chassis_controller_node/
 ├─ chassis_imu_node/
-├─ chassis_sensors_node/
-├─ base_bridge_d5_node/
-└─ base_bridge_d2_node/
+└─ chassis_sensors_node/
 ```
 
 View logs:

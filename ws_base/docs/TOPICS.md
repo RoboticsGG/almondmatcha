@@ -1,6 +1,6 @@
 # Topics Reference
 
-## Base Station Topics (Domain 2)
+## Base Station Topics (Domain 5)
 
 ### Action Clients
 | Name | Type | Direction | Purpose |
@@ -70,15 +70,19 @@ Examples:
 - `tpc_chassis_cmd` - Chassis subsystem, command data
 - `tpc_rover_dest_coordinate` - Rover subsystem, destination
 
-## Domain Mapping
+## Domain Configuration
 
-| Domain | Workspace | Topics Visible |
-|--------|-----------|----------------|
-| 5 | ws_rpi | All rover control topics |
-| 6 | ws_base | Base station + rover (bridged) |
-| 7 | ws_jetson | Vision + rover (bridged) |
+All systems operate on unified **Domain 5**:
 
-**Note:** Cross-domain visibility requires DDS multicast/discovery configuration.
+| Workspace | Domain | Components |
+|-----------|--------|------------|
+| ws_rpi | 5 | GNSS, Chassis Control, Sensors, Mission Monitor |
+| ws_base | 5 | Mission Command, Mission Monitoring |
+| ws_jetson | 5 | Vision Navigation |
+| STM32 Chassis | 5 | IMU, Motor Encoders (mROS2) |
+| STM32 GNSS | 5 | GPS/GNSS Sensors (mROS2) |
+
+**Note:** Direct communication - no bridge required. All nodes share same DDS domain for seamless topic/action/service discovery.
 
 ## Debug Commands
 

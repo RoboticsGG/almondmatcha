@@ -205,7 +205,7 @@ cat vision_navigation/config/vision_nav_headless.yaml | grep -A2 camera_stream
 echo $ROS_DOMAIN_ID
 ```
 
-Launch files set Domain 2 automatically. Verify in launch file output.
+Launch files set Domain 5 automatically. Verify in launch file output.
 
 **Test connectivity**:
 ```bash

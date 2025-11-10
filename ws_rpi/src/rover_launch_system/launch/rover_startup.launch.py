@@ -5,31 +5,32 @@ import datetime
 
 # Rover Startup Launch File
 # ==========================
-# Launches all ws_rpi nodes with proper domain separation:
-#   - Domain 5: All rover internal nodes (sensors, control, GNSS)
-#   - Domain 2: Bridge node for base station communication (ws_base)
+# Launches all ws_rpi nodes on unified Domain 5 architecture.
+# All systems (rover, base station, vision, STM32) communicate directly on Domain 5.
 #
 # Usage:
 #   cd ~/almondmatcha/ws_rpi/
 #   source install/setup.bash
 #   ros2 launch rover_launch_system rover_startup.launch.py
 #
-# Architecture:
-#   Domain 5 (Rover Internal):
+# Domain 5 Unified Architecture:
+#   ws_rpi (Raspberry Pi):
 #     - node_gnss_spresense: GNSS positioning
 #     - node_gnss_mission_monitor: Mission waypoint tracking
 #     - node_chassis_controller: Motor command coordination
 #     - node_chassis_imu: IMU data logging
 #     - node_chassis_sensors: Encoder/power logging
-#     - node_base_bridge (D5 side): Subscribes rover topics for relay
 #
-#   Domain 2 (Base Communication):
-#     - node_base_bridge (D2 side): Publishes to base station (ws_base)
+#   ws_base (Ground Station - Domain 5):
+#     - mission_command_node: Send navigation goals and speed limits
+#     - mission_monitoring_node: Display rover telemetry
 #
-# External Systems:
-#   - ws_jetson (Domain 5): Vision nodes (camera, lane detection, steering)
-#   - ws_base (Domain 2): Base station monitoring and command nodes
-#   - STM32 boards (Domain 5): mROS2 chassis controller and sensor nodes
+#   ws_jetson (Vision System - Domain 5):
+#     - camera_stream_node, lane_detection_node, steering_control_node
+#
+#   STM32 Boards (mROS2 - Domain 5):
+#     - chassis_dynamics: Motor + IMU (192.168.1.2)
+#     - sensors_gnss: Encoders + GNSS (192.168.1.6)
 
 set_custom_log_dir = SetEnvironmentVariable(
     name='ROS_LOG_DIR', 
@@ -38,8 +39,8 @@ set_custom_log_dir = SetEnvironmentVariable(
 
 def generate_launch_description():
 
-    # Domain 5: All rover internal nodes (sensors, control, navigation)
-    # This enables direct communication for sensor fusion without cross-domain overhead
+    # Domain 5: All rover nodes (sensors, control, navigation)
+    # All systems communicate directly on Domain 5 - no bridge needed
     domain_5_group = GroupAction(
         actions=[
             # Manual Command Equivalent: export ROS_DOMAIN_ID=5
@@ -92,41 +93,12 @@ def generate_launch_description():
                 output='log',
                 emulate_tty=True
             ),
-
-            # Bridge Node (Domain 5 side) - subscribes to rover topics
-            # Command: ros2 run pkg_base_bridge node_base_bridge
-            Node(
-                package='pkg_base_bridge',
-                executable='node_base_bridge',
-                name='base_bridge_d5_node',
-                output='screen',
-                emulate_tty=True
-            ),
         ]
     )
 
-    # Domain 2: Bridge node for base station communication
-    # This node relays topics between Domain 5 (rover) and Domain 2 (base station)
-    domain_2_group = GroupAction(
-        actions=[
-            # Manual Command Equivalent: export ROS_DOMAIN_ID=2
-            SetEnvironmentVariable(name='ROS_DOMAIN_ID', value='2'),
-
-            # Bridge Node (Domain 2 side) - publishes to base station
-            # Command: ros2 run pkg_base_bridge node_base_bridge
-            Node(
-                package='pkg_base_bridge',
-                executable='node_base_bridge',
-                name='base_bridge_d2_node',
-                output='screen',
-                emulate_tty=True
-            ),
-        ]
-    )
-
-    # Return the full launch description with both domain groups
+    # Return the launch description with Domain 5 unified architecture
+    # Note: Bridge node removed - ws_base now operates on Domain 5 for direct communication
     return LaunchDescription([
         set_custom_log_dir,
         domain_5_group,
-        domain_2_group,
     ])

@@ -1,49 +1,41 @@
 # ROS2 Domain Architecture
 
-Almondmatcha rover system uses a two-domain ROS2 architecture optimized for centralized sensor fusion.
+Almondmatcha rover system uses a unified Domain 5 architecture for seamless communication across all systems.
 
 ## Domain Assignment
 
 | Domain ID | Purpose | Nodes | Rationale |
 |-----------|---------|-------|-----------|
-| **5** | Rover-internal processing | All rover nodes (RPi, Jetson, STM32s) | Direct low-latency sensor access for EKF fusion |
-| **2** | Base station bridge | ws_base ↔ node_base_bridge | Isolated telemetry/command interface |
+| **5** | All systems | ws_rpi, ws_base, ws_jetson, STM32 boards | Direct DDS discovery, native actions/services, low latency |
 
-## Why Two Domains?
+## Why Unified Domain 5?
 
-### Problem: Fragmented Sensor Access
+### Evolution from Multi-Domain Architecture
 
-Previous architectures had sensors spread across multiple domains:
+Previous architectures had systems spread across multiple domains:
 - Vision on Domain 2 (Jetson)
-- IMU/chassis on Domain 5 (STM32)
-- GNSS on Domain 2 (RPi)
+- Rover on Domain 5 (RPi, STM32)
+- Base station on Domain 2 (ws_base)
 
 **Issues:**
-- Cross-domain bridging added 10-50 ms latency per hop
-- EKF sensor fusion required bridge nodes to relay data
+- Cross-domain bridging added 10-50 ms latency per relay
+- Bridge nodes required for telemetry/command relay
+- Actions and services didn't work across domains
 - Complex multi-domain synchronization
-- Difficult to add new sensors
+- Additional CPU/network overhead
 
-### Solution: Centralized Domain 5
+### Solution: Unified Domain 5
 
-All rover-internal nodes communicate on Domain 5:
-
-**Benefits:**
-1. **Direct Sensor Access:** EKF node subscribes directly to all sensors
-2. **Low Latency:** No bridge relay overhead
-3. **Unified Timestamps:** All sensors on same domain for synchronized fusion
-4. **Scalability:** Easy to add new sensors without architecture changes
-5. **Atomic Updates:** Transaction-like semantics for multi-sensor fusion cycles
-
-### Domain 2 Bridge
-
-Single bridge node (`node_base_bridge`) isolates base station:
+All systems communicate directly on Domain 5:
 
 **Benefits:**
-1. **Security:** Base station cannot directly command motors
-2. **Bandwidth:** Telemetry aggregated before transmission
-3. **Reliability:** Rover continues operation if base disconnects
-4. **Multi-Rover:** Base can monitor multiple rovers on different domains
+1. **Direct Communication:** All systems discover each other natively via DDS
+2. **Low Latency:** No relay overhead - direct point-to-point communication
+3. **Native Actions/Services:** ws_base can call actions and services on ws_rpi directly
+4. **Unified Timestamps:** All nodes on same domain for synchronized fusion
+5. **Scalability:** Easy to add new nodes without bridge configuration
+6. **Simplified Architecture:** Fewer components, easier to maintain and debug
+7. **Lower CPU Usage:** No bridge relay processing required
 
 ## Domain Configuration
 
@@ -55,25 +47,23 @@ export ROS_DOMAIN_ID=5
 ros2 run <package> <node>
 ```
 
-**Base Station (Domain 2):**
+**All Systems Use Domain 5:**
 ```bash
-export ROS_DOMAIN_ID=2
-ros2 run mission_control <node>
-```
+# ws_rpi (Raspberry Pi)
+export ROS_DOMAIN_ID=5
+ros2 run pkg_gnss_navigation node_gnss_spresense
 
-**Bridge Node (Multi-Domain):**
-```bash
-# node_base_bridge internally creates two ROS contexts:
-# - Primary context on Domain 2 (for base station topics)
-# - Secondary context on Domain 5 (for rover topics)
-# Launch file handles configuration automatically
+# ws_base (Base Station)
+export ROS_DOMAIN_ID=5
+ros2 run mission_control mission_command_node
+
+# ws_jetson (Vision System)
+export ROS_DOMAIN_ID=5
+ros2 run vision_navigation camera_stream_node
 ```
 
 **STM32 Firmware (Domain 5):**
 ```cpp
-// In app.cpp
-setenv("ROS_DOMAIN_ID", "5", 5);
-
 // In platform/rtps/config.h
 const uint8_t DOMAIN_ID = 5;
 ```
@@ -82,39 +72,37 @@ const uint8_t DOMAIN_ID = 5;
 
 **Check Active Nodes:**
 ```bash
-# Domain 5 (rover)
+# All systems on Domain 5
 export ROS_DOMAIN_ID=5
 ros2 node list
 
-# Expected output:
+# Expected output (all nodes visible):
 # /camera_stream
 # /lane_detection
 # /steering_control
 # /node_chassis_controller
+# /mission_command_node
+# /mission_monitoring_node
 # /node_chassis_imu
 # /node_chassis_sensors
 # /node_gnss_spresense
 # /node_gnss_mission_monitor
-```
-
-```bash
-# Domain 2 (base)
-export ROS_DOMAIN_ID=2
-ros2 node list
-
-# Expected output:
-# /node_base_bridge (visible on both domains)
-# /mission_control
-# /mission_monitoring
+# /node_gnss_spresense
+# /node_gnss_mission_monitor
+# /node_chassis_imu
+# /node_chassis_sensors
 ```
 
 **Check Topics:**
 ```bash
-# Domain 5
+# All topics visible on Domain 5
 export ROS_DOMAIN_ID=5
 ros2 topic list
 
-# Should see all rover topics (tpc_rover_*, tpc_chassis_*, tpc_gnss_*)
+# Should see all topics from all systems
+# - Rover topics: tpc_chassis_*, tpc_gnss_*
+# - Base topics: tpc_rover_dest_coordinate
+# - Vision topics: tpc_camera_*, tpc_lane_*
 ```
 
 ## Network Discovery
@@ -162,17 +150,22 @@ sudo ufw disable
 - Domain 2: Base station + high-level rover control
 - Domain 5: IMU/chassis STM32
 - Domain 6: Sensors/GNSS STM32
-- **Issue:** Required domain bridge, complex synchronization
+- **Issue:** Required domain bridges, complex synchronization, no action/service support across domains
 
-**v2.0 (Current):** Two domains (2, 5)
-- Domain 2: Base station bridge only
+**v2.0 (Intermediate):** Two domains (2, 5)
+- Domain 2: Base station with bridge relay
 - Domain 5: All rover-internal processing
-- **Benefit:** Direct sensor access, low latency, simplified architecture
+- **Issue:** Still required bridge node, added latency, actions/services didn't work across domains
 
-**Rationale for Consolidation:**
-- mROS2 limitation is per-board participant count (10 max), not per-domain
-- Multiple STM32 boards can share same domain without resource conflicts
-- Sensor fusion requires all sensors on same domain
+**v3.0 (Current - November 2025):** Unified Domain 5
+- Domain 5: All systems (ws_rpi, ws_base, ws_jetson, STM32 boards)
+- **Benefits:** Direct DDS, native actions/services, lower latency, simplified architecture
+
+**Rationale for Unification:**
+- Bridge relay added unnecessary overhead
+- Actions and services work natively on same domain
+- Sensor fusion benefits from direct access to all data
+- All systems can communicate directly via DDS
 
 See `docs/archive/DOMAIN_CONSOLIDATION_SUMMARY.md` for detailed migration history.
 
@@ -241,19 +234,22 @@ ros2 topic list
 **Symptom:** Bridge node not relaying topics between domains
 
 **Solutions:**
-1. Verify bridge node running:
+1. Verify all systems on Domain 5:
    ```bash
-   ros2 node list  # Should see /node_base_bridge on both domains
+   export ROS_DOMAIN_ID=5
+   ros2 node list  # Should see all nodes
+   ros2 topic list  # Should see all topics
    ```
 
-2. Check bridge node logs:
+2. Check action/service availability:
    ```bash
-   ros2 topic echo /rosout | grep base_bridge
+   ros2 action list  # Should see /des_data
+   ros2 service list  # Should see /srv_spd_limit
    ```
 
-3. Restart bridge node:
+3. Test direct communication:
    ```bash
-   ros2 run pkg_chassis_control node_base_bridge
+   ros2 topic echo tpc_gnss_spresense  # Should see GNSS data
    ```
 
 ### STM32 Not Visible on Network
@@ -269,7 +265,6 @@ ros2 topic list
    ```
 
 2. Verify Domain ID in STM32 firmware:
-   ```cpp
    // app.cpp
    setenv("ROS_DOMAIN_ID", "5", 5);  // Must match RPi/Jetson
    ```
@@ -297,21 +292,22 @@ ros2 topic list
 
 ### Development
 
-1. **Use Correct Domain:** Always set `ROS_DOMAIN_ID` before running ROS2 commands
-2. **Separate Terminals:** Use different terminals for different domains (avoid switching)
+1. **Use Correct Domain:** Always set `ROS_DOMAIN_ID=5` before running ROS2 commands
+2. **Consistent Domain:** All systems on Domain 5 - no need for domain switching
 3. **Verify Before Deploy:** Check topics/nodes with `ros2 topic list` and `ros2 node list`
 
 ### Production
 
-1. **Single Domain for Rover:** Keep all rover-internal nodes on Domain 5
-2. **Dedicated Bridge:** Run `node_base_bridge` as system service
-3. **Monitor Health:** Log bridge relay statistics for diagnostics
+1. **Unified Domain:** All systems operate on Domain 5
+2. **Network Security:** Use firewall rules to control DDS traffic
+3. **Monitor Health:** Log communication statistics for diagnostics
 
 ### Debugging
 
 1. **Use `ros2 doctor`:** Diagnose DDS configuration issues
 2. **Check Logs:** Monitor `/rosout` topic for error messages
 3. **Network Tools:** Use `tcpdump`, `wireshark` for deep packet inspection
+4. **Domain Verification:** Ensure all systems report `ROS_DOMAIN_ID=5`
 
 ---
 
