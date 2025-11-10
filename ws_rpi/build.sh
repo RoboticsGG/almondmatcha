@@ -2,6 +2,21 @@
 # ROS2 Workspace Build Script for ws_rpi
 # This script handles the proper build order for all packages
 
+# ------------------------------------------------------------------------------
+# How to build ws_rpi (Raspberry Pi ROS 2 workspace)
+#
+# 1. Make sure you are in the ws_rpi directory.
+# 2. Run this script:
+#      ./build.sh
+#    - To clean before building, run:
+#      ./build.sh clean
+# 3. The script will:
+#    - Build interface packages first (action_ifaces, msgs_ifaces, services_ifaces)
+#    - Source the install/setup.bash
+#    - Build application packages (pkg_chassis_control, pkg_chassis_sensors, pkg_gnss_navigation, rover_launch_system)
+# 4. After a successful build, source install/setup.bash before running nodes.
+# ------------------------------------------------------------------------------
+
 set -e  # Exit on error
 
 # Color output
