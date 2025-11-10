@@ -45,22 +45,19 @@ const VendorId_t VENDOR_ID = {13, 37};
 extern std::array<uint8_t, 4> IP_ADDRESS;
 const GuidPrefix_t BASE_GUID_PREFIX{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12};
 
-const uint8_t DOMAIN_ID = 5; // Unified domain with all ROS 2 nodes and STM32 boards
+const uint8_t DOMAIN_ID = 5; // 230 possible with UDP
 const uint8_t NUM_STATELESS_WRITERS = 4;
 const uint8_t NUM_STATELESS_READERS = 4;
-const uint8_t NUM_STATEFUL_READERS = 13;  // Increased from 10 to eliminate RESSOURCE LIMIT errors
-const uint8_t NUM_STATEFUL_WRITERS = 13;  // Increased from 10 to eliminate RESSOURCE LIMIT errors
+const uint8_t NUM_STATEFUL_READERS = 10;
+const uint8_t NUM_STATEFUL_WRITERS = 10;
 const uint8_t MAX_NUM_PARTICIPANTS = 16; // Support ws_base(2) + ws_rpi(6) + ws_jetson(3) + STM32(2) + headroom(3)
-const uint8_t NUM_WRITERS_PER_PARTICIPANT = 13; // Increased from 10 for 3.6x headroom (11 needed → 40 capacity)
-const uint8_t NUM_READERS_PER_PARTICIPANT = 13; // Increased from 10 for 2.3x headroom (22 needed → 50 capacity)
+const uint8_t NUM_WRITERS_PER_PARTICIPANT = 10; // Max used is 7, add 3 for headroom
+const uint8_t NUM_READERS_PER_PARTICIPANT = 10; // Max used is 7, add 3 for headroom
 const uint8_t NUM_WRITER_PROXIES_PER_READER = 8;
 const uint8_t NUM_READER_PROXIES_PER_WRITER = 8;
 
-// Discovery burst handling: When STM32 boots, it must discover ALL existing endpoints simultaneously.
-// Peak discovery burst: ~28-35 writers, ~35-45 readers. Must handle this to prevent discovery failure.
-// Final configuration for full network stability.
-const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 60; // Handles 28-35 peak + safety margin
-const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 80; // Handles 35-45 peak + safety margin (CRITICAL for data flow)
+const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 20;
+const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 20;
     
 const uint8_t MAX_NUM_READER_CALLBACKS = 5;
 
