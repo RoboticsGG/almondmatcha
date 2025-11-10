@@ -247,9 +247,14 @@ int main()
     msgs.sys_volt_msg = vbus;           // Bus voltage (V)
     PubSensData.publish(msgs);
 
-    // Print sensor status (compact format)
-    printf("[SENSORS] Enc(A:%ld B:%ld) Power(%.2fV %.2fA) GNSS:%s\r\n", 
-           enc_A, enc_B, vbus, curr, gnss_data);
+    // Print sensor status (compact format) - overwrite previous line
+    // This will overwrite the previous line, but if the new text is shorter, remnants may remain.
+    // To fully clear the line, pad with spaces to the end.
+    printf("\r[SENSORS] Enc(A:%ld B:%ld) Power(%.2fV %.2fA) GNSS:%s", 
+       enc_A, enc_B, vbus, curr, gnss_data);
+    // Pad with spaces to clear any leftover characters from previous output
+    printf("%*s", 20, ""); // Adjust 20 to be enough for your longest line
+    fflush(stdout);
 
     // Main loop runs at MAIN_LOOP_PERIOD_MS (4 Hz)
     ThisThread::sleep_for(chrono::milliseconds(MAIN_LOOP_PERIOD_MS));
