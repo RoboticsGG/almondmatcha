@@ -18,25 +18,26 @@ Almondmatcha rover system architecture: distributed heterogeneous computing with
 ┌─────────────────────────────────────────────────────────────────┐
 │                     ROVER SYSTEM ARCHITECTURE                   │
 │                    (Domain 5 - Unified System)                  │
+│                All systems connected via Ethernet Switch        │
 └─────────────────────────────────────────────────────────────────┘
 
-┌──────────────┐      ┌──────────────┐      ┌──────────────┐
-│   Jetson     │      │ Raspberry Pi │      │  STM32 Boards│
-│  Orin Nano   │      │      4B      │      │  (2 boards)  │
-│              │      │              │      │              │
-│ Vision       │◄────►│ Coordination │◄────►│ Real-time    │
-│ Processing   │      │ Sensor Fusion│      │ Motor/Sensor │
-│              │      │ Mission Ctrl │      │ Control      │
-└──────────────┘      └──────┬───────┘      └──────────────┘
-                             │
-                             │ Direct DDS
-                             │ (Domain 5)
-                             │
-                      ┌──────▼───────┐
-                      │ Base Station │
-                      │   (ws_base)  │
-                      │  Domain 5    │
-                      └──────────────┘
+                    Gigabit Ethernet Switch
+                       (192.168.1.0/24)
+                              |
+        ┌─────────────┬───────┼───────┬─────────────┬─────────────┐
+        |             |       |       |             |             |
+   Raspberry Pi  Jetson Orin  |  Base Station  STM32 Chassis  STM32 Sensors
+   192.168.1.1   192.168.1.5  |   192.168.1.10  192.168.1.2   192.168.1.6
+        |             |       |       |             |             |
+┌───────▼─────┐ ┌─────▼──────┐ ┌─────▼─────┐ ┌─────▼─────┐ ┌─────▼─────┐
+│   ws_rpi    │ │ ws_jetson  │ │  ws_base  │ │  mros2    │ │  mros2    │
+│             │ │            │ │           │ │           │ │           │
+│ Coordination│ │  Vision    │ │ Telemetry │ │ Motor +   │ │ Sensors + │
+│ Sensor      │ │  Lane      │ │ Command   │ │ IMU       │ │ GNSS +    │
+│ Fusion      │ │  Detection │ │ Monitor   │ │ Control   │ │ Encoders  │
+│ Mission     │ │  Steering  │ │           │ │           │ │ Power     │
+└─────────────┘ └────────────┘ └───────────┘ └───────────┘ └───────────┘
+     Domain 5       Domain 5      Domain 5      Domain 5      Domain 5
 ```
 
 ## Hardware Architecture
@@ -186,21 +187,47 @@ Camera (30 FPS) → Lane Detection (30 FPS) → Steering Control (50 Hz)
 ### Network Topology
 
 ```
-         Ethernet Switch (192.168.1.0/24)
-                    |
-    ┌───────────────┼───────────────┬──────────────┐
-    │               │               │              │
-Jetson (.5)     RPi (.1)      Chassis (.2)   Sensors (.6)
+                 Gigabit Ethernet Switch (192.168.1.0/24)
+                    5-8 port managed/unmanaged switch
+                              |
+        ┌─────────────┬───────┼───────┬─────────────┬─────────────┐
+        |             |       |       |             |             |
+   RPi (.1)      Jetson (.5)  |  Base (.10)    Chassis (.2)  Sensors (.6)
+   [Gateway]     [Vision]     |  [Monitor]     [STM32]       [STM32]
+                              |
+                       Multicast-enabled
+                       Auto-MDI/MDIX
 ```
 
 **Physical Layer:**
-- Gigabit Ethernet switch
-- Cat5e/Cat6 cables
-- Static IP addressing
+- Gigabit Ethernet switch (1000 Mbps)
+- Cat5e/Cat6 cables (minimum Cat5e for gigabit)
+- Static IP addressing (DHCP disabled)
+- All systems on same L2 broadcast domain
+
+**Switch Requirements:**
+- ✅ Multicast support (critical for DDS discovery)
+- ✅ Auto-MDI/MDIX (automatic crossover)
+- ✅ Store-and-forward switching
+- ✅ At least 5 ports (RPi + Jetson + 2×STM32 + Base)
+- ⚠️ VLAN disabled (or all ports on same VLAN)
+- ⚠️ Port mirroring disabled (creates broadcast storms)
+
+**Network Configuration:**
+
+| Device | IP Address | Subnet Mask | Gateway | Role |
+|--------|-----------|-------------|---------|------|
+| Raspberry Pi | 192.168.1.1 | 255.255.255.0 | - | NAT gateway (optional) |
+| Jetson Orin | 192.168.1.5 | 255.255.255.0 | 192.168.1.1 | Vision processing |
+| Base Station | 192.168.1.10 | 255.255.255.0 | 192.168.1.1 | Command/monitor |
+| STM32 Chassis | 192.168.1.2 | 255.255.255.0 | 192.168.1.1 | Motor/IMU control |
+| STM32 Sensors | 192.168.1.6 | 255.255.255.0 | 192.168.1.1 | GNSS/encoders/power |
 
 **DDS Middleware:**
-- Fast-RTPS (default ROS2 Humble implementation)
-- Multicast discovery on LAN
+- Fast-RTPS (default ROS2 Humble implementation) on Linux systems
+- embeddedRTPS (mROS2) on STM32 boards
+- Multicast discovery: 239.255.0.1 (RTPS standard)
+- UDP ports: 7400-7500 (DDS discovery and data)
 - Reliable QoS for critical commands
 - Best-effort QoS for high-frequency sensor streams
 

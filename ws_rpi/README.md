@@ -14,9 +14,10 @@ source install/setup.bash
 ## Hardware
 
 - **Platform:** Raspberry Pi 4B (4-8 GB RAM)
-- **Network:** Static IP 192.168.1.1
+- **Network:** Static IP 192.168.1.1 (Gigabit Ethernet via switch)
 - **Peripherals:** Sony Spresense GNSS module (USB port)
 - **Domain:** ROS2 Domain 5 (unified architecture - all systems)
+- **Connectivity:** Wired Ethernet only (no WiFi for reliability)
 
 ## Packages
 
@@ -254,10 +255,16 @@ source install/setup.bash
 # Verify domain ID
 echo $ROS_DOMAIN_ID  # Should be 5
 
-# Check network
-ping 192.168.1.2
-ping 192.168.1.5
-ping 192.168.1.6
+# Check network connectivity via switch
+ping 192.168.1.2  # STM32 chassis
+ping 192.168.1.5  # Jetson
+ping 192.168.1.6  # STM32 sensors
+
+# Check Ethernet link status
+ethtool eth0  # Should show "Link detected: yes"
+
+# Verify switch connectivity
+arp -a  # Should show all connected systems
 
 # Restart ROS2 daemon
 ros2 daemon stop
@@ -270,9 +277,11 @@ ros2 daemon start
 
 **Solution:**
 ```bash
-# Verify STM32 boards are powered and connected
+# Verify STM32 boards powered and connected to switch
 ping 192.168.1.2  # Chassis
 ping 192.168.1.6  # Sensors
+
+# Check switch port LEDs (should show link activity)
 
 # Check topics exist (means STM32 is publishing)
 ros2 topic list | grep chassis

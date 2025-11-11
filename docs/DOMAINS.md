@@ -128,19 +128,32 @@ ROS2 uses DDS (Data Distribution Service) for inter-node communication:
 
 ### Firewall Configuration
 
-Ensure firewall allows DDS traffic:
+Ensure firewall allows DDS traffic on the Ethernet switch network:
 
 ```bash
-# Ubuntu (UFW)
-sudo ufw allow from 192.168.1.0/24  # Allow all traffic from rover network
+# Ubuntu (UFW) - Allow all traffic on local subnet
+sudo ufw allow from 192.168.1.0/24 to any
+sudo ufw allow to 192.168.1.0/24 from any
 
-# Or disable for testing
+# Or specific ports for DDS
+sudo ufw allow 7400:7500/udp  # DDS discovery and data
+sudo ufw allow 239.255.0.1    # RTPS multicast
+
+# For testing, temporarily disable firewall
 sudo ufw disable
+
+# Re-enable after testing
+sudo ufw enable
 ```
 
 **Required Ports:**
 - UDP 7400-7500: DDS discovery and data exchange
-- Multicast: 239.255.0.1 (RTPS discovery)
+- Multicast: 239.255.0.1 (RTPS discovery group)
+
+**Network Requirements:**
+- All systems must be on same L2 broadcast domain (same switch)
+- Switch must support multicast forwarding (most do by default)
+- No firewall/router between systems that blocks UDP multicast
 
 ## Domain Migration History
 
@@ -205,26 +218,52 @@ ros2 topic list
 **Symptom:** `ros2 topic list` shows no topics or missing topics
 
 **Solutions:**
-1. Verify domain ID matches:
+1. Verify domain ID matches on all systems:
    ```bash
-   echo $ROS_DOMAIN_ID  # Should be 5 for rover, 2 for base
+   echo $ROS_DOMAIN_ID  # Should be 5 on all machines
    ```
 
-2. Check network connectivity:
+2. Check network connectivity (all systems must reach each other):
    ```bash
    ping 192.168.1.1  # RPi
    ping 192.168.1.5  # Jetson
    ping 192.168.1.2  # Chassis STM32
    ping 192.168.1.6  # Sensors STM32
+   ping 192.168.1.10 # Base station
    ```
 
-3. Restart ROS2 daemon:
+3. Verify all systems connected to same Ethernet switch:
+   ```bash
+   # Check link status
+   ip link show eth0  # Should show "UP"
+   
+   # Check IP configuration
+   ip addr show eth0  # Should show 192.168.1.x/24
+   ```
+
+4. Test multicast support on switch:
+   ```bash
+   # Terminal 1 (on any machine)
+   ros2 multicast receive
+   
+   # Terminal 2 (on different machine, same switch)
+   ros2 multicast send
+   
+   # Should see messages in Terminal 1
+   ```
+
+5. Check switch configuration:
+   - Verify multicast is NOT blocked
+   - Check no VLAN isolation between ports
+   - Verify no port mirroring/monitoring enabled
+
+6. Restart ROS2 daemon:
    ```bash
    ros2 daemon stop
    ros2 daemon start
    ```
 
-4. Check DDS environment:
+7. Check DDS environment:
    ```bash
    ros2 doctor  # Diagnose DDS issues
    ```
@@ -276,16 +315,52 @@ ros2 topic list
 **Symptom:** Nodes on different machines don't discover each other
 
 **Solutions:**
-1. Use unicast discovery (static peers):
+1. **Verify switch supports multicast:**
+   - Managed switches: Check multicast forwarding is enabled
+   - Unmanaged switches: Should work by default (check datasheet)
+   - Some cheap switches block multicast - replace if needed
+
+2. **Test multicast manually:**
    ```bash
-   export ROS_STATIC_PEERS=192.168.1.1,192.168.1.5
+   # On machine 1
+   socat UDP4-RECV:7400,reuseaddr -
+   
+   # On machine 2
+   echo "test" | socat - UDP4-DATAGRAM:239.255.0.1:7400
+   
+   # Should see "test" on machine 1
    ```
 
-2. Check switch supports multicast (some switches block multicast by default)
-
-3. Use `tcpdump` to verify multicast traffic:
+3. **Use unicast discovery (workaround):**
    ```bash
-   sudo tcpdump -i eth0 multicast
+   # On each machine, list IPs of all other participants
+   export ROS_STATIC_PEERS=192.168.1.1,192.168.1.5,192.168.1.2,192.168.1.6,192.168.1.10
+   
+   # Then launch nodes
+   ros2 run <package> <node>
+   ```
+
+4. **Check for IGMP snooping issues:**
+   - Managed switches: Verify IGMP snooping configured correctly
+   - Some switches drop multicast when IGMP snooping enabled without IGMP querier
+   - Solution: Disable IGMP snooping or configure IGMP querier
+
+5. **Verify no Layer 3 routing:**
+   - All systems must be on same subnet (192.168.1.0/24)
+   - No router/gateway between systems
+   - Use `ip route` to verify routing table
+
+6. **Check switch port configuration:**
+   - All ports on same VLAN (VLAN 1 default)
+   - No port isolation features enabled
+   - Storm control disabled (can block multicast)
+
+7. **Use `tcpdump` to debug:**
+   ```bash
+   # Capture DDS multicast traffic
+   sudo tcpdump -i eth0 -n 'multicast and port 7400'
+   
+   # Should see SPDP announcements every 500ms from all participants
    ```
 
 ## Best Practices

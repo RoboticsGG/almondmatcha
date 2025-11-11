@@ -31,34 +31,37 @@ Distributed ROS2-based autonomous rover system with vision navigation, chassis d
 
 ## Network Architecture
 
+## Network Architecture
+
 ```
-                    Ethernet Switch (192.168.1.0/24)
+                    Gigabit Ethernet Switch (192.168.1.0/24)
                               |
-        ┌─────────────────────┼─────────────────────┐
-        |                     |                     |
-   Raspberry Pi          Jetson Orin          STM32 Boards
-   192.168.1.1           192.168.1.5          .2 (Chassis)
-   (ROS2 Domain 5)       (ROS2 Domain 5)      .6 (Sensors)
-                                              (ROS2 Domain 5)
-        |
-        └─── Base Station PC (ROS2 Domain 5)
+        ┌─────────────┬───────┼───────┬─────────────┬─────────────┐
+        |             |       |       |             |             |
+   Raspberry Pi  Jetson Orin  |  Base Station  STM32 Chassis  STM32 Sensors
+   192.168.1.1   192.168.1.5  |   192.168.1.10  192.168.1.2   192.168.1.6
+   Domain 5      Domain 5     |   Domain 5      Domain 5      Domain 5
 ```
+
+**Configuration:**
+- All systems on unified Domain 5 for direct DDS discovery
+- Gigabit Ethernet switch (multicast-enabled)
+- Static IP addressing (192.168.1.0/24)
+- Wired connections only for reliability
+
+**Physical Topology:**
+- All systems connected via Gigabit Ethernet switch
+- Static IP addressing (192.168.1.0/24 subnet)
+- Multicast-enabled switch for DDS discovery
+- No WiFi - wired connections only for reliability
 
 ## ROS2 Domain Architecture
 
-Unified Domain 5 architecture for seamless communication:
+**Unified Domain 5** for all systems - enables direct DDS communication without bridges.
 
-| Domain | Purpose | Nodes |
-|--------|---------|-------|
-| **Domain 5** | All systems | ws_rpi, ws_base, ws_jetson, STM32 boards |
+**Benefits:** Native action/service support, low latency, simplified architecture.
 
-**Benefits:**
-- Direct DDS discovery - no bridge needed
-- Native action/service support across all systems
-- Lower latency (no relay overhead)
-- Simplified architecture
-
-See [docs/DOMAINS.md](docs/DOMAINS.md) for detailed architecture.
+See [docs/DOMAINS.md](docs/DOMAINS.md) for details.
 
 ## Workspace Structure
 
@@ -143,74 +146,72 @@ source install/setup.bash
 
 ### 2. Network Configuration
 
-Configure static IPs on all devices:
+Connect all systems to Gigabit Ethernet switch with static IPs (192.168.1.0/24):
 
 ```bash
 # Raspberry Pi (192.168.1.1)
-sudo ip addr add 192.168.1.1/24 dev eth0
-sudo ip link set eth0 up
+sudo nmcli con mod "Wired connection 1" ipv4.addresses 192.168.1.1/24 ipv4.method manual
+sudo nmcli con up "Wired connection 1"
 
 # Jetson (192.168.1.5)
-sudo ip addr add 192.168.1.5/24 dev eth0
-sudo ip link set eth0 up
+sudo nmcli con mod "Wired connection 1" ipv4.addresses 192.168.1.5/24 ipv4.method manual
+sudo nmcli con up "Wired connection 1"
 
-# STM32 boards have hardcoded IPs (.2 and .6)
+# Base Station (192.168.1.10)
+sudo nmcli con mod "Wired connection 1" ipv4.addresses 192.168.1.10/24 ipv4.method manual
+sudo nmcli con up "Wired connection 1"
+
+# STM32 boards (.2, .6): IPs hardcoded in firmware - no configuration needed
+
 # Verify connectivity
-ping 192.168.1.2  # Chassis
-ping 192.168.1.6  # Sensors
+ping 192.168.1.1 && ping 192.168.1.5 && ping 192.168.1.2 && ping 192.168.1.6
 ```
 
 ### 3. Launch System
 
+**Optimal sequence (~25s startup):**
+
 ```bash
-# Raspberry Pi (Domain 5)
-cd ~/almondmatcha/ws_rpi
-./launch_rover_tmux.sh
+# 1. Power on STM32 boards → wait for "Discovery complete" (~10s)
 
-# Jetson (Domain 5)
-cd ~/almondmatcha/ws_jetson
-./launch_headless.sh  # or ./launch_gui.sh for development
+# 2. Launch Raspberry Pi (wait 3-5s)
+cd ~/almondmatcha/ws_rpi && export ROS_DOMAIN_ID=5 && ./launch_rover_tmux.sh
 
-# Base Station (Domain 5)
-cd ~/almondmatcha/ws_base
-./launch_base_screen.sh
+# 3. Launch Jetson (wait 3-5s)
+ssh yupi@192.168.1.5
+cd ~/almondmatcha/ws_jetson && export ROS_DOMAIN_ID=5 && ./launch_headless.sh
+
+# 4. Launch Base Station
+cd ~/almondmatcha/ws_base && export ROS_DOMAIN_ID=5 && ./launch_base_tmux.sh
 ```
+
+See [docs/LAUNCH_SEQUENCE_GUIDE.md](docs/LAUNCH_SEQUENCE_GUIDE.md) for detailed timing.
 
 ### 4. Verify Operation
 
 ```bash
-# Check active topics (on Raspberry Pi)
 export ROS_DOMAIN_ID=5
-ros2 topic list
 
-# Monitor camera stream
-ros2 topic hz tpc_rover_d415_rgb
+# Check all nodes visible
+ros2 node list  # Should show 12 nodes
 
-# Monitor lane detection
-ros2 topic echo tpc_rover_nav_lane
-
-# Check IMU data
-ros2 topic echo tpc_chassis_imu
+# Monitor key topics
+ros2 topic hz /tpc_rover_d415_rgb     # ~30 Hz (vision)
+ros2 topic hz /tpc_chassis_imu        # ~10 Hz (STM32)
+ros2 topic echo /tpc_rover_nav_lane   # Lane parameters
 ```
 
 ## Key Topics
 
-**Vision Navigation (30 FPS):**
-- `tpc_rover_d415_rgb` - Camera RGB stream
-- `tpc_rover_nav_lane` - Lane parameters [theta, b, detected]
-- `tpc_rover_fmctl` - Steering commands [angle, detected]
-
-**Chassis Control (50 Hz):**
-- `tpc_chassis_cmd` - Motor commands to STM32
-
-**Sensor Data (10 Hz):**
-- `tpc_chassis_imu` - IMU accelerometer/gyroscope
-- `tpc_chassis_sensors` - Encoders, voltage, current
-- `tpc_gnss_spresense` - GPS position data
-
-**Mission Control:**
-- `tpc_gnss_mission_active` - Navigation mission status
-- `tpc_gnss_mission_remain_dist` - Distance to waypoint
+| Topic | Rate | Description |
+|-------|------|-------------|
+| `tpc_rover_d415_rgb` | 30 Hz | Camera RGB stream (Jetson) |
+| `tpc_rover_nav_lane` | 30 Hz | Lane parameters [theta, b, detected] (Jetson) |
+| `tpc_rover_fmctl` | 50 Hz | Steering commands (Jetson) |
+| `tpc_chassis_cmd` | 50 Hz | Motor commands to STM32 (RPi) |
+| `tpc_chassis_imu` | 10 Hz | IMU accel/gyro data (STM32) |
+| `tpc_chassis_sensors` | 4 Hz | Encoders, voltage, current (STM32) |
+| `tpc_gnss_spresense` | 10 Hz | GPS position (RPi) |
 
 See [docs/TOPICS.md](docs/TOPICS.md) for complete reference.
 
@@ -254,25 +255,30 @@ See [docs/TOPICS.md](docs/TOPICS.md) for complete reference.
 
 ## Troubleshooting
 
-**STM32 not visible on network:**
-- Verify Ethernet cable connection
-- Check LED1 status (should be ON after init)
-- Monitor serial output at 115200 baud
+**STM32 not visible:**
+```bash
+# Verify switch connectivity
+ethtool eth0  # Link detected: yes
+ping 192.168.1.2 && ping 192.168.1.6
+arp -a  # Should show all systems
+# Check serial console (115200 baud) for network errors
+```
 
 **ROS2 topics not visible:**
-- Verify `ROS_DOMAIN_ID` matches (5 for rover, 2 for base)
-- Check network connectivity: `ping <ip>`
-- Restart ROS2 daemon: `ros2 daemon stop && ros2 daemon start`
+```bash
+echo $ROS_DOMAIN_ID  # Must be 5
+ros2 multicast send/receive  # Test switch multicast support
+sudo ufw allow from 192.168.1.0/24  # Allow DDS traffic
+ros2 daemon stop && ros2 daemon start
+```
 
 **Vision node errors:**
-- Check camera connection: `rs-enumerate-devices`
-- Verify USB bandwidth (use USB 3.0 port)
-- Reduce resolution/FPS if CPU overloaded
+```bash
+rs-enumerate-devices  # Verify D415 detected
+# Ensure USB 3.0 port, check /dev/video* permissions
+```
 
-**Build failures:**
-- Clean workspace: `rm -rf build install log`
-- Source ROS2 environment: `source /opt/ros/humble/setup.bash`
-- Rebuild dependencies first (interface packages)
+See workspace README files for detailed troubleshooting.
 
 ## Future Enhancements
 
@@ -285,5 +291,5 @@ See [docs/TOPICS.md](docs/TOPICS.md) for complete reference.
 
 ---
 
-**Last Updated:** November 7, 2025  
-**Version:** 2.0 (Two-domain architecture with sensor fusion preparation)
+**Last Updated:** November 10, 2025  
+**Version:** 3.0 (Unified Domain 5, Ethernet switch topology, optimized STM32 memory pools)

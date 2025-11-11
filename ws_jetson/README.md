@@ -16,8 +16,9 @@ source install/setup.bash
 
 - **Platform:** Jetson Orin Nano 8GB Developer Kit
 - **Camera:** Intel RealSense D415 RGB-D (USB 3.0)
-- **Network:** Static IP 192.168.1.5
+- **Network:** Static IP 192.168.1.5 (Gigabit Ethernet via switch)
 - **Domain:** ROS2 Domain 5
+- **Connectivity:** Wired Ethernet only (no WiFi for reliability)
 
 ## Nodes
 

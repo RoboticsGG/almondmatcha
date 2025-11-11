@@ -15,8 +15,9 @@ source install/setup.bash
 
 - **Purpose:** Monitor rover telemetry and send commands from base station
 - **Platform:** Linux PC (Ubuntu 20.04/22.04)
-- **Domain:** ROS2 Domain 5 (unified with rover)
-- **Communication:** Direct Ethernet to rover network (192.168.1.0/24)
+- **Network:** Connect to rover Ethernet switch (192.168.1.10 recommended)
+- **Domain:** ROS2 Domain 5 (unified with all rover systems)
+- **Communication:** Gigabit Ethernet via switch - all systems on same LAN
 
 ## Nodes
 
@@ -107,47 +108,70 @@ nano install/mission_control/share/mission_control/config/params.yaml
 
 ### Network Setup
 
-Base station must be on rover network:
+**Topology:** Connect base station to same Ethernet switch as rover systems
+
+**Recommended IP:** 192.168.1.10 (or any .10-.99 to avoid conflicts)
 
 ```bash
-# Temporary
-sudo ip addr add 192.168.1.100/24 dev eth0
-sudo ip link set eth0 up
+# Option 1: NetworkManager (recommended)
+sudo nmcli con mod "Wired connection 1" ipv4.addresses 192.168.1.10/24
+sudo nmcli con mod "Wired connection 1" ipv4.method manual
+sudo nmcli con up "Wired connection 1"
 
-# Verify connectivity to rover
-ping 192.168.1.1    # Raspberry Pi (bridge node)
+# Option 2: Temporary (testing)
+sudo ip addr add 192.168.1.10/24 dev eth0
+sudo ip link set eth0 up
 ```
 
-**Firewall:**
+**Verify Connectivity (all via switch):**
+```bash
+# Check Ethernet link
+ip link show eth0  # Should show UP
+
+# Ping all rover systems on switch
+ping 192.168.1.1    # Raspberry Pi
+ping 192.168.1.5    # Jetson
+ping 192.168.1.2    # STM32 chassis
+ping 192.168.1.6    # STM32 sensors
+```
+
+**Firewall Configuration:**
 ```bash
 # Allow DDS traffic from rover network
-sudo ufw allow from 192.168.1.0/24
+sudo ufw allow from 192.168.1.0/24 to any
+sudo ufw allow to 192.168.1.0/24 from any
 
 # Or disable for testing
 sudo ufw disable
+
+# Re-enable after testing
+sudo ufw enable
 ```
 
 ## Communication
 
 ### Topics from Rover (Domain 5)
 
-Direct access to rover network:
+All systems on Domain 5 via Ethernet switch - direct DDS discovery:
 
 | Topic | Type | Content |
 |-------|------|---------|
-| `tpc_gnss_spresense` | SpresenseGNSS | GPS position |
-| `tpc_gnss_mission_active` | Bool | Mission status |
-| `tpc_gnss_mission_remain_dist` | Float64 | Distance to waypoint |
-| `tpc_chassis_cmd` | ChassisCtrl | Motor commands (monitoring) |
-| `tpc_chassis_imu` | ChassisIMU | IMU sensor data from STM32 |
-| `tpc_chassis_sensors` | ChassisSensors | GNSS/encoders from STM32 |
+| `tpc_gnss_spresense` | SpresenseGNSS | GPS position (RPi) |
+| `tpc_gnss_mission_active` | Bool | Mission status (RPi) |
+| `tpc_gnss_mission_remain_dist` | Float64 | Distance to waypoint (RPi) |
+| `tpc_chassis_cmd` | ChassisCtrl | Motor commands (RPi → STM32) |
+| `tpc_chassis_imu` | ChassisIMU | IMU sensor data (STM32 → RPi) |
+| `tpc_chassis_sensors` | ChassisSensors | GNSS/encoders/power (STM32 → RPi) |
+| `tpc_rover_d415_rgb` | Image | Camera stream (Jetson) |
+| `tpc_rover_nav_lane` | NavLane | Lane parameters (Jetson) |
+| `tpc_rover_fmctl` | RoverCtrl | Steering commands (Jetson) |
 
 ### Commands to Rover (Domain 5)
 
 | Interface | Type | Purpose |
 |-----------|------|---------|
-| `/des_data` | Action | Navigation goal (lat/lon) |
-| `/spd_limit` | Service | Speed limit (0-100%) |
+| `/des_data` | Action | Navigation goal (lat/lon) to RPi |
+| `/spd_limit` | Service | Speed limit (0-100%) to RPi |
 
 ## Testing
 

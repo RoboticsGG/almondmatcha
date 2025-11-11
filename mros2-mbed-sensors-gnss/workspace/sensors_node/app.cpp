@@ -184,12 +184,13 @@ int main()
 
   // ===== DDS DISCOVERY COORDINATION FIX =====
   // Wait for DDS/RTPS participant discovery to complete
-  // SPDP announcements sent every 1000ms, need at least 5-6 cycles
-  // for reliable discovery across all nodes (ws_rpi + ws_jetson + STM32s)
-  // This fixes intermittent "no messages received" issue by ensuring
-  // publishers/subscribers are fully matched before data transmission starts
-  MROS2_INFO("Waiting 6 seconds for DDS participant discovery...");
-  osDelay(6000);  // 6 seconds = 6 SPDP cycles for robust discovery
+  // SPDP announcements sent every 500ms (SPDP_RESEND_PERIOD_MS)
+  // Need at least 8-10 cycles for reliable discovery across all nodes
+  // (ws_rpi(5) + ws_base(2) + ws_jetson(3) + STM32(2) = 12 participants)
+  // This fixes intermittent "no messages received" and "[Memory pool] resource limit exceed"
+  // by ensuring publishers/subscribers are fully matched before data transmission starts
+  MROS2_INFO("Waiting 8 seconds for DDS participant discovery (12 participants)...");
+  osDelay(8000);  // 8 seconds = 16 SPDP cycles @ 500ms for robust discovery
   MROS2_INFO("Discovery wait complete - initializing sensors");
   // ==========================================
 
