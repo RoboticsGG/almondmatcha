@@ -56,9 +56,33 @@ Expected startup messages:
 [MROS2] Publisher initialized: tpc_gnss_spresense
 ```
 
-### Step 2: Launch ws_jetson Vision Processing (Domain 6)
+### Step 2: Launch ws_jetson Vision System
 
-**Terminal 1 on Jetson:**
+**Option A: Tmux launch (recommended):**
+```bash
+cd ~/almondmatcha/ws_jetson
+source install/setup.bash
+./launch_jetson_tmux.sh
+```
+
+This creates a 3-pane tmux session with:
+- Pane 0: Camera stream (Domain 6)
+- Pane 1: Lane detection (Domain 6)
+- Pane 2: Steering control (Domain 5)
+
+**Tmux controls:**
+- `Ctrl+b` → arrows: Navigate panes
+- `Ctrl+b` → `z`: Zoom pane
+- `Ctrl+b` → `d`: Detach (session keeps running)
+
+**Option B: Background launch script:**
+```bash
+./launch_headless.sh  # Launches both domains automatically
+```
+
+**Option C: Manual multi-terminal launch:**
+
+Terminal 1 - Vision Processing (Domain 6):
 ```bash
 cd ~/almondmatcha/ws_jetson
 source install/setup.bash
@@ -66,17 +90,7 @@ export ROS_DOMAIN_ID=6
 ros2 launch vision_navigation vision_domain6.launch.py
 ```
 
-Expected output:
-```
-[camera_stream]: Starting camera stream at 30 FPS
-[lane_detection]: Lane detection pipeline initialized
-```
-
-Wait for both nodes to be ready (30 FPS messages flowing).
-
-### Step 3: Launch ws_jetson Control Interface (Domain 5)
-
-**Terminal 2 on Jetson:**
+Terminal 2 - Control Interface (Domain 5):
 ```bash
 cd ~/almondmatcha/ws_jetson
 source install/setup.bash
@@ -84,15 +98,17 @@ export ROS_DOMAIN_ID=5
 ros2 launch vision_navigation control_domain5.launch.py
 ```
 
-Expected output:
+**Expected output:**
 ```
+[camera_stream]: Starting camera stream at 30 FPS
+[lane_detection]: Lane detection pipeline initialized
 [steering_control_domain5]: Waiting for lane detection data...
 [steering_control_domain5]: Control loop initialized
 ```
 
-Wait for control node to detect Domain 6 vision data (status message should update).
+Wait for all nodes to be ready (30 FPS messages flowing).
 
-### Step 4: Launch ws_rpi Control System
+### Step 3: Launch ws_rpi Control System
 
 **On Raspberry Pi:**
 ```bash
@@ -122,7 +138,7 @@ tmux attach-session -t rover  # View all panes
 - `Ctrl+b` then `z`: Zoom current pane
 - `Ctrl+b` then `d`: Detach session
 
-### Step 5: Launch ws_base Mission Command (Optional)
+### Step 4: Launch ws_base Mission Command (Optional)
 
 **On Base Station:**
 ```bash
@@ -194,7 +210,19 @@ minicom -D /dev/ttyACM0
 Ctrl+C
 ```
 
-**2. Stop ws_rpi:**
+**2. Stop ws_jetson:**
+```bash
+# Option A: Kill tmux session
+tmux kill-session -t jetson_vision
+
+# Option B: If using background scripts
+pkill -f "vision_navigation"
+
+# Option C: Manual shutdown
+Ctrl+C  # In each terminal
+```
+
+**3. Stop ws_rpi:**
 ```bash
 # Detach from tmux session if attached
 Ctrl+b then d
@@ -203,19 +231,7 @@ Ctrl+b then d
 tmux kill-session -t rover
 ```
 
-**3. Stop ws_jetson control (Domain 5):**
-```bash
-# In Jetson Domain 5 terminal
-Ctrl+C
-```
-
-**4. Stop ws_jetson vision (Domain 6):**
-```bash
-# In Jetson Domain 6 terminal
-Ctrl+C
-```
-
-**5. Power down STM32 boards:**
+**4. Power down STM32 boards:**
 - Disconnect power supply
 - Wait 5 seconds before reconnecting
 

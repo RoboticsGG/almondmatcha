@@ -11,11 +11,16 @@ ROS2 workspace for real-time lane detection and visual navigation on NVIDIA Jets
 
 ## Quick Start
 
+**Single-command tmux launch (recommended):**
 ```bash
 cd ~/almondmatcha/ws_jetson
 ./build_clean.sh
 source install/setup.bash
+./launch_jetson_tmux.sh  # Launches all nodes in organized tmux session
+```
 
+**Manual multi-terminal launch:**
+```bash
 # Terminal 1: Vision processing (Domain 6)
 export ROS_DOMAIN_ID=6
 ros2 launch vision_navigation vision_domain6.launch.py
@@ -68,7 +73,21 @@ source install/setup.bash
 
 ## Running
 
-**Quick launch scripts (recommended):**
+**Tmux launch (single command - recommended):**
+
+All nodes in organized tmux session:
+```bash
+./launch_jetson_tmux.sh
+```
+
+Tmux controls:
+- `Ctrl+b` then arrow keys: Navigate between panes
+- `Ctrl+b z`: Zoom current pane (fullscreen toggle)
+- `Ctrl+b [`: Scroll mode (q to exit, arrows to navigate)
+- `Ctrl+d`: Close current pane
+- `tmux kill-session -t jetson_vision`: Kill entire session
+
+**Quick launch scripts:**
 
 Headless mode (no GUI):
 ```bash
@@ -122,6 +141,52 @@ steering_control:
 ```
 
 Changes take effect on next launch (no rebuild required).
+
+## Tmux Session Management
+
+**Launch organized session:**
+```bash
+./launch_jetson_tmux.sh  # Creates 'jetson_vision' session with 3 panes
+```
+
+**Session layout:**
+```
+┌─────────────────────┬─────────────────────┐
+│                     │ [1] Lane Detection  │
+│  [0] Camera Stream  │     (Domain 6)      │
+│     (Domain 6)      ├─────────────────────┤
+│                     │ [2] Steering Ctrl   │
+│                     │     (Domain 5)      │
+└─────────────────────┴─────────────────────┘
+```
+
+**Tmux cheat sheet:**
+
+Navigation:
+- `Ctrl+b` → arrow keys: Switch between panes
+- `Ctrl+b` → `z`: Zoom/unzoom current pane (fullscreen)
+- `Ctrl+b` → `o`: Cycle through panes
+- `Ctrl+b` → `q`: Show pane numbers
+
+Scrolling/History:
+- `Ctrl+b` → `[`: Enter scroll mode
+  - Arrow keys or PgUp/PgDn: Navigate
+  - `q`: Exit scroll mode
+
+Session management:
+- `Ctrl+b` → `d`: Detach from session (keeps running)
+- `tmux attach -t jetson_vision`: Reattach to session
+- `tmux ls`: List all sessions
+- `tmux kill-session -t jetson_vision`: Kill session
+
+Pane management:
+- `Ctrl+d`: Close current pane
+- `exit`: Close current pane (alternative)
+
+**Reattaching to running session:**
+```bash
+tmux attach -t jetson_vision  # Reconnect to existing session
+```
 
 ## Verification
 
