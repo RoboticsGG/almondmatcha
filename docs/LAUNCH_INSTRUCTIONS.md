@@ -2,6 +2,18 @@
 
 Complete guide to launching the Almondmatcha rover system across all platforms.
 
+## Quick Launch Summary
+
+**Recommended tmux-based launch (organized terminal sessions):**
+
+1. **Jetson (ws_jetson):** `./launch_jetson_tmux.sh` → 3 panes (camera, detection, control)
+2. **Raspberry Pi (ws_rpi):** `./launch_rover_tmux.sh` → 5 panes (GNSS, chassis nodes)
+3. **Base Station (ws_base):** Manual launch (optional)
+
+**Alternative background scripts:**
+- Jetson headless: `./launch_headless.sh`
+- Jetson with GUI: `./launch_gui.sh`
+
 ## System Overview
 
 - **Control Loop (Domain 5):** ws_rpi, ws_base, STM32 boards, ws_jetson control interface
