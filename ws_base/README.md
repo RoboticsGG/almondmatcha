@@ -42,6 +42,16 @@ source install/setup.bash
 
 ### Launch Script (Recommended)
 
+**Using ROS2 Launch File:**
+```bash
+export ROS_DOMAIN_ID=5
+cd ~/almondmatcha/ws_base
+source install/setup.bash
+ros2 launch mission_control mission_control.launch.py
+```
+
+This automatically loads parameters from `config/params.yaml`.
+
 **GNU Screen:**
 ```bash
 ./launch_base_screen.sh
@@ -59,25 +69,26 @@ source install/setup.bash
 - `screen -r base` - Reattach session
 - `Ctrl+a` then `k` - Kill window
 
-### Manual Launch
+### Manual Launch (Advanced)
+
+**Note:** When running nodes manually with `ros2 run`, you must specify parameters:
 
 ```bash
 export ROS_DOMAIN_ID=5
 cd ~/almondmatcha/ws_base
 source install/setup.bash
 
-# Terminal 1: Command node
-ros2 run mission_control mission_command_node
+# Option 1: Load from params.yaml
+ros2 run mission_control mission_command_node --ros-args --params-file src/mission_control/config/params.yaml
+
+# Option 2: Specify parameters inline
+ros2 run mission_control mission_command_node --ros-args \
+  -p rover_spd:=15 \
+  -p des_lat:=8.007286 \
+  -p des_long:=101.50203
 
 # Terminal 2: Monitoring node
 ros2 run mission_control mission_monitoring_node
-```
-
-### ROS2 Launch File
-
-```bash
-export ROS_DOMAIN_ID=5
-ros2 launch mission_control node_comlaunch.py
 ```
 
 ## Configuration
@@ -87,23 +98,26 @@ ros2 launch mission_control node_comlaunch.py
 Edit `src/mission_control/config/params.yaml`:
 
 ```yaml
-node_commands:
+mission_command_node:
   ros__parameters:
     rover_spd: 15              # Speed limit (0-100%)
-    des_lat: 7.007286          # Target latitude (decimal degrees)
-    des_long: 100.50203        # Target longitude (decimal degrees)
+    des_lat: 8.007286          # Target latitude (decimal degrees)
+    des_long: 101.50203        # Target longitude (decimal degrees)
 ```
 
 **Apply Changes:**
 
+After editing the YAML file, restart the mission control nodes:
+
 ```bash
-# Rebuild (if params.yaml is installed resource)
+# If using launch file (recommended):
+export ROS_DOMAIN_ID=5
+ros2 launch mission_control mission_control.launch.py
+
+# Or rebuild to update installed config:
 colcon build --packages-select mission_control
 source install/setup.bash
-
-# Or edit installed file directly:
-nano install/mission_control/share/mission_control/config/params.yaml
-# No rebuild needed, restart nodes
+ros2 launch mission_control mission_control.launch.py
 ```
 
 ### Network Setup
