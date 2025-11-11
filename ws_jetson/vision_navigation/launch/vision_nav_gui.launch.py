@@ -27,27 +27,20 @@ from launch_ros.actions import Node
 from launch.actions import SetEnvironmentVariable
 from launch_ros.substitutions import FindPackageShare
 
-from vision_navigation_pkg.config import (
-    CameraConfig, LaneDetectionConfig, ControlConfig
-)
+from vision_navigation_pkg.config import CameraConfig
 
 
 def generate_launch_description():
     # ==================== ROS2 Domain Configuration ====================
-    # Domain 5: All rover nodes for sensor fusion (vision, GNSS, IMU, encoders)
-    set_domain_id = SetEnvironmentVariable('ROS_DOMAIN_ID', '5')
+    # Domain 6: Vision processing nodes (isolated from control loop)
+    # GUI mode shows camera preview and lane detection visualization
+    set_domain_id = SetEnvironmentVariable('ROS_DOMAIN_ID', '6')
     
     # ==================== Config File Paths ====================
     system_config = PathJoinSubstitution([
         FindPackageShare('vision_navigation'),
         'config',
         'vision_nav_gui.yaml'
-    ])
-    
-    steering_config = PathJoinSubstitution([
-        FindPackageShare('vision_navigation'),
-        'config',
-        'steering_control_params.yaml'
     ])
     
     # ==================== Launch Arguments ====================
@@ -95,16 +88,6 @@ def generate_launch_description():
         description='Path to RealSense advanced mode JSON configuration'
     )
     
-    # Control parameters
-    k_e1 = DeclareLaunchArgument('k_e1', default_value=str(ControlConfig.K_E1))
-    k_e2 = DeclareLaunchArgument('k_e2', default_value=str(ControlConfig.K_E2))
-    k_p = DeclareLaunchArgument('k_p', default_value=str(ControlConfig.K_P))
-    k_i = DeclareLaunchArgument('k_i', default_value=str(ControlConfig.K_I))
-    k_d = DeclareLaunchArgument('k_d', default_value=str(ControlConfig.K_D))
-    ema_alpha = DeclareLaunchArgument('ema_alpha', default_value=str(ControlConfig.EMA_ALPHA))
-    steer_max_deg = DeclareLaunchArgument('steer_max_deg', default_value=str(ControlConfig.STEER_MAX_DEGREES))
-    steer_when_lost = DeclareLaunchArgument('steer_when_lost', default_value=str(ControlConfig.STEER_WHEN_LOST))
-    
     # ==================== Nodes with GUI ENABLED ====================
     
     camera_stream_node = Node(
@@ -125,14 +108,9 @@ def generate_launch_description():
         parameters=[system_config],
     )
     
-    steering_control_node = Node(
-        package='vision_navigation',
-        executable='steering_control',
-        name='steering_control',
-        output='screen',
-        emulate_tty=True,
-        parameters=[steering_config],
-    )
+    # NOTE: Steering control should be launched separately on Domain 5
+    # Use control_domain5.launch.py for the control interface
+    # This GUI file only launches Domain 6 vision nodes with visualization
     
     # ==================== Launch Sequence ====================
     
@@ -142,26 +120,25 @@ def generate_launch_description():
         # Declare arguments
         camera_width, camera_height, camera_fps,
         enable_depth, video_path, loop_video, json_config,
-        k_e1, k_e2, k_p, k_i, k_d, ema_alpha, steer_max_deg, steer_when_lost,
         
         # Startup messages
-        LogInfo(msg='Vision Navigation System starting in GUI MODE...'),
-        LogInfo(msg='[GUI] Camera preview and lane visualization ENABLED'),
+        LogInfo(msg='========================================'),
+        LogInfo(msg='Vision Navigation - Domain 6 (GUI Mode)'),
+        LogInfo(msg='========================================'),
+        LogInfo(msg='Domain: 6 (Isolated vision processing)'),
+        LogInfo(msg='GUI: Camera preview and lane visualization ENABLED'),
+        LogInfo(msg='========================================'),
         
         # Start camera immediately
         camera_stream_node,
-        LogInfo(msg='[INFO] Camera node started with GUI preview, initializing hardware (2s)...'),
+        LogInfo(msg='[Domain 6] Camera node started with GUI preview, initializing hardware (2s)...'),
         
         # Start lane detection after 2s
         TimerAction(period=2.0, actions=[
-            LogInfo(msg='[INFO] Camera ready, starting lane detection with visualization...'),
+            LogInfo(msg='[Domain 6] Camera ready, starting lane detection with visualization...'),
             lane_detection_node,
-        ]),
-        
-        # Start steering control after 3s
-        TimerAction(period=3.0, actions=[
-            LogInfo(msg='[INFO] Lane detection ready, starting control node...'),
-            steering_control_node,
-            LogInfo(msg='[INFO] Vision Navigation System (GUI MODE) fully initialized!'),
+            LogInfo(msg='[Domain 6] Vision processing nodes (GUI) fully initialized!'),
+            LogInfo(msg='[Domain 6] Publishing lane data on tpc_rover_nav_lane'),
+            LogInfo(msg='[NEXT] Control interface will be launched on Domain 5 automatically'),
         ]),
     ])

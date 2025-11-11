@@ -68,7 +68,25 @@ source install/setup.bash
 
 ## Running
 
-**Multi-domain launch (production):**
+**Quick launch scripts (recommended):**
+
+Headless mode (no GUI):
+```bash
+./launch_headless.sh  # Launches both Domain 6 and Domain 5 automatically
+```
+
+GUI mode (with visualization):
+```bash
+./launch_gui.sh  # Launches both Domain 6 (with GUI) and Domain 5 automatically
+```
+
+Both scripts handle:
+- Automatic domain separation
+- Proper startup sequence (vision first, then control)
+- Background process management
+- Clean shutdown on Ctrl+C
+
+**Manual multi-domain launch (development):**
 
 Terminal 1 - Vision processing:
 ```bash
@@ -80,12 +98,6 @@ Terminal 2 - Control interface:
 ```bash
 export ROS_DOMAIN_ID=5
 ros2 launch vision_navigation control_domain5.launch.py
-```
-
-**Legacy single-domain launch:**
-```bash
-./launch_headless.sh  # All nodes on Domain 5 (higher STM32 memory usage)
-./launch_gui.sh       # With visualization
 ```
 
 ## Configuration
