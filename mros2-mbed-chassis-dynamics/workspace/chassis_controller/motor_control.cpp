@@ -35,7 +35,7 @@ DigitalOut motor_left_enable_backward(PE_9);
  * ===================================== */
 
 uint8_t servo_center_angle = 100;       // Servo center position (degrees)
-uint8_t pwm_period_us = 20;             // PWM period (microseconds)
+uint32_t pwm_period_us = 20000;         // PWM period (microseconds) - 20000us = 20ms for servo
 uint8_t current_steering_angle = 0;     // Current steering angle
 
 /* =====================================
@@ -116,23 +116,29 @@ void apply_motor_control(float steering_duty, uint8_t enable_forward, uint8_t en
      * Apply PWM and direction signals to motor hardware
      * steering_duty: normalized duty cycle (0.0 to 1.0)
      * enable_forward, enable_backward: direction pins for H-bridge
-     * pwm_period_us_val: PWM period in microseconds
+     * pwm_period_us_val: PWM period in microseconds (ignored - using global pwm_period_us)
      * motor_speed_percent: duty cycle as percentage (0-100)
      */
     
-    // Configure PWM period (20 us = 50 kHz)
-    steering_servo_pwm.period_us(pwm_period_us_val);
-    motor_right_pwm.period_us(pwm_period_us_val);
-    motor_left_pwm.period_us(pwm_period_us_val);
+    // Configure PWM periods
+    // Servo: 20ms period (standard servo control signal)
+    steering_servo_pwm.period_us(pwm_period_us);  // 20000us = 20ms
+    
+    // Motors: 50us period (20 kHz for smooth motor control)
+    motor_right_pwm.period_us(50);
+    motor_left_pwm.period_us(50);
     
     // Set steering servo PWM (steering_servo_pwm)
     steering_servo_pwm.write(steering_duty);
     
     // Set motor direction pins
+    // Right motor: normal direction
     motor_right_enable_forward = enable_forward;
     motor_right_enable_backward = enable_backward;
-    motor_left_enable_forward = enable_forward;
-    motor_left_enable_backward = enable_backward;
+    
+    // Left motor: OPPOSITE direction (differential drive requires opposite rotation)
+    motor_left_enable_forward = enable_backward;  // Swap: forward command = backward pin
+    motor_left_enable_backward = enable_forward;  // Swap: backward command = forward pin
     
     // Set motor speed (duty cycle)
     float normalized_duty = motor_speed_percent / 100.0f;

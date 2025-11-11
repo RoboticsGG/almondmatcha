@@ -57,8 +57,8 @@ const uint8_t NUM_READERS_PER_PARTICIPANT = 20;  // Was 16 → Now 20 (ws_base h
 const uint8_t NUM_WRITER_PROXIES_PER_READER = 24; // Was 20 → Now 24 (CRITICAL: track all remote writers)
 const uint8_t NUM_READER_PROXIES_PER_WRITER = 24; // Was 20 → Now 24 (CRITICAL: chassis publishes to MANY subs)
 
-const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 14; // Match MAX_NUM_PARTICIPANTS
-const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 14; // Match MAX_NUM_PARTICIPANTS
+const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 40; // Handles discovery burst from all participants
+const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 50; // Handles discovery burst (CRITICAL for ws_base monitoring)
     
 const uint8_t MAX_NUM_READER_CALLBACKS = 3;  // This board only has 1 callback
 

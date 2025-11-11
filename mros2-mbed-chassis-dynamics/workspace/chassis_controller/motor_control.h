@@ -29,8 +29,8 @@ extern const uint32_t MOTOR_RESPONSE_PERIOD_MS;
 /// Servo center position (degrees)
 extern uint8_t servo_center_angle;
 
-/// PWM period in microseconds (20 us = 50 kHz)
-extern uint8_t pwm_period_us;
+/// PWM period in microseconds (20000 us = 20 ms for standard servo)
+extern uint32_t pwm_period_us;
 
 /// Current steering angle (degrees)
 extern uint8_t current_steering_angle;
@@ -88,13 +88,14 @@ std::tuple<float, uint8_t, uint8_t> calculate_motor_direction(uint8_t motor_dire
  * @param steering_duty Steering servo duty cycle (0.0-1.0 normalized)
  * @param enable_forward H-bridge forward enable pin value
  * @param enable_backward H-bridge backward enable pin value
- * @param pwm_period_us_val PWM period in microseconds
+ * @param pwm_period_us_val PWM period in microseconds (ignored - using global pwm_period_us)
  * @param motor_speed_percent Motor PWM duty cycle as percentage (0-100)
  *
  * Configures:
- * - Servo PWM output (PA_3)
- * - Motor PWM outputs (PA_6 right, PE_11 left)
+ * - Servo PWM output (PA_3) at 20ms period
+ * - Motor PWM outputs (PA_6 right, PE_11 left) at 50us period (20 kHz)
  * - Motor direction pins (PF_12, PD_15, PF_13, PE_9)
+ * - Left motor uses OPPOSITE direction for differential drive
  */
 void apply_motor_control(float steering_duty, uint8_t enable_forward, uint8_t enable_backward,
                          uint8_t pwm_period_us_val, float motor_speed_percent);
