@@ -8,7 +8,7 @@ Distributed ROS2-based autonomous rover system with vision navigation, chassis d
 
 **Architecture:** Heterogeneous distributed computing (Raspberry Pi, Jetson Orin Nano, STM32 microcontrollers)
 
-**Communication:** ROS2 DDS over Ethernet with unified Domain 5 architecture
+**Communication:** ROS2 DDS over Ethernet with multi-domain architecture (Domain 5: control, Domain 6: vision)
 
 ## Hardware Components
 
@@ -40,26 +40,30 @@ Distributed ROS2-based autonomous rover system with vision navigation, chassis d
         |             |       |       |             |             |
    Raspberry Pi  Jetson Orin  |  Base Station  STM32 Chassis  STM32 Sensors
    192.168.1.1   192.168.1.5  |   192.168.1.10  192.168.1.2   192.168.1.6
-   Domain 5      Domain 5     |   Domain 5      Domain 5      Domain 5
+   Domain 5      D5 + D6      |   Domain 5      Domain 5      Domain 5
 ```
 
 **Configuration:**
-- All systems on unified Domain 5 for direct DDS discovery
+- Domain 5 (Control): All systems participate (10 nodes total)
+- Domain 6 (Vision): Jetson localhost only (camera, lane detection)
 - Gigabit Ethernet switch (multicast-enabled)
 - Static IP addressing (192.168.1.0/24)
 - Wired connections only for reliability
 
-**Physical Topology:**
-- All systems connected via Gigabit Ethernet switch
-- Static IP addressing (192.168.1.0/24 subnet)
-- Multicast-enabled switch for DDS discovery
-- No WiFi - wired connections only for reliability
-
 ## ROS2 Domain Architecture
 
-**Unified Domain 5** for all systems - enables direct DDS communication without bridges.
+**Multi-Domain Architecture:**
+- **Domain 5 (Control):** All rover control systems (10 participants)
+  - ws_rpi: 5 nodes
+  - ws_base: 2 nodes  
+  - ws_jetson: 1 control node
+  - STM32: 2 nodes
+  
+- **Domain 6 (Vision):** Jetson vision processing only (localhost isolation)
+  - camera_stream
+  - lane_detection
 
-**Benefits:** Native action/service support, low latency, simplified architecture.
+**Benefits:** Reduced STM32 memory usage, scalable vision/AI expansion, network isolation for high-bandwidth streams.
 
 See [docs/DOMAINS.md](docs/DOMAINS.md) for details.
 
@@ -71,7 +75,8 @@ almondmatcha/
 ├── docs/                              # System-level documentation
 │   ├── ARCHITECTURE.md                # System architecture & design
 │   ├── TOPICS.md                      # Complete topic reference
-│   └── DOMAINS.md                     # Domain architecture details
+│   ├── DOMAINS.md                     # Multi-domain architecture details
+│   └── LAUNCH_INSTRUCTIONS.md         # Complete system launch guide
 │
 ├── common_ifaces/                     # Shared ROS2 interfaces (messages/actions/services)
 │   ├── msgs_ifaces/                   # ChassisCtrl, ChassisIMU, ChassisSensors, SpresenseGNSS

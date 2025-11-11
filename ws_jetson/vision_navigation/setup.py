@@ -29,6 +29,7 @@ setup(
             'camera_stream = vision_navigation_pkg.camera_stream_node:main',
             'lane_detection = vision_navigation_pkg.lane_detection_node:main',
             'steering_control = vision_navigation_pkg.steering_control_node:main',
+            'steering_control_domain5 = vision_navigation_pkg.steering_control_domain5:main',
             'demo_lane = vision_navigation_pkg.demo_lane:main',
         ],
     },

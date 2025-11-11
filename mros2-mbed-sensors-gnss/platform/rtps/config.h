@@ -48,17 +48,20 @@ const GuidPrefix_t BASE_GUID_PREFIX{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12};
 const uint8_t DOMAIN_ID = 5; // 230 possible with UDP
 const uint8_t NUM_STATELESS_WRITERS = 4;
 const uint8_t NUM_STATELESS_READERS = 4;
-// MAXIMUM LIMITS - Full system with ws_base monitoring (uses ~280-300 KB RAM, ~200 KB free)
-const uint8_t NUM_STATEFUL_READERS = 32;  // Was 28 → Now 32 (absolute maximum for all remotes)
-const uint8_t NUM_STATEFUL_WRITERS = 28;  // Was 24 → Now 28 (publish to all subscribers including monitoring)
-const uint8_t MAX_NUM_PARTICIPANTS = 14; // ws_rpi(5) + ws_base(2) + ws_jetson(3) + STM32(2) + headroom(2)
-const uint8_t NUM_WRITERS_PER_PARTICIPANT = 20;  // Was 16 → Now 20 (ws_base has many subscriptions)
-const uint8_t NUM_READERS_PER_PARTICIPANT = 20;  // Was 16 → Now 20 (ws_base has many subscriptions)
-const uint8_t NUM_WRITER_PROXIES_PER_READER = 24;  // Was 20 → Now 24 (CRITICAL: track all remote writers)
-const uint8_t NUM_READER_PROXIES_PER_WRITER = 24;  // Was 20 → Now 24 (GNSS publishes to monitoring too)
 
-const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 40; // Handles discovery burst from all participants
-const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 50; // Handles discovery burst (CRITICAL for ws_base monitoring)
+// MAXIMUM SAFE CONFIGURATION - Worst-case: Full network (Domain 5: 10-12 participants)
+// Memory usage: ~250-280 KB, Free: ~230-260 KB (45-50% headroom)
+const uint8_t NUM_STATEFUL_READERS = 32;              // Max endpoints for all remote writers
+const uint8_t NUM_STATEFUL_WRITERS = 28;              // Max endpoints for all remote readers
+const uint8_t MAX_NUM_PARTICIPANTS = 15;              // Domain 5: 10-12 actual + 3 burst margin
+const uint8_t NUM_WRITERS_PER_PARTICIPANT = 20;       // Max publishers per node (ws_base heavy)
+const uint8_t NUM_READERS_PER_PARTICIPANT = 20;       // Max subscribers per node (ws_base heavy)
+const uint8_t NUM_WRITER_PROXIES_PER_READER = 28;     // Track all possible remote writers
+const uint8_t NUM_READER_PROXIES_PER_WRITER = 28;     // Track all possible remote readers (GNSS monitoring)
+
+// Discovery burst handling - Critical for preventing [MemoryPool] errors
+const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 60;  // Handles simultaneous discovery
+const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 80;  // Handles ws_base monitoring burst
     
 const uint8_t MAX_NUM_READER_CALLBACKS = 2;  // This board has no callbacks (publish-only)
 
