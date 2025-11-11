@@ -53,28 +53,38 @@ float calculate_steering_pwm_duty(uint8_t steering_direction, float steering_ang
 {
     /**
      * Calculate steering servo PWM duty cycle from steering angle
-     * steering_direction: 0=straight, 1=left, 2=right (unused in current implementation)
+     * steering_direction: 1=right, 3=left, other=straight
      * steering_angle_degrees: steering angle in degrees relative to center
-     * Returns: PWM duty cycle percentage (5%-10% range for standard servo)
+     * Returns: PWM duty cycle (0.0 to 1.0)
+     * 
+     * Original formula from working code:
+     * duty = 0.05 + (degree / 180.0) * (0.10 - 0.05)
+     * This maps 0°-180° to 5%-10% duty cycle (1ms-2ms pulse on 20ms period)
      */
     
-    // Servo range: typically 90° to 110° maps to 5% to 10% duty cycle (1.0ms to 2.0ms on 20ms period)
-    // Center position = 100° = 7.5% duty cycle (1.5ms)
+    float target_angle;
     
-    float servo_min_angle = 90.0f;
-    float servo_max_angle = 110.0f;
-    float servo_min_duty = 5.0f;
-    float servo_max_duty = 10.0f;
+    if (steering_direction == 1) {
+        // Turn right: subtract from center
+        target_angle = servo_center_angle - steering_angle_degrees;
+    } else if (steering_direction == 3) {
+        // Turn left: add to center
+        target_angle = servo_center_angle + steering_angle_degrees;
+    } else {
+        // Straight: use center
+        target_angle = servo_center_angle;
+    }
     
-    float target_angle = servo_center_angle + steering_angle_degrees;
+    // Clamp to valid servo range (0-180 degrees)
+    if (target_angle < 0.0f) target_angle = 0.0f;
+    if (target_angle > 180.0f) target_angle = 180.0f;
     
-    // Clamp to servo range
-    if (target_angle < servo_min_angle) target_angle = servo_min_angle;
-    if (target_angle > servo_max_angle) target_angle = servo_max_angle;
+    // Original working formula: 0.05 + (degree / 180.0) * (0.10 - 0.05)
+    float duty_cycle = 0.05f + (target_angle / 180.0f) * (0.10f - 0.05f);
     
-    // Map angle to duty cycle: (angle - min_angle) / (max_angle - min_angle) * (max_duty - min_duty) + min_duty
-    float duty_cycle = ((target_angle - servo_min_angle) / (servo_max_angle - servo_min_angle)) * 
-                       (servo_max_duty - servo_min_duty) + servo_min_duty;
+    // Clamp duty cycle to safe range
+    if (duty_cycle < 0.0f) duty_cycle = 0.0f;
+    if (duty_cycle > 1.0f) duty_cycle = 1.0f;
     
     return duty_cycle;
 }
@@ -83,19 +93,24 @@ std::tuple<float, uint8_t, uint8_t> calculate_motor_direction(uint8_t motor_dire
 {
     /**
      * Determine motor direction and apply speed from direction flag
-     * motor_direction: 0=forward, 1=backward, 2=stop
+     * motor_direction: 1=forward, 2=backward, 0=stop
      * speed_percent: motor speed 0-100%
      * Returns: (motor_duty, enable_forward, enable_backward) tuple
+     * 
+     * Original working code mapping:
+     * - backDirection == 1: EN_A=1, EN_B=0 (forward)
+     * - backDirection == 2: EN_A=0, EN_B=1 (backward)
+     * - else: EN_A=0, EN_B=0 (stop)
      */
     
     uint8_t enable_forward = 0, enable_backward = 0;
     float motor_duty = (float)speed_percent / 100.0f;
     
-    if (motor_direction == 0) {
+    if (motor_direction == 1) {
         // Forward: enable_forward=1, enable_backward=0
         enable_forward = 1;
         enable_backward = 0;
-    } else if (motor_direction == 1) {
+    } else if (motor_direction == 2) {
         // Backward: enable_forward=0, enable_backward=1
         enable_forward = 0;
         enable_backward = 1;
@@ -132,13 +147,13 @@ void apply_motor_control(float steering_duty, uint8_t enable_forward, uint8_t en
     steering_servo_pwm.write(steering_duty);
     
     // Set motor direction pins
-    // Right motor: normal direction
-    motor_right_enable_forward = enable_forward;
-    motor_right_enable_backward = enable_backward;
+    // Left motor: normal direction
+    motor_left_enable_forward = enable_forward;
+    motor_left_enable_backward = enable_backward;
     
-    // Left motor: OPPOSITE direction (differential drive requires opposite rotation)
-    motor_left_enable_forward = enable_backward;  // Swap: forward command = backward pin
-    motor_left_enable_backward = enable_forward;  // Swap: backward command = forward pin
+    // Right motor: OPPOSITE direction (differential drive requires opposite rotation)
+    motor_right_enable_forward = enable_backward;   // Swap: forward command = backward pin
+    motor_right_enable_backward = enable_forward;   // Swap: backward command = forward pin
     
     // Set motor speed (duty cycle)
     float normalized_duty = motor_speed_percent / 100.0f;

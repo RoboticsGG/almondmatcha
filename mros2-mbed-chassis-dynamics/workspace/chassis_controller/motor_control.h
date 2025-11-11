@@ -59,26 +59,27 @@ extern class Mutex rover_cmd_mutex;
 /**
  * Calculate steering servo PWM duty cycle from steering angle
  *
- * @param steering_direction 0=straight, 1=left, 2=right (currently unused)
+ * @param steering_direction 1=right, 3=left, other=straight
  * @param steering_angle_degrees Steering angle relative to center (degrees)
- * @return PWM duty cycle percentage (5%-10% range for standard servo)
+ * @return PWM duty cycle (0.0-1.0 normalized)
  *
- * Servo mapping: 90°-110° → 5%-10% duty (1.0ms-2.0ms on 20ms period)
+ * Servo mapping: 0°-180° → 5%-10% duty (1.0ms-2.0ms on 20ms period)
  * Center position: 100° → 7.5% duty (1.5ms)
+ * Formula: 0.05 + (degree / 180.0) * (0.10 - 0.05)
  */
 float calculate_steering_pwm_duty(uint8_t steering_direction, float steering_angle_degrees);
 
 /**
  * Determine motor direction and duty cycle from direction flag and speed
  *
- * @param motor_direction 0=forward, 1=backward, 2=stop
+ * @param motor_direction 1=forward, 2=backward, 0=stop
  * @param speed_percent Motor speed 0-100%
  * @return Tuple of (motor_duty, enable_forward, enable_backward)
  *
  * Motor mapping:
- *   - Forward: enable_forward=1, enable_backward=0
- *   - Backward: enable_forward=0, enable_backward=1
- *   - Stop: both=0, duty=0.0
+ *   - Forward (1): enable_forward=1, enable_backward=0
+ *   - Backward (2): enable_forward=0, enable_backward=1
+ *   - Stop (0): both=0, duty=0.0
  */
 std::tuple<float, uint8_t, uint8_t> calculate_motor_direction(uint8_t motor_direction, uint8_t speed_percent);
 
@@ -94,8 +95,9 @@ std::tuple<float, uint8_t, uint8_t> calculate_motor_direction(uint8_t motor_dire
  * Configures:
  * - Servo PWM output (PA_3) at 20ms period
  * - Motor PWM outputs (PA_6 right, PE_11 left) at 50us period (20 kHz)
- * - Motor direction pins (PF_12, PD_15, PF_13, PE_9)
- * - Left motor uses OPPOSITE direction for differential drive
+ * - Motor direction pins:
+ *   * Left motor (PF_13, PE_9): Normal direction
+ *   * Right motor (PF_12, PD_15): OPPOSITE direction for differential drive
  */
 void apply_motor_control(float steering_duty, uint8_t enable_forward, uint8_t enable_backward,
                          uint8_t pwm_period_us_val, float motor_speed_percent);
