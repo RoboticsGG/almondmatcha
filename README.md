@@ -50,13 +50,14 @@ Distributed ROS2-based autonomous rover system with vision navigation, chassis d
 
 ## ROS2 Domain Architecture
 
-**Domain 5 (Control Network):** All rover control systems - 10 participants
-- ws_rpi: 5 nodes | ws_base: 2 nodes | ws_jetson: 1 node | STM32: 2 nodes
+| Domain | Purpose | Network Scope | Participants | Key Characteristics |
+|--------|---------|---------------|--------------|---------------------|
+| **5** | Control Network | Network-wide (all systems) | **10 nodes total:**<br>• ws_rpi: 5 nodes (GNSS spresense, mission monitor, chassis controller, IMU logger, sensors logger)<br>• ws_base: 2 nodes (mission command, monitoring)<br>• ws_jetson: 1 node (steering control)<br>• STM32: 2 nodes (chassis, sensors) | • Real-time control loop<br>• Low-frequency messages<br>• Visible to all systems<br>• Optimized for STM32 memory |
+| **6** | Vision Processing | Localhost only (Jetson) | **2 nodes:**<br>• camera_stream<br>• lane_detection | • High-bandwidth streams (30 FPS)<br>• RGB/Depth 1280×720<br>• Isolated from network<br>• Invisible to STM32 boards |
 
-**Domain 6 (Vision Processing):** Jetson vision pipeline - localhost isolated
-- camera_stream, lane_detection (30 FPS RGB/Depth)
+**Cross-Domain Bridge:** The `steering_control` node subscribes to Domain 6 (`/tpc_rover_nav_lane`) and publishes to Domain 5 (`/tpc_rover_fmctl`), enabling seamless vision-to-control data flow.
 
-**Benefits:** Reduced STM32 memory usage (60% free RAM), scalable vision expansion, network bandwidth optimization, native multi-domain communication without bridge nodes.
+**Benefits:** Reduced STM32 memory usage (60% free RAM), network bandwidth optimization, scalable vision expansion without affecting control loop, native multi-domain communication without bridge nodes.
 
 See [docs/DOMAINS.md](docs/DOMAINS.md) for complete architecture details.
 
