@@ -53,19 +53,26 @@ Distributed ROS2-based autonomous rover system with vision navigation, chassis d
 ## ROS2 Domain Architecture
 
 **Multi-Domain Architecture:**
-- **Domain 5 (Control):** All rover control systems (10 participants)
-  - ws_rpi: 5 nodes
-  - ws_base: 2 nodes  
-  - ws_jetson: 1 control node
-  - STM32: 2 nodes
+- **Domain 5 (Control Network):** All rover control systems - 10 participants total
+  - ws_rpi: 5 nodes (GNSS, chassis control, sensors logging, mission monitor, cruise control)
+  - ws_base: 2 nodes (command generation, telemetry monitoring)
+  - ws_jetson: 1 node (steering_control - publishes to Domain 5)
+  - STM32 boards: 2 nodes (chassis_controller, sensors_node)
   
-- **Domain 6 (Vision):** Jetson vision processing only (localhost isolation)
-  - camera_stream
-  - lane_detection
+- **Domain 6 (Vision Processing):** Jetson vision pipeline only - localhost isolated
+  - camera_stream (D415 RGB/Depth at 30 FPS)
+  - lane_detection (image processing)
 
-**Benefits:** Reduced STM32 memory usage, scalable vision/AI expansion, network isolation for high-bandwidth streams.
+**Benefits:** 
+- Reduced STM32 memory usage (10 vs 12 participants = 60% free RAM vs OOM)
+- Scalable vision/AI expansion without affecting control loop
+- Network isolation for high-bandwidth camera streams (stays on Jetson localhost)
+- No bridge nodes required (native ROS2 multi-domain subscription)
 
-See [docs/DOMAINS.md](docs/DOMAINS.md) for details.
+**Cross-Domain Communication:**
+The `steering_control` node on Jetson subscribes to `/tpc_rover_nav_lane` (Domain 6) and publishes `/tpc_rover_fmctl` (Domain 5), bridging vision to control seamlessly.
+
+See [docs/DOMAINS.md](docs/DOMAINS.md) for detailed architecture.
 
 ## Workspace Structure
 
@@ -179,44 +186,70 @@ ping 192.168.1.1 && ping 192.168.1.5 && ping 192.168.1.2 && ping 192.168.1.6
 ```bash
 # 1. Power on STM32 boards → wait for "Discovery complete" (~10s)
 
-# 2. Launch Raspberry Pi (wait 3-5s)
-cd ~/almondmatcha/ws_rpi && export ROS_DOMAIN_ID=5 && ./launch_rover_tmux.sh
+# 2. Launch Raspberry Pi (Domain 5 - wait 3-5s)
+cd ~/almondmatcha/ws_rpi
+export ROS_DOMAIN_ID=5
+./launch_rover_tmux.sh
 
-# 3. Launch Jetson (wait 3-5s)
+# 3. Launch Jetson (Domains 6 + 5 - wait 3-5s)
 ssh yupi@192.168.1.5
-cd ~/almondmatcha/ws_jetson && export ROS_DOMAIN_ID=5 && ./launch_headless.sh
+cd ~/almondmatcha/ws_jetson
+# Note: Script handles both Domain 6 (vision) and Domain 5 (control) automatically
+./launch_headless.sh
 
-# 4. Launch Base Station
-cd ~/almondmatcha/ws_base && export ROS_DOMAIN_ID=5 && ./launch_base_tmux.sh
+# 4. Launch Base Station (Domain 5)
+cd ~/almondmatcha/ws_base
+export ROS_DOMAIN_ID=5
+./launch_base_tmux.sh
 ```
 
-See [docs/LAUNCH_SEQUENCE_GUIDE.md](docs/LAUNCH_SEQUENCE_GUIDE.md) for detailed timing.
+**Domain Architecture:**
+- **Domain 6:** Jetson vision processing only (camera, lane detection) - localhost isolated
+- **Domain 5:** All control systems (RPi, Jetson control node, STM32s, Base Station)
+
+See [docs/LAUNCH_INSTRUCTIONS.md](docs/LAUNCH_INSTRUCTIONS.md) for detailed timing and [docs/DOMAINS.md](docs/DOMAINS.md) for architecture details.
 
 ### 4. Verify Operation
 
 ```bash
+# Set domain for control network
 export ROS_DOMAIN_ID=5
 
-# Check all nodes visible
-ros2 node list  # Should show 12 nodes
+# Check all Domain 5 nodes visible (10 nodes expected)
+ros2 node list
+# Expected: RPi (5 nodes), Jetson (1 control node), STM32 (2 nodes), Base (2 nodes)
 
-# Monitor key topics
-ros2 topic hz /tpc_rover_d415_rgb     # ~30 Hz (vision)
-ros2 topic hz /tpc_chassis_imu        # ~10 Hz (STM32)
-ros2 topic echo /tpc_rover_nav_lane   # Lane parameters
+# Monitor key topics (all on Domain 5)
+ros2 topic hz /tpc_rover_fmctl        # ~50 Hz (steering commands from Jetson)
+ros2 topic hz /tpc_chassis_cmd        # ~50 Hz (motor commands to STM32)
+ros2 topic hz /tpc_chassis_imu        # ~10 Hz (IMU from STM32)
+ros2 topic hz /tpc_rover_nav_lane     # ~30 Hz (lane parameters from Jetson)
+
+# Note: Camera topics (/tpc_rover_d415_rgb) run on Domain 6 (Jetson localhost only)
+# and won't be visible from other systems
 ```
 
 ## Key Topics
 
-| Topic | Rate | Description |
-|-------|------|-------------|
-| `tpc_rover_d415_rgb` | 30 Hz | Camera RGB stream (Jetson) |
-| `tpc_rover_nav_lane` | 30 Hz | Lane parameters [theta, b, detected] (Jetson) |
-| `tpc_rover_fmctl` | 50 Hz | Steering commands (Jetson) |
-| `tpc_chassis_cmd` | 50 Hz | Motor commands to STM32 (RPi) |
-| `tpc_chassis_imu` | 10 Hz | IMU accel/gyro data (STM32) |
-| `tpc_chassis_sensors` | 4 Hz | Encoders, voltage, current (STM32) |
-| `tpc_gnss_spresense` | 10 Hz | GPS position (RPi) |
+**Domain 5 (Control Network) - Visible Across All Systems:**
+
+| Topic | Rate | Publisher | Description |
+|-------|------|-----------|-------------|
+| `tpc_rover_fmctl` | 50 Hz | Jetson (steering_control) | Steering commands to RPi |
+| `tpc_chassis_cmd` | 50 Hz | RPi (chassis_controller) | Motor commands to STM32 |
+| `tpc_chassis_imu` | 10 Hz | STM32 (chassis_controller) | IMU accel/gyro data |
+| `tpc_chassis_sensors` | 4 Hz | STM32 (sensors_node) | Encoders, voltage, current |
+| `tpc_gnss_spresense` | 10 Hz | RPi (node_gnss_spresense) | GPS position |
+| `tpc_rover_nav_lane` | 30 Hz | Jetson (lane_detection) | Lane parameters [theta, b, detected] |
+
+**Domain 6 (Vision Processing) - Jetson Localhost Only:**
+
+| Topic | Rate | Publisher | Description |
+|-------|------|-----------|-------------|
+| `tpc_rover_d415_rgb` | 30 Hz | Jetson (camera_stream) | RGB image stream (1280×720) |
+| `tpc_rover_d415_depth` | 30 Hz | Jetson (camera_stream) | Depth image stream |
+
+**Note:** Domain 6 topics are NOT visible from RPi, Base Station, or STM32 boards. Only the processed lane parameters (`tpc_rover_nav_lane`) are published to Domain 5.
 
 See [docs/TOPICS.md](docs/TOPICS.md) for complete reference.
 
