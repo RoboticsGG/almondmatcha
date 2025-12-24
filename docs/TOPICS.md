@@ -1,23 +1,27 @@
 # ROS2 Topics Reference
 
-Complete topic reference for Almondmatcha rover system (Domain 5 unified architecture).
+Complete topic reference for Almondmatcha rover system.
+
+**Domain Architecture:**
+- **Domain 5 (Control):** Network-wide control topics visible to all systems
+- **Domain 6 (Vision):** Jetson localhost vision topics (camera streams)
 
 ## Topic Naming Convention
 
-- Prefix: `tpc_` (topic) or `tp_` (legacy)
+- Prefix: `tpc_` (topic)
 - Descriptive middle section
-- Suffix: `_d5`, `_d2` if domain-specific (legacy, being phased out)
+- Domain-specific topics noted in description
 
-## Vision Navigation Topics (Jetson)
+## Vision Topics (Jetson)
 
 ### `tpc_rover_d415_rgb`
 
 **Type:** `sensor_msgs/msg/Image`  
-**Publisher:** `camera_stream_node`  
-**Subscribers:** `lane_detection_node`  
+**Publisher:** `camera_stream`  
+**Subscribers:** `lane_detection`  
 **Rate:** 30 FPS  
 **QoS:** Best Effort, Depth 1  
-**Domain:** 5  
+**Domain:** 6 (Jetson localhost only)  
 
 RGB image stream from Intel RealSense D415 camera.
 
@@ -39,11 +43,11 @@ data: [...]              # Raw pixel data
 ### `tpc_rover_d415_depth`
 
 **Type:** `sensor_msgs/msg/Image`  
-**Publisher:** `camera_stream_node`  
+**Publisher:** `camera_stream`  
 **Subscribers:** (reserved for obstacle avoidance)  
 **Rate:** 30 FPS  
 **QoS:** Best Effort, Depth 1  
-**Domain:** 5  
+**Domain:** 6 (Jetson localhost only)  
 
 Depth image stream from Intel RealSense D415 camera.
 
@@ -65,13 +69,13 @@ data: [...]              # Depth values (0-65535 mm)
 ### `tpc_rover_nav_lane`
 
 **Type:** `std_msgs/msg/Float32MultiArray`  
-**Publisher:** `lane_detection_node`  
-**Subscribers:** `steering_control_node`  
+**Publisher:** `lane_detection` (Domain 6)  
+**Subscribers:** `steering_control` (Domain 5)  
 **Rate:** 25-30 FPS  
 **QoS:** Reliable, Depth 10  
-**Domain:** 5  
+**Domain:** 5 (published to control network)  
 
-Lane detection parameters for steering control.
+Lane detection parameters for steering control. Cross-domain topic published from Domain 6 to Domain 5.
 
 **Fields:**
 ```yaml
@@ -96,10 +100,14 @@ data: [theta, b, detected]
 
 ---
 
+---
+
+## Control Topics (Jetson/Base)
+
 ### `tpc_rover_fmctl`
 
 **Type:** `std_msgs/msg/Float32MultiArray`  
-**Publisher:** `steering_control_node`  
+**Publisher:** `steering_control`  
 **Subscribers:** `node_chassis_controller`  
 **Rate:** 50 Hz  
 **QoS:** Reliable, Depth 10  
@@ -380,32 +388,35 @@ This topic is no longer needed with Domain 5 unification.float64 param2         
 
 ## Topic Dependency Graph
 
+**Vision Processing (Domain 6 → Domain 5):**
 ```
-camera_stream_node
-    └── tpc_rover_d415_rgb
-            └── lane_detection_node
-                    └── tpc_rover_nav_lane
-                            └── steering_control_node
-                                    └── tpc_rover_fmctl
-                                            └── node_chassis_controller
-                                                    └── tpc_chassis_cmd
-                                                            └── chassis_controller (STM32)
+camera_stream (D6)
+    └── tpc_rover_d415_rgb (D6)
+            └── lane_detection (D6)
+                    └── tpc_rover_nav_lane (D5)
+                            └── steering_control (D5)
+                                    └── tpc_rover_fmctl (D5)
+```
 
-sensors_node (STM32)
-    └── tpc_chassis_sensors
-            └── node_chassis_sensors (logging)
+**Chassis Control (Domain 5):**
+```
+node_chassis_controller (RPi)
+    └── tpc_chassis_cmd (D5)
+            └── chassis_controller (STM32 mROS2)
+                    └── tpc_chassis_imu (D5)
+                            └── node_chassis_imu (RPi)
+```
 
-chassis_controller (STM32)
-    └── tpc_chassis_imu
-            └── node_chassis_imu (logging)
+**Sensor Data Flow (Domain 5):**
+```
+sensors_node (STM32 mROS2)
+    └── tpc_chassis_sensors (D5)
+            └── node_chassis_sensors (RPi)
+                    └── (Data logging/processing)
 
-node_gnss_spresense
-    └── tpc_gnss_spresense
-            └── node_gnss_mission_monitor
-                    ├── tpc_gnss_mission_active
-                    │       └── node_chassis_controller
-                    └── tpc_gnss_mission_remain_dist
-                            └── (monitoring only)
+node_gnss_spresense (RPi)
+    └── tpc_gnss_spresense (D5)
+            └── node_gnss_mission_monitor (RPi)
 ```
 
 ---

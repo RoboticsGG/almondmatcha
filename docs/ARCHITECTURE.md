@@ -73,18 +73,21 @@ Almondmatcha rover system architecture: distributed heterogeneous computing with
 
 ## Software Architecture
 
-### ROS2 Domain Strategy
+### ROS2 Multi-Domain Strategy
 
-Two-domain architecture for sensor fusion:
+**Domain 5 (Control Network):** Network-wide communication (10 participants)
+- All control systems: ws_rpi (5 nodes), ws_base (2 nodes), ws_jetson (1 node), STM32 (2 nodes)
+- Low-frequency control messages optimized for STM32 memory constraints
+- Native action/service support across all systems
 
-**Domain 5 (Rover Internal):**
-- All system processing (rover, base, vision, STM32)
-- Direct low-latency communication
-- Native action/service support
-- Simplified architecture without relays
-- Nodes: All systems on same domain
+**Domain 6 (Vision Processing):** Jetson localhost only (2 participants)
+- camera_stream, lane_detection nodes
+- High-bandwidth RGB/Depth streams (30 FPS, 1280×720) isolated from network
+- Invisible to STM32 boards
 
-**Rationale:** Unified domain eliminates bridge overhead, enables native ROS2 features (actions/services), and simplifies system architecture.
+**Cross-Domain Bridge:** `steering_control` node subscribes to Domain 6 (`/tpc_rover_nav_lane`) and publishes to Domain 5 (`/tpc_rover_fmctl`) using native ROS2 multi-domain subscription.
+
+**Rationale:** Domain isolation reduces STM32 discovery overhead (10 vs 12+ participants), enables scalable vision expansion, optimizes network bandwidth, and maintains 60% free RAM on STM32 boards.
 
 ### Node Distribution
 
@@ -98,11 +101,16 @@ Two-domain architecture for sensor fusion:
 └── [FUTURE] node_ekf_fusion - Multi-sensor fusion
 ```
 
-**Jetson Orin Nano (192.168.1.5 - Domain 5):**
+**Jetson Orin Nano (192.168.1.5 - Multi-Domain):**
 ```
-├── camera_stream_node - D415 RGB/depth streaming
-├── lane_detection_node - Lane feature extraction
-└── steering_control_node - PID steering control
+Domain 6 (Vision Processing - localhost):
+├── camera_stream - D415 RGB/depth streaming @ 30 FPS
+└── lane_detection - Lane feature extraction @ 30 FPS
+
+Domain 5 (Control Network):
+└── steering_control - PID steering control @ 50 Hz
+    ├── Subscribes: tpc_rover_nav_lane (Domain 6)
+    └── Publishes: tpc_rover_fmctl (Domain 5)
 ```
 
 **STM32 Chassis (192.168.1.2):**
@@ -200,18 +208,9 @@ Camera (30 FPS) → Lane Detection (30 FPS) → Steering Control (50 Hz)
 ```
 
 **Physical Layer:**
-- Gigabit Ethernet switch (1000 Mbps)
-- Cat5e/Cat6 cables (minimum Cat5e for gigabit)
 - Static IP addressing (DHCP disabled)
 - All systems on same L2 broadcast domain
 
-**Switch Requirements:**
-- ✅ Multicast support (critical for DDS discovery)
-- ✅ Auto-MDI/MDIX (automatic crossover)
-- ✅ Store-and-forward switching
-- ✅ At least 5 ports (RPi + Jetson + 2×STM32 + Base)
-- ⚠️ VLAN disabled (or all ports on same VLAN)
-- ⚠️ Port mirroring disabled (creates broadcast storms)
 
 **Network Configuration:**
 

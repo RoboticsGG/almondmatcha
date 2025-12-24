@@ -4,10 +4,10 @@ The rover system uses a multi-domain architecture to optimize performance and sc
 
 ## Domain Assignment
 
-| Domain ID | Purpose | Nodes | Network Scope |
-|-----------|---------|-------|---------------|
-| **5** | Control Loop | ws_rpi (5), ws_base (2), ws_jetson (1), STM32 (2) = 10 nodes | Entire rover network |
-| **6** | Vision Processing | ws_jetson camera, lane detection = 2 nodes | Jetson localhost only |
+| Domain | Purpose | Network Scope | Participants | Key Characteristics |
+|--------|---------|---------------|--------------|---------------------|
+| **5** | Control Network | Network-wide | **10 nodes:**<br>• ws_rpi: 5 (GNSS spresense, mission monitor, chassis controller, IMU logger, sensors logger)<br>• ws_base: 2 (command, monitoring)<br>• ws_jetson: 1 (steering control)<br>• STM32: 2 (chassis, sensors) | Real-time control loop<br>Low-frequency messages<br>Optimized for STM32 memory (60% free RAM) |
+| **6** | Vision Processing | Jetson localhost only | **2 nodes:**<br>• camera_stream<br>• lane_detection | High-bandwidth streams (30 FPS)<br>RGB/Depth 1280×720<br>Isolated from network<br>Invisible to STM32 |
 
 ## Architecture Overview
 
@@ -40,23 +40,17 @@ Domain 5: Control Loop (Network-wide)
 
 ## Design Rationale
 
-**Domain 6 (Vision):**
-- Isolates high-bandwidth camera streams (RGB/Depth at 30 FPS)
-- Heavy computation (lane detection, future AI/ML)
-- Network scope: Jetson localhost only
-- Invisible to resource-constrained STM32 boards
+**Problem:** STM32 boards have limited memory (512 KB SRAM). Running vision nodes (camera + detection) on the same domain caused memory overflow and discovery overhead.
 
-**Domain 5 (Control):**
-- Real-time control loop (10 nodes: ws_rpi=5, ws_base=2, ws_jetson=1, STM32=2)
-- Low-frequency control messages
-- Network scope: Entire rover network
-- Manageable memory usage for STM32 boards (optimized for 60% free RAM)
+**Solution:** Isolate vision processing to Domain 6 (Jetson localhost), keeping control network on Domain 5 (network-wide).
 
 **Benefits:**
-- Reduced STM32 discovery overhead (10 participants vs 12+ without isolation)
-- Scalable vision/AI expansion without affecting control loop
-- Network bandwidth optimization (camera data stays local)
-- No bridge nodes (native ROS2 localhost discovery)
+- **STM32 Memory:** 10 participants instead of 12+ → 60% free RAM (vs OOM without isolation)
+- **Network Bandwidth:** Camera streams (RGB/Depth @ 30 FPS) stay on Jetson localhost, not on network
+- **Scalability:** Vision/AI expansion doesn't affect control loop or STM32 resources
+- **Native Bridge:** `steering_control` node uses native ROS2 multi-domain subscription (no bridge nodes required)
+
+**Cross-Domain Communication:** The `steering_control` node subscribes to `/tpc_rover_nav_lane` (Domain 6) and publishes `/tpc_rover_fmctl` (Domain 5).
 
 
 ## Domain Configuration
@@ -73,18 +67,18 @@ source install/setup.bash
 
 **ws_base (Base Station):**
 ```bash
-export ROS_DOMAIN_ID=5
 cd ~/almondmatcha/ws_base
 source install/setup.bash
-ros2 launch mission_control mission_control.launch.py
+export ROS_DOMAIN_ID=5
+./launch_base_tmux.sh
 ```
 
-**ws_jetson Control Interface:**
+**ws_jetson (Multi-Domain):**
 ```bash
-export ROS_DOMAIN_ID=5
 cd ~/almondmatcha/ws_jetson
 source install/setup.bash
-ros2 launch vision_navigation control_domain5.launch.py
+# Script handles both Domain 6 (vision) and Domain 5 (control) automatically
+./launch_headless.sh
 ```
 
 **STM32 Firmware:**
