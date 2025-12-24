@@ -31,8 +31,6 @@ Distributed ROS2-based autonomous rover system with vision navigation, chassis d
 
 ## Network Architecture
 
-## Network Architecture
-
 ```
                     Gigabit Ethernet Switch (192.168.1.0/24)
                               |
@@ -52,27 +50,15 @@ Distributed ROS2-based autonomous rover system with vision navigation, chassis d
 
 ## ROS2 Domain Architecture
 
-**Multi-Domain Architecture:**
-- **Domain 5 (Control Network):** All rover control systems - 10 participants total
-  - ws_rpi: 5 nodes (GNSS, chassis control, sensors logging, mission monitor, cruise control)
-  - ws_base: 2 nodes (command generation, telemetry monitoring)
-  - ws_jetson: 1 node (steering_control - publishes to Domain 5)
-  - STM32 boards: 2 nodes (chassis_controller, sensors_node)
-  
-- **Domain 6 (Vision Processing):** Jetson vision pipeline only - localhost isolated
-  - camera_stream (D415 RGB/Depth at 30 FPS)
-  - lane_detection (image processing)
+**Domain 5 (Control Network):** All rover control systems - 10 participants
+- ws_rpi: 5 nodes | ws_base: 2 nodes | ws_jetson: 1 node | STM32: 2 nodes
 
-**Benefits:** 
-- Reduced STM32 memory usage (10 vs 12 participants = 60% free RAM vs OOM)
-- Scalable vision/AI expansion without affecting control loop
-- Network isolation for high-bandwidth camera streams (stays on Jetson localhost)
-- No bridge nodes required (native ROS2 multi-domain subscription)
+**Domain 6 (Vision Processing):** Jetson vision pipeline - localhost isolated
+- camera_stream, lane_detection (30 FPS RGB/Depth)
 
-**Cross-Domain Communication:**
-The `steering_control` node on Jetson subscribes to `/tpc_rover_nav_lane` (Domain 6) and publishes `/tpc_rover_fmctl` (Domain 5), bridging vision to control seamlessly.
+**Benefits:** Reduced STM32 memory usage (60% free RAM), scalable vision expansion, network bandwidth optimization, native multi-domain communication without bridge nodes.
 
-See [docs/DOMAINS.md](docs/DOMAINS.md) for detailed architecture.
+See [docs/DOMAINS.md](docs/DOMAINS.md) for complete architecture details.
 
 ## Workspace Structure
 
@@ -229,6 +215,25 @@ ros2 topic hz /tpc_rover_nav_lane     # ~30 Hz (lane parameters from Jetson)
 # and won't be visible from other systems
 ```
 
+## Ending a tmux Session
+
+To gracefully stop all running nodes and close the tmux session:
+
+- **Detach from tmux:**
+  Press `Ctrl+b` then `d` (session keeps running in background)
+
+- **Kill the tmux session (stop all nodes):**
+  ```bash
+  tmux kill-session -t rover         # For ws_rpi
+  tmux kill-session -t jetson_vision # For ws_jetson
+  tmux kill-session -t base_station  # For ws_base
+  ```
+
+- **Reattach to a running session:**
+  ```bash
+  tmux attach-session -t <session_name>
+  ```
+
 ## Key Topics
 
 **Domain 5 (Control Network) - Visible Across All Systems:**
@@ -255,17 +260,9 @@ See [docs/TOPICS.md](docs/TOPICS.md) for complete reference.
 
 ## Documentation
 
-### System-Level (Top-Level /docs)
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System design, data flow, hardware integration
-- [TOPICS.md](docs/TOPICS.md) - Complete topic reference with message types
-- [DOMAINS.md](docs/DOMAINS.md) - Domain architecture and rationale
+**System-Level:** [ARCHITECTURE.md](docs/ARCHITECTURE.md) | [TOPICS.md](docs/TOPICS.md) | [DOMAINS.md](docs/DOMAINS.md) | [LAUNCH_INSTRUCTIONS.md](docs/LAUNCH_INSTRUCTIONS.md)
 
-### Workspace-Level (Build & Run)
-- [ws_rpi/README.md](ws_rpi/README.md) - Raspberry Pi build/run instructions
-- [ws_jetson/README.md](ws_jetson/README.md) - Jetson build/run instructions  
-- [ws_base/README.md](ws_base/README.md) - Base station build/run instructions
-- [mros2-mbed-chassis-dynamics/README.md](mros2-mbed-chassis-dynamics/README.md) - STM32 chassis firmware
-- [mros2-mbed-sensors-gnss/README.md](mros2-mbed-sensors-gnss/README.md) - STM32 sensors firmware
+**Workspace-Level:** [ws_rpi](ws_rpi/README.md) | [ws_jetson](ws_jetson/README.md) | [ws_base](ws_base/README.md) | [STM32 Chassis](mros2-mbed-chassis-dynamics/README.md) | [STM32 Sensors](mros2-mbed-sensors-gnss/README.md)
 
 ## Performance Specifications
 
@@ -280,16 +277,9 @@ See [docs/TOPICS.md](docs/TOPICS.md) for complete reference.
 
 ## Development
 
-### Repository
-- **GitHub:** RoboticsGG/almondmatcha
-- **Branch:** main
-- **License:** Apache 2.0
+**Repository:** RoboticsGG/almondmatcha (main branch) | **License:** Apache 2.0
 
-### Contributing
-- Follow ROS2 naming conventions (nodes: `node_*`, topics: `tpc_*`)
-- Use descriptive commit messages
-- Update relevant documentation for architectural changes
-- Test across all platforms before merging
+**Contributing:** Follow ROS2 naming conventions (`node_*`, `tpc_*`), write descriptive commits, update documentation for architectural changes, test on all platforms before merging.
 
 ## Troubleshooting
 
@@ -329,5 +319,5 @@ See workspace README files for detailed troubleshooting.
 
 ---
 
-**Last Updated:** November 10, 2025  
-**Version:** 3.0 (Unified Domain 5, Ethernet switch topology, optimized STM32 memory pools)
+**Last Updated:** December 24, 2025  
+**Version:** 3.1 (Multi-domain D5/D6 architecture, improved documentation)
