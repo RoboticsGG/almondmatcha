@@ -284,6 +284,7 @@ See [docs/TOPICS.md](docs/TOPICS.md) for complete reference.
 
 ## Troubleshooting
 
+
 **STM32 not visible:**
 ```bash
 # Verify switch connectivity
@@ -292,6 +293,51 @@ ping 192.168.1.2 && ping 192.168.1.6
 arp -a  # Should show all systems
 # Check serial console (115200 baud) for network errors
 ```
+
+## Monitoring STM32 Boards with minicom
+
+You can monitor the serial output of both STM32 boards (chassis and sensors) using `minicom` on any Linux PC. This is useful for debugging firmware, checking network status, and viewing real-time logs.
+
+### 1. Identify Serial Ports
+
+Plug each NUCLEO-F767ZI board into your PC via USB. List available serial devices:
+
+```bash
+ls /dev/ttyACM*
+```
+
+Typical output (with two boards):
+
+```
+/dev/ttyACM0  /dev/ttyACM1
+```
+
+Unplug/replug each board to determine which port corresponds to chassis or sensors firmware.
+
+### 2. Start minicom
+
+Open a terminal for each board and run:
+
+```bash
+sudo minicom -D /dev/ttyACM0 -b 115200
+```
+
+Replace `/dev/ttyACM0` with the correct port for each board. The default baud rate is **115200**.
+
+### 3. Typical Output
+
+You should see boot messages, network discovery, and real-time logs from the firmware. Example:
+
+```
+[mros2] Discovery complete. IP: 192.168.1.2
+[chassis] Motor enabled. IMU OK.
+```
+
+### 4. Exit minicom
+
+Press `Ctrl+A` then `X` to exit minicom.
+
+**Tip:** You can run minicom in multiple terminals to monitor both boards simultaneously.
 
 **ROS2 topics not visible:**
 ```bash
