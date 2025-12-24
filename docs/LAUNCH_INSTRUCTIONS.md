@@ -74,6 +74,7 @@ Expected startup messages:
 ```bash
 cd ~/almondmatcha/ws_jetson
 source install/setup.bash
+# Note: Script handles Domain 6 (vision) and Domain 5 (control) automatically
 ./launch_jetson_tmux.sh
 ```
 
@@ -89,7 +90,10 @@ This creates a 3-pane tmux session with:
 
 **Option B: Background launch script:**
 ```bash
-./launch_headless.sh  # Launches both domains automatically
+cd ~/almondmatcha/ws_jetson
+source install/setup.bash
+# Note: Script handles Domain 6 (vision) and Domain 5 (control) automatically
+./launch_headless.sh
 ```
 
 **Option C: Manual multi-terminal launch:**
@@ -125,8 +129,8 @@ Wait for all nodes to be ready (30 FPS messages flowing).
 **On Raspberry Pi:**
 ```bash
 cd ~/almondmatcha/ws_rpi
-export ROS_DOMAIN_ID=5
 source install/setup.bash
+export ROS_DOMAIN_ID=5
 ./launch_rover_tmux.sh
 ```
 
@@ -155,9 +159,9 @@ tmux attach-session -t rover  # View all panes
 **On Base Station:**
 ```bash
 cd ~/almondmatcha/ws_base
-export ROS_DOMAIN_ID=5
 source install/setup.bash
-ros2 launch mission_control mission_control.launch.py
+export ROS_DOMAIN_ID=5
+./launch_base_tmux.sh
 ```
 
 This enables mission planning and monitoring from base station.
@@ -183,8 +187,8 @@ ros2 topic hz /tpc_rover_nav_lane
 ```bash
 export ROS_DOMAIN_ID=5
 ros2 node list
-# Expected nodes:
-# /steering_control_domain5   (Jetson)
+# Expected: 10 nodes total (8 without ws_base, 10 with ws_base)
+# /steering_control_domain5   (Jetson - control interface)
 # /node_chassis_controller    (ws_rpi)
 # /node_gnss_mission_monitor  (ws_rpi)
 # /node_gnss_spresense        (ws_rpi)
@@ -196,8 +200,8 @@ ros2 node list
 # /mission_monitoring_node    (ws_base, if launched)
 
 ros2 topic list
-# Should see: tpc_rover_fmctl, tpc_chassis_cmd, tpc_chassis_imu, etc.
-# Should NOT see camera topics (Domain 6 isolation)
+# Should see: tpc_rover_fmctl, tpc_chassis_cmd, tpc_chassis_imu, tpc_rover_nav_lane, etc.
+# Should NOT see camera topics like tpc_rover_d415_rgb (Domain 6 isolation)
 
 ros2 topic hz /tpc_rover_fmctl
 # Expected: ~50 Hz
