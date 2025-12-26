@@ -8,12 +8,14 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(rclcpp_action REQUIRED)
-find_package(rclcpp_components REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(jsoncpp REQUIRED)
-find_package(action_ifaces REQUIRED)
 find_package(msgs_ifaces REQUIRED)
+
+# Optional dependencies for mission monitor
+find_package(rclcpp_action QUIET)
+find_package(rclcpp_components QUIET)
+find_package(action_ifaces QUIET)
 
 include_directories(/usr/include/jsoncpp)
 # uncomment the following section in order to fill in
@@ -22,16 +24,22 @@ include_directories(/usr/include/jsoncpp)
 
 #------------------------------------------------------------------------------------#
 
+# Build mission monitor only if action_ifaces is available
+if(action_ifaces_FOUND AND rclcpp_action_FOUND AND rclcpp_components_FOUND)
+  add_executable(node_gnss_mission_monitor src/node_gnss_mission_monitor.cpp)
+  ament_target_dependencies(node_gnss_mission_monitor rclcpp rclcpp_action rclcpp_components std_msgs action_ifaces msgs_ifaces)
+  target_include_directories(node_gnss_mission_monitor PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+  target_compile_features(node_gnss_mission_monitor PUBLIC c_std_99 cxx_std_17)
 
-add_executable(node_gnss_mission_monitor src/node_gnss_mission_monitor.cpp)
-ament_target_dependencies(node_gnss_mission_monitor rclcpp rclcpp_action rclcpp_components std_msgs action_ifaces msgs_ifaces)
-target_include_directories(node_gnss_mission_monitor PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>)
-target_compile_features(node_gnss_mission_monitor PUBLIC c_std_99 cxx_std_17)
-
-install(TARGETS node_gnss_mission_monitor
-  DESTINATION lib/${PROJECT_NAME})
+  install(TARGETS node_gnss_mission_monitor
+    DESTINATION lib/${PROJECT_NAME})
+  
+  message(STATUS "Building node_gnss_mission_monitor")
+else()
+  message(STATUS "Skipping node_gnss_mission_monitor (action_ifaces not found)")
+endif()
 
 #------------------------------------------------------------------------------------#
 
