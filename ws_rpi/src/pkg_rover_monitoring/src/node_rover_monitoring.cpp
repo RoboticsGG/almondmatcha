@@ -71,23 +71,31 @@ public:
             "/tpc_rover_status", 10
         );
 
-        // Timer for publishing aggregated status and logging
+        // Timer for publishing aggregated status (1 Hz)
         timer_ = this->create_wall_timer(
             std::chrono::milliseconds(1000), 
             std::bind(&NodeRoverMonitoring::timer_callback, this)
         );
 
         RCLCPP_INFO(this->get_logger(), "=== Rover Monitoring Node Initialized ===");
-        RCLCPP_INFO(this->get_logger(), "Subscribing to all rover topics (Domain 5)");
-        RCLCPP_INFO(this->get_logger(), "Publishing aggregated status to /tpc_rover_status");
-        RCLCPP_INFO(this->get_logger(), "CSV logging to: %s", csv_filename_.c_str());
+        RCLCPP_INFO(this->get_logger(), "Event-driven CSV logging to: %s", log_dir_.c_str());
+        RCLCPP_INFO(this->get_logger(), "Per-topic CSVs at full rate:");
+        RCLCPP_INFO(this->get_logger(), "  - rtk_gnss.csv (~10 Hz)");
+        RCLCPP_INFO(this->get_logger(), "  - spresense_gnss.csv (~10 Hz)");
+        RCLCPP_INFO(this->get_logger(), "  - chassis_imu.csv (~10 Hz)");
+        RCLCPP_INFO(this->get_logger(), "  - chassis_sensors.csv (~4 Hz)");
+        RCLCPP_INFO(this->get_logger(), "  - chassis_cmd.csv (~50 Hz)");
+        RCLCPP_INFO(this->get_logger(), "  - mission_state.csv (event-driven)");
         RCLCPP_INFO(this->get_logger(), "========================================");
     }
 
     ~NodeRoverMonitoring() {
-        if (csv_file_.is_open()) {
-            csv_file_.close();
-        }
+        if (csv_rtk_gnss_.is_open()) csv_rtk_gnss_.close();
+        if (csv_spresense_gnss_.is_open()) csv_spresense_gnss_.close();
+        if (csv_chassis_imu_.is_open()) csv_chassis_imu_.close();
+        if (csv_chassis_sensors_.is_open()) csv_chassis_sensors_.close();
+        if (csv_chassis_cmd_.is_open()) csv_chassis_cmd_.close();
+        if (csv_mission_state_.is_open()) csv_mission_state_.close();
     }
 
 private:
@@ -140,8 +148,15 @@ private:
     uint8_t spd_msg_ = 0;
     uint8_t bdr_msg_ = 0;
 
-    std::ofstream csv_file_;
-    std::string csv_filename_;
+    // Separate CSV files for each topic (full-rate event-driven)
+    std::ofstream csv_rtk_gnss_;
+    std::ofstream csv_spresense_gnss_;
+    std::ofstream csv_chassis_imu_;
+    std::ofstream csv_chassis_sensors_;
+    std::ofstream csv_chassis_cmd_;
+    std::ofstream csv_mission_state_;
+    std::string log_dir_;
+    
     rclcpp::Publisher<msgs_ifaces::msg::RoverStatus>::SharedPtr pub_rover_status_;
     rclcpp::TimerBase::SharedPtr timer_;
 
@@ -155,18 +170,18 @@ private:
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr sub_pub_despose_;
     rclcpp::Subscription<msgs_ifaces::msg::ChassisCtrl>::SharedPtr sub_pub_rovercontrol_d2_;
 
-    int get_next_run_number(const std::string& log_dir) {
-        // Find all existing CSV files and get the highest run number
+    int get_next_run_number(const std::string& runs_dir) {
+        // Find all existing run directories and get the highest run number
         glob_t glob_result;
-        std::string pattern = log_dir + "/run_*.csv";
+        std::string pattern = runs_dir + "/run_*";
         int max_run = 0;
         
-        if (glob(pattern.c_str(), GLOB_TILDE, NULL, &glob_result) == 0) {
+        if (glob(pattern.c_str(), GLOB_TILDE | GLOB_ONLYDIR, NULL, &glob_result) == 0) {
             for (size_t i = 0; i < glob_result.gl_pathc; ++i) {
-                std::string filename = glob_result.gl_pathv[i];
-                size_t pos = filename.find("run_");
+                std::string dirname = glob_result.gl_pathv[i];
+                size_t pos = dirname.find("run_");
                 if (pos != std::string::npos) {
-                    std::string num_str = filename.substr(pos + 4, filename.find("_", pos + 4) - (pos + 4));
+                    std::string num_str = dirname.substr(pos + 4, 3);
                     try {
                         int num = std::stoi(num_str);
                         if (num > max_run) max_run = num;
@@ -204,55 +219,83 @@ private:
         }
         
         // Create runs directory relative to ws_rpi
-        std::string log_dir = ws_rpi_path + "/runs";
+        std::string runs_dir = ws_rpi_path + "/runs";
         
-        if (!std::filesystem::exists(log_dir)) {
+        if (!std::filesystem::exists(runs_dir)) {
             try {
-                std::filesystem::create_directories(log_dir);
-                RCLCPP_INFO(this->get_logger(), "Created log directory: %s", log_dir.c_str());
+                std::filesystem::create_directories(runs_dir);
+                RCLCPP_INFO(this->get_logger(), "Created runs directory: %s", runs_dir.c_str());
             } catch (const std::exception &e) {
-                RCLCPP_ERROR(this->get_logger(), "Failed to create log directory: %s", e.what());
-                log_dir = "/tmp";  // Fallback to /tmp
+                RCLCPP_ERROR(this->get_logger(), "Failed to create runs directory: %s", e.what());
+                runs_dir = "/tmp";  // Fallback to /tmp
             }
         }
 
         // Get run number and timestamp
-        int run_number = get_next_run_number(log_dir);
+        int run_number = get_next_run_number(runs_dir);
         auto now = std::chrono::system_clock::now();
         std::time_t now_c = std::chrono::system_clock::to_time_t(now);
         std::tm *timeinfo = std::localtime(&now_c);
         char buffer[50];
         std::strftime(buffer, sizeof(buffer), "%Y%m%d_%H%M%S", timeinfo);
         
-        // Format: run_NNN_YYYYMMDD_HHMMSS.csv
-        std::ostringstream filename_ss;
-        filename_ss << log_dir << "/run_" << std::setfill('0') << std::setw(3) << run_number 
-                    << "_" << buffer << ".csv";
-        csv_filename_ = filename_ss.str();
-
-        csv_file_.open(csv_filename_, std::ios::out);
-        if (!csv_file_.is_open()) {
-            RCLCPP_ERROR(this->get_logger(), "Failed to open CSV file for writing!");
+        // Create run subdirectory: run_NNN_YYYYMMDD_HHMMSS/
+        std::ostringstream run_dir_ss;
+        run_dir_ss << runs_dir << "/run_" << std::setfill('0') << std::setw(3) << run_number 
+                   << "_" << buffer;
+        log_dir_ = run_dir_ss.str();
+        
+        try {
+            std::filesystem::create_directories(log_dir_);
+        } catch (const std::exception &e) {
+            RCLCPP_ERROR(this->get_logger(), "Failed to create run directory: %s", e.what());
             return;
         }
 
-        // Write CSV header with all fields
-        csv_file_ << "Timestamp,"
-                  // RTK GNSS (Ublox)
-                  << "RTK_Date,RTK_Time,RTK_Latitude,RTK_Longitude,RTK_Altitude,"
-                  << "RTK_Fix_Quality,RTK_Centimeter_Error,RTK_Satellites,RTK_SNR,RTK_Speed,"
-                  // Spresense GNSS
-                  << "Spresense_Date,Spresense_Time,Spresense_NumSatellites,Spresense_Fix,"
-                  << "Spresense_Latitude,Spresense_Longitude,Spresense_Altitude,"
-                  // Chassis Sensors
-                  << "Motor_Left_Encoder,Motor_Right_Encoder,System_Current,System_Voltage,"
-                  // Chassis IMU
-                  << "Accel_X,Accel_Y,Accel_Z,Gyro_X,Gyro_Y,Gyro_Z,"
-                  // Mission & Control
-                  << "Mission_Active,Distance_Remaining,Dest_Lat,Dest_Long,"
-                  << "FDR_Msg,RO_Ctrl,SPD_Msg,BDR_Msg\n";
+        // Open all CSV files with headers
         
-        RCLCPP_INFO(this->get_logger(), "CSV logging initialized: Run #%d", run_number);
+        // 1. RTK GNSS (u-blox)
+        csv_rtk_gnss_.open(log_dir_ + "/rtk_gnss.csv", std::ios::out);
+        if (csv_rtk_gnss_.is_open()) {
+            csv_rtk_gnss_ << "Timestamp_us,Date,Time,Latitude,Longitude,Altitude,"
+                         << "Fix_Quality,Centimeter_Error,Satellites,SNR,Speed_ms\n";
+        }
+        
+        // 2. Spresense GNSS
+        csv_spresense_gnss_.open(log_dir_ + "/spresense_gnss.csv", std::ios::out);
+        if (csv_spresense_gnss_.is_open()) {
+            csv_spresense_gnss_ << "Timestamp_us,Date,Time,Num_Satellites,Fix,"
+                                << "Latitude,Longitude,Altitude\n";
+        }
+        
+        // 3. Chassis IMU
+        csv_chassis_imu_.open(log_dir_ + "/chassis_imu.csv", std::ios::out);
+        if (csv_chassis_imu_.is_open()) {
+            csv_chassis_imu_ << "Timestamp_us,Accel_X,Accel_Y,Accel_Z,"
+                            << "Gyro_X,Gyro_Y,Gyro_Z\n";
+        }
+        
+        // 4. Chassis Sensors
+        csv_chassis_sensors_.open(log_dir_ + "/chassis_sensors.csv", std::ios::out);
+        if (csv_chassis_sensors_.is_open()) {
+            csv_chassis_sensors_ << "Timestamp_us,Motor_Left_Encoder,Motor_Right_Encoder,"
+                                << "System_Current_A,System_Voltage_V\n";
+        }
+        
+        // 5. Chassis Commands
+        csv_chassis_cmd_.open(log_dir_ + "/chassis_cmd.csv", std::ios::out);
+        if (csv_chassis_cmd_.is_open()) {
+            csv_chassis_cmd_ << "Timestamp_us,FDR_Msg,RO_Ctrl_Deg,SPD_Msg,BDR_Msg\n";
+        }
+        
+        // 6. Mission State
+        csv_mission_state_.open(log_dir_ + "/mission_state.csv", std::ios::out);
+        if (csv_mission_state_.is_open()) {
+            csv_mission_state_ << "Timestamp_us,Mission_Active,Distance_Remaining_m,"
+                              << "Dest_Latitude,Dest_Longitude\n";
+        }
+        
+        RCLCPP_INFO(this->get_logger(), "Event-driven CSV logging initialized: Run #%d", run_number);
     }
 
     void chassis_sensors_callback(const msgs_ifaces::msg::ChassisSensors::SharedPtr msg) {
@@ -260,6 +303,20 @@ private:
         motor_right_encoder_ = msg->mt_rt_encode_msg;
         system_current_ = msg->sys_current_msg;
         system_voltage_ = msg->sys_volt_msg;
+        
+        // Write to CSV immediately (event-driven, ~4 Hz)
+        if (csv_chassis_sensors_.is_open()) {
+            auto timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::system_clock::now().time_since_epoch()
+            ).count();
+            
+            csv_chassis_sensors_ << timestamp_us << ","
+                               << msg->mt_lf_encode_msg << ","
+                               << msg->mt_rt_encode_msg << ","
+                               << msg->sys_current_msg << ","
+                               << msg->sys_volt_msg << "\n";
+            csv_chassis_sensors_.flush();
+        }
     }
 
     void chassis_imu_callback(const msgs_ifaces::msg::ChassisIMU::SharedPtr msg) {
@@ -269,14 +326,32 @@ private:
         gyro_x_ = msg->gyro_x;
         gyro_y_ = msg->gyro_y;
         gyro_z_ = msg->gyro_z;
+        
+        // Write to CSV immediately (event-driven, ~10 Hz)
+        if (csv_chassis_imu_.is_open()) {
+            auto timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::system_clock::now().time_since_epoch()
+            ).count();
+            
+            csv_chassis_imu_ << timestamp_us << ","
+                           << msg->accel_x << ","
+                           << msg->accel_y << ","
+                           << msg->accel_z << ","
+                           << msg->gyro_x << ","
+                           << msg->gyro_y << ","
+                           << msg->gyro_z << "\n";
+            csv_chassis_imu_.flush();
+        }
     }
 
     void cc_rcon_callback(const std_msgs::msg::Bool::SharedPtr msg) {
         cc_rcon_ = msg->data;
+        write_mission_state();
     }
     
     void dis_remain_callback(const std_msgs::msg::Float64::SharedPtr msg) {
         dis_remain_ = msg->data;
+        write_mission_state();
     }
     
     void gnss_data_callback(const msgs_ifaces::msg::SpresenseGNSS::SharedPtr msg) {
@@ -291,6 +366,23 @@ private:
         // Also use for current position
         current_lat_ = msg->latitude;
         current_long_ = msg->longitude;
+        
+        // Write to CSV immediately (event-driven, ~10 Hz)
+        if (csv_spresense_gnss_.is_open()) {
+            auto timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::system_clock::now().time_since_epoch()
+            ).count();
+            
+            csv_spresense_gnss_ << timestamp_us << ","
+                               << msg->date << ","
+                               << msg->time << ","
+                               << msg->num_satellites << ","
+                               << (msg->fix ? "true" : "false") << ","
+                               << msg->latitude << ","
+                               << msg->longitude << ","
+                               << msg->altitude << "\n";
+            csv_spresense_gnss_.flush();
+        }
     }
     
     void rtk_gnss_callback(const msgs_ifaces::msg::UbloxGNSS::SharedPtr msg) {
@@ -304,12 +396,49 @@ private:
         rtk_satellites_ = msg->satellites_tracked;
         rtk_snr_ = msg->snr;
         rtk_speed_ = msg->speed;
+        
+        // Write to CSV immediately (event-driven, ~10 Hz)
+        if (csv_rtk_gnss_.is_open()) {
+            auto timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::system_clock::now().time_since_epoch()
+            ).count();
+            
+            csv_rtk_gnss_ << timestamp_us << ","
+                         << msg->date << ","
+                         << msg->time << ","
+                         << msg->latitude << ","
+                         << msg->longitude << ","
+                         << msg->altitude << ","
+                         << msg->fix_quality << ","
+                         << msg->centimeter_error << ","
+                         << msg->satellites_tracked << ","
+                         << msg->snr << ","
+                         << msg->speed << "\n";
+            csv_rtk_gnss_.flush();
+        }
     }
     
     void pub_despose_callback(const std_msgs::msg::Float64MultiArray::SharedPtr msg) {
         if (msg->data.size() >= 2) {
             des_lat_ = msg->data[0];
             des_long_ = msg->data[1];
+        }
+        write_mission_state();
+    }
+    
+    void write_mission_state() {
+        // Write mission state whenever any mission-related topic updates
+        if (csv_mission_state_.is_open()) {
+            auto timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::system_clock::now().time_since_epoch()
+            ).count();
+            
+            csv_mission_state_ << timestamp_us << ","
+                             << (cc_rcon_ ? "true" : "false") << ","
+                             << dis_remain_ << ","
+                             << des_lat_ << ","
+                             << des_long_ << "\n";
+            csv_mission_state_.flush();
         }
     }
     
@@ -318,39 +447,23 @@ private:
         ro_ctrl_msg_ = msg->ro_ctrl_msg;
         spd_msg_ = msg->spd_msg;
         bdr_msg_ = msg->bdr_msg;
+        
+        // Write to chassis command CSV immediately (event-driven, ~50 Hz)
+        if (csv_chassis_cmd_.is_open()) {
+            auto timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::system_clock::now().time_since_epoch()
+            ).count();
+            
+            csv_chassis_cmd_ << timestamp_us << ","
+                           << static_cast<int>(msg->fdr_msg) << ","
+                           << msg->ro_ctrl_msg << ","
+                           << static_cast<int>(msg->spd_msg) << ","
+                           << static_cast<int>(msg->bdr_msg) << "\n";
+            csv_chassis_cmd_.flush();
+        }
     }
     
     void timer_callback() {
-        // Write to CSV
-        if (csv_file_.is_open()) {
-            auto now = std::chrono::system_clock::now();
-            auto time_t = std::chrono::system_clock::to_time_t(now);
-            
-            csv_file_ << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S") << ","
-                      // RTK GNSS
-                      << rtk_date_ << "," << rtk_time_ << "," 
-                      << rtk_latitude_ << "," << rtk_longitude_ << "," << rtk_altitude_ << ","
-                      << rtk_fix_quality_ << "," << rtk_centimeter_error_ << "," 
-                      << rtk_satellites_ << "," << rtk_snr_ << "," << rtk_speed_ << ","
-                      // Spresense GNSS
-                      << spresense_date_ << "," << spresense_time_ << "," 
-                      << spresense_num_satellites_ << "," << (spresense_fix_ ? "true" : "false") << ","
-                      << spresense_latitude_ << "," << spresense_longitude_ << "," 
-                      << spresense_altitude_ << ","
-                      // Chassis Sensors
-                      << motor_left_encoder_ << "," << motor_right_encoder_ << ","
-                      << system_current_ << "," << system_voltage_ << ","
-                      // Chassis IMU
-                      << accel_x_ << "," << accel_y_ << "," << accel_z_ << ","
-                      << gyro_x_ << "," << gyro_y_ << "," << gyro_z_ << ","
-                      // Mission & Control
-                      << (cc_rcon_ ? "true" : "false") << "," << dis_remain_ << ","
-                      << des_lat_ << "," << des_long_ << ","
-                      << static_cast<int>(fdr_msg_) << "," << ro_ctrl_msg_ << ","
-                      << static_cast<int>(spd_msg_) << "," << static_cast<int>(bdr_msg_) << "\n";
-            csv_file_.flush();
-        }
-
         // Publish aggregated status for base station (relayed to Domain 4)
         auto status_msg = msgs_ifaces::msg::RoverStatus();
         status_msg.mission_active = cc_rcon_;
