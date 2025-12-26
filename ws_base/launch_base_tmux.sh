@@ -150,15 +150,22 @@ send_command_to_pane() {
 launch_nodes() {
     print_header "Launching Mission Control Nodes"
     
-    # Pane 0 (left): Mission Command Generator
-    print_info "Launching mission_command_node in pane 0..."
-    send_command_to_pane 0 "MISSION COMMAND GENERATOR (Domain 6)" \
+    # Pane 0 (left): Mission Command Generator (Domain 5)
+    print_info "Launching mission_command_node in pane 0 (Domain 5)..."
+    send_command_to_pane 0 "MISSION COMMAND (Domain 5)" \
         "ros2 run mission_control mission_command_node"
     
-    # Pane 1 (right): Mission Monitoring
-    print_info "Launching mission_monitoring_node in pane 1..."
-    send_command_to_pane 1 "MISSION MONITORING (Domain 6)" \
-        "ros2 run mission_control mission_monitoring_node"
+    # Pane 1 (right): Base Station Monitoring (Domain 4)
+    print_info "Launching node_base_monitoring in pane 1 (Domain 4)..."
+    tmux select-pane -t $SESSION_NAME:1 -T "BASE MONITORING (Domain 4)"
+    tmux send-keys -t $SESSION_NAME:1 "cd $WS_PATH && source install/setup.bash" C-m
+    tmux send-keys -t $SESSION_NAME:1 "export ROS_DOMAIN_ID=4" C-m
+    sleep 0.2
+    tmux send-keys -t $SESSION_NAME:1 "clear" C-m
+    sleep 0.1
+    tmux send-keys -t $SESSION_NAME:1 "echo -e '\\e[1;36m>>> BASE MONITORING (Domain 4) <<<\\e[0m'" C-m
+    sleep 0.2
+    tmux send-keys -t $SESSION_NAME:1 "ros2 run mission_control base_monitoring_node" C-m
     
     print_success "All nodes launched"
     echo ""
@@ -173,8 +180,8 @@ display_info() {
     
     echo -e "${GREEN}Tmux session '${SESSION_NAME}' is running with 2 panes:${NC}"
     echo ""
-    echo -e "  ${CYAN}[0] Left Pane:${NC}  mission_command_node (generates mission goals)"
-    echo -e "  ${CYAN}[1] Right Pane:${NC} mission_monitoring_node (displays telemetry)"
+    echo -e "  ${CYAN}[0] Left Pane:${NC}  mission_command_node (Domain 5 - sends mission commands)"
+    echo -e "  ${CYAN}[1] Right Pane:${NC} node_base_monitoring (Domain 4 - displays rover status)"
     echo ""
     
     echo -e "${YELLOW}Tmux Controls:${NC}"
@@ -186,8 +193,9 @@ display_info() {
     echo ""
     
     echo -e "${YELLOW}Domain Configuration:${NC}"
-    echo -e "  ROS_DOMAIN_ID = 5 (Unified Architecture)"
-    echo -e "  Direct communication with ws_rpi, ws_jetson, and STM32 boards"
+    echo -e "  Pane 0: ROS_DOMAIN_ID = 5 (Rover Control - commands to rover)"
+    echo -e "  Pane 1: ROS_DOMAIN_ID = 4 (Monitoring - receives status from rover)"
+    echo -e "  Domain relay on ws_rpi bridges rover data from Domain 5 to Domain 4"
     echo ""
     
     echo -e "${YELLOW}To reconnect to this session later:${NC}"
