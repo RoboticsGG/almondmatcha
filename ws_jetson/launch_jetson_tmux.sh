@@ -40,7 +40,7 @@ tmux select-pane -t 0 -T "Camera_D6"
 tmux send-keys -t $SESSION_NAME:0.0 "cd ~/almondmatcha/ws_jetson && source install/setup.bash" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "export ROS_DOMAIN_ID=6" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "clear && echo -e '\\e[1;36m>>> [Domain 6] CAMERA STREAM <<<\\e[0m' && sleep 1" C-m
-tmux send-keys -t $SESSION_NAME:0.0 "ros2 run vision_navigation camera_stream --ros-args --params-file config/vision_nav_headless.yaml" C-m
+tmux send-keys -t $SESSION_NAME:0.0 "ros2 run vision_navigation camera_stream --ros-args --params-file vision_navigation/config/vision_nav_headless.yaml" C-m
 
 # Pane 1 (top-right): Lane Detection - Domain 6
 tmux select-pane -t 1 -T "Lane_Detect_D6"
@@ -48,7 +48,7 @@ tmux send-keys -t $SESSION_NAME:0.1 "cd ~/almondmatcha/ws_jetson && source insta
 tmux send-keys -t $SESSION_NAME:0.1 "export ROS_DOMAIN_ID=6" C-m
 tmux send-keys -t $SESSION_NAME:0.1 "clear && echo -e '\\e[1;32m>>> [Domain 6] LANE DETECTION <<<\\e[0m'" C-m
 tmux send-keys -t $SESSION_NAME:0.1 "echo 'Waiting for camera initialization (3s)...' && sleep 3" C-m
-tmux send-keys -t $SESSION_NAME:0.1 "ros2 run vision_navigation lane_detection --ros-args --params-file config/vision_nav_headless.yaml" C-m
+tmux send-keys -t $SESSION_NAME:0.1 "ros2 run vision_navigation lane_detection --ros-args --params-file vision_navigation/config/vision_nav_headless.yaml" C-m
 
 # Pane 2 (bottom-right): Steering Control - Domain 5 (Bridge)
 tmux select-pane -t 2 -T "Steering_D5"
@@ -56,7 +56,7 @@ tmux send-keys -t $SESSION_NAME:0.2 "cd ~/almondmatcha/ws_jetson && source insta
 tmux send-keys -t $SESSION_NAME:0.2 "export ROS_DOMAIN_ID=5" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "clear && echo -e '\\e[1;33m>>> [Domain 5] STEERING CONTROL (Bridge) <<<\\e[0m'" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "echo 'Waiting for vision nodes (4s)...' && sleep 4" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "ros2 run vision_navigation steering_control_domain5 --ros-args --params-file config/steering_control_params.yaml" C-m
+tmux send-keys -t $SESSION_NAME:0.2 "ros2 run vision_navigation steering_control_domain5 --ros-args --params-file vision_navigation/config/steering_control_params.yaml" C-m
 
 # Focus on camera pane and attach
 tmux select-pane -t 0
