@@ -233,7 +233,8 @@ To gracefully stop all running nodes and close the tmux session:
 | `tpc_chassis_cmd` | 50 Hz | RPi (chassis_controller) | Motor commands to STM32 |
 | `tpc_chassis_imu` | 10 Hz | STM32 (chassis_controller) | IMU accel/gyro data |
 | `tpc_chassis_sensors` | 4 Hz | STM32 (sensors_node) | Encoders, voltage, current |
-| `tpc_gnss_spresense` | 10 Hz | RPi (node_gnss_spresense) | GPS position |
+| `tpc_gnss_spresense` | 10 Hz | RPi (node_gnss_spresense) | Standard GPS position |
+| `tpc_gnss_ublox` | 10 Hz | RPi (node_gnss_ublox) | RTK GNSS with cm-level accuracy |
 | `tpc_rover_nav_lane` | 30 Hz | Jetson (lane_detection) | Lane parameters [theta, b, detected] |
 
 **Domain 6 (Vision Processing) - Jetson Localhost Only:**
