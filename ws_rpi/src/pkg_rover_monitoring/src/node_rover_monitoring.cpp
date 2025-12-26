@@ -21,22 +21,22 @@ public:
         init_csv_logging();
         
         // QoS profiles to match publishers
-        // STM32 mros2 default is RELIABLE (not best_effort as initially thought)
-        rclcpp::QoS qos_reliable_stm32(10);
-        qos_reliable_stm32.reliable();
+        // STM32 mros2: EXACT copy from working node_chassis_sensors
+        rclcpp::QoS qos_stm32(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_sensor_data));
+        qos_stm32.best_effort();
         
         rclcpp::QoS qos_reliable_gnss(10);
         qos_reliable_gnss.reliable().transient_local();  // Match GNSS publishers
         
-        // Subscribe to chassis sensors (reliable to match STM32 mros2 default)
+        // Subscribe to chassis sensors (EXACT QoS from node_chassis_sensors)
         sub_chassis_sensors_ = this->create_subscription<msgs_ifaces::msg::ChassisSensors>(
-            "/tpc_chassis_sensors", qos_reliable_stm32,
+            "/tpc_chassis_sensors", qos_stm32,
             std::bind(&NodeRoverMonitoring::chassis_sensors_callback, this, std::placeholders::_1)
         );
         
-        // Subscribe to chassis IMU (reliable to match STM32 mros2 default)
+        // Subscribe to chassis IMU (EXACT QoS from node_chassis_sensors)
         sub_chassis_imu_ = this->create_subscription<msgs_ifaces::msg::ChassisIMU>(
-            "/tpc_chassis_imu", qos_reliable_stm32,
+            "/tpc_chassis_imu", qos_stm32,
             std::bind(&NodeRoverMonitoring::chassis_imu_callback, this, std::placeholders::_1)
         );
         
