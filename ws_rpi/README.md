@@ -30,27 +30,30 @@ source install/setup.bash
 
 ## Building
 
-### Automated Build (Recommended)
+### Quick Start Build (Recommended)
 
 ```bash
 cd ~/almondmatcha/ws_rpi
-./build.sh           # Normal build
-./build.sh clean     # Clean rebuild
+./build.sh           # Normal incremental build
+./build.sh clean     # Clean rebuild (removes build/install/log folders)
 source install/setup.bash
 ```
 
-Build script handles:
-- Interface packages first (msgs, actions, services)
-- Application packages second
-- Proper dependency ordering
-- Environment sourcing
+**What the build script does:**
+- Builds interface packages first (action_ifaces, msgs_ifaces, services_ifaces)
+- Sources environment automatically
+- Builds application packages (pkg_chassis_control, pkg_chassis_sensors, pkg_gnss_navigation, rover_launch_system)
+- Handles proper dependency ordering
+- Creates install/ directory with all executables
 
-### Manual Build
+### Manual Build (Step-by-Step)
+
+If you need more control or want to build specific packages:
 
 ```bash
 cd ~/almondmatcha/ws_rpi
 
-# Step 1: Build interfaces
+# Step 1: Build interface packages
 colcon build --packages-select action_ifaces msgs_ifaces services_ifaces
 source install/setup.bash
 
@@ -60,43 +63,112 @@ colcon build --packages-select pkg_chassis_control pkg_chassis_sensors \
 source install/setup.bash
 ```
 
+### Build Individual Packages
+
+After interfaces are built and sourced, you can build packages individually:
+
+```bash
+# Must source environment first
+source install/setup.bash
+
+# Chassis control (motor coordination + cruise control)
+colcon build --packages-select pkg_chassis_control
+
+# Chassis sensors (IMU + encoder/power data loggers)
+colcon build --packages-select pkg_chassis_sensors
+
+# GNSS navigation (Spresense, Ublox, mission monitor)
+colcon build --packages-select pkg_gnss_navigation
+
+# Launch system (ROS2 launch files)
+colcon build --packages-select rover_launch_system
+```
+
+### Package Build Dependencies
+
+The build order matters due to dependencies:
+
+```
+action_ifaces, msgs_ifaces, services_ifaces (must build first)
+    ↓
+pkg_chassis_control, pkg_chassis_sensors, pkg_gnss_navigation, rover_launch_system
+```
+
+**Important:** Always source `install/setup.bash` after building interface packages before building application packages.
+
 ## Running
 
-### Tmux Launch (Recommended)
+The ws_rpi system can be launched in three ways: **tmux session** (recommended for full system), **monitoring-only mode**, or **manual node-by-node**.
 
-Launches all nodes in organized tmux session:
+### Option 1: Full System with Tmux (Recommended)
+
+Launch all rover nodes in an organized tmux session with 8 panes:
 
 ```bash
 cd ~/almondmatcha/ws_rpi
 ./launch_rover_tmux.sh
 ```
 
-**Tmux Layout (3×2 grid):**
-```
-┌────────────────────┬────────────────────┬────────────────────┐
-│ Chassis Controller │ GNSS Spresense     │ GNSS Mission Mon   │
-│ (Domain 5)         │ (Domain 5)         │ (Domain 5)         │
-├────────────────────┼────────────────────┼────────────────────┤
-│ Chassis IMU Logger │ Chassis Sensors    │ Monitor (Reserved) │
-│ (Domain 5)         │ (Domain 5)         │                    │
-└────────────────────┴────────────────────┴────────────────────┘
+**What Gets Launched:**
+- **Pane 0:** GNSS Spresense (Sony Spresense GNSS module)
+- **Pane 1:** GNSS Ublox RTK (High-precision GNSS)
+- **Pane 2:** GNSS Mission Monitor (Mission status & waypoint tracking)
+- **Pane 3:** Chassis Controller (Motor coordination & cruise control)
+- **Pane 4:** Chassis IMU (Accelerometer/gyroscope data logger)
+- **Pane 5:** Chassis Sensors (Encoders, voltage, current logger)
+- **Pane 6:** Rover Monitoring (CSV data logger for all sensors)
+- **Pane 7:** Domain Relay (Bridges data from Domain 5 → Domain 4 for base station)
+
+**All nodes run on Domain 5** (unified rover architecture).
+
+**Tmux Session Controls:**
+- **Navigate panes:** `Ctrl+b` then arrow keys
+- **Zoom pane (fullscreen):** `Ctrl+b z` (toggle)
+- **Scroll mode:** `Ctrl+b [` (press `q` to exit)
+- **Detach session:** `Ctrl+b d` (session keeps running in background)
+- **Reattach session:** `tmux attach -t rover`
+- **Kill session:** `Ctrl+b &` or `tmux kill-session -t rover`
+- **Close pane:** `Ctrl+d` or type `exit`
+
+**To check if session is running:**
+```bash
+tmux ls
 ```
 
-**Tmux Commands:**
-- `Ctrl+b` then `arrow keys` - Navigate between panes
-- `Ctrl+b` then `d` - Detach session
-- `tmux attach -t rover` - Reattach session
-- `Ctrl+b` then `&` - Kill session
+### Option 2: Monitoring Mode Only
 
-### ROS2 Launch File
+Launch only monitoring components (GNSS Ublox, Rover Monitoring, Domain Relay):
+
+```bash
+cd ~/almondmatcha/ws_rpi
+./launch_monitoring.sh
+```
+
+**What Gets Launched:**
+- **Pane 0:** GNSS Ublox RTK (Domain 5)
+- **Pane 1:** Rover Monitoring (Domain 5) - CSV logger
+- **Pane 2:** Domain Relay (5→4) - Relays status to base station
+
+**Use case:** When you only need monitoring/logging without active control, or when chassis/sensors are already running separately.
+
+**Tmux session name:** `rover_monitoring`
+
+**Controls:** Same as full system, use `tmux attach -t rover_monitoring` to reattach.
+
+### Option 3: ROS2 Launch File
+
+Launch via ROS2 launch system (all nodes at once):
 
 ```bash
 cd ~/almondmatcha/ws_rpi
 source install/setup.bash
+export ROS_DOMAIN_ID=5
 ros2 launch rover_launch_system rover_startup.launch.py
 ```
 
-### Manual Launch (Individual Nodes)
+**Note:** This launches all nodes in a single terminal. Less visibility than tmux but suitable for automated startup.
+
+### Option 4: Manual Launch (Individual Nodes)
 
 ```bash
 # Terminal 1: Chassis Controller (Domain 5)
@@ -213,13 +285,20 @@ ls -lh ~/almondmatcha/runs/logs/
 
 ### Build Errors
 
-**Symptom:** Interface packages not found
+**Symptom:** CMake can't find `action_ifaces`, `msgs_ifaces`, or `services_ifaces`
+
+**Solution:**
+```bash
+# Make sure you've sourced the environment after building interfaces
+source install/setup.bash
+```
+
+**Symptom:** Build fails with old package artifacts or leftover files
 
 **Solution:**
 ```bash
 cd ~/almondmatcha/ws_rpi
-rm -rf build install log
-./build.sh
+./build.sh clean     # Removes build/, install/, log/ and rebuilds everything
 source install/setup.bash
 ```
 
@@ -356,10 +435,10 @@ ws_rpi/
 
 ## Documentation
 
-- [BUILD.md](BUILD.md) - Detailed build instructions
 - [/docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md) - System architecture
 - [/docs/TOPICS.md](/docs/TOPICS.md) - Topic reference
 - [/docs/DOMAINS.md](/docs/DOMAINS.md) - Domain configuration
+- [/docs/LAUNCH_SEQUENCE_GUIDE.md](/docs/LAUNCH_SEQUENCE_GUIDE.md) - System startup guide
 
 ---
 
