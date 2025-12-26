@@ -251,6 +251,47 @@ num_satellites: 8
 
 ---
 
+### `tpc_gnss_ublox`
+
+**Type:** `msgs_ifaces/msg/UbloxGNSS`  
+**Publisher:** `node_gnss_ublox`  
+**Subscribers:** `mission_monitoring_node`  
+**Rate:** 10 Hz  
+**QoS:** Reliable, Depth 10  
+**Domain:** 5  
+
+RTK GNSS position data from u-blox SimpleRTK2b module with centimeter-level accuracy.
+
+**Message Definition:**
+```
+string date                # Date string (DDMMYY)
+string time                # Time string (HHMMSS.SSS)
+float64 latitude           # Decimal degrees (WGS84)
+float64 longitude          # Decimal degrees (WGS84)
+float64 altitude           # Meters above mean sea level
+uint8 satellites_tracked   # Number of satellites tracked
+uint8 fix_quality          # 0=invalid, 1=GPS, 2=DGPS, 4=RTK fixed, 5=RTK float
+float32 snr                # Signal-to-noise ratio (dB)
+float32 speed              # Ground speed (m/s)
+float32 centimeter_error   # Estimated position error (cm)
+```
+
+**Example:**
+```yaml
+date: "110125"             # January 11, 2025
+time: "143022.500"         # 14:30:22.500 UTC
+latitude: 7.007286
+longitude: 100.502030
+altitude: 15.523           # Altitude with cm precision
+satellites_tracked: 12
+fix_quality: 4             # RTK fixed solution
+snr: 42.5                  # Strong signal
+speed: 0.05                # 5 cm/s (~stationary)
+centimeter_error: 2.3      # ±2.3cm accuracy
+```
+
+---
+
 ### `tpc_gnss_mission_active`
 
 **Type:** `std_msgs/msg/Bool`  
@@ -417,6 +458,10 @@ sensors_node (STM32 mROS2)
 node_gnss_spresense (RPi)
     └── tpc_gnss_spresense (D5)
             └── node_gnss_mission_monitor (RPi)
+
+node_gnss_ublox (RPi)
+    └── tpc_gnss_ublox (D5)
+            └── mission_monitoring_node (Base Station)
 ```
 
 ---
@@ -445,7 +490,7 @@ node_gnss_spresense (RPi)
 
 All custom message types defined in `common_ifaces/`:
 
-- **msgs_ifaces:** ChassisCtrl, ChassisIMU, ChassisSensors, SpresenseGNSS
+- **msgs_ifaces:** ChassisCtrl, ChassisIMU, ChassisSensors, SpresenseGNSS, UbloxGNSS
 - **action_ifaces:** DesData (navigation goals)
 - **services_ifaces:** SpdLimit (speed limit updates)
 

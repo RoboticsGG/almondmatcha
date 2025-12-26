@@ -96,7 +96,8 @@ Almondmatcha rover system architecture: distributed heterogeneous computing with
 ├── node_chassis_controller - Motor command coordination
 ├── node_chassis_imu - IMU data logging
 ├── node_chassis_sensors - Encoder/power data logging
-├── node_gnss_spresense - GPS position processing
+├── node_gnss_spresense - Standard GPS position processing
+├── node_gnss_ublox - RTK GNSS with cm-level accuracy
 ├── node_gnss_mission_monitor - Waypoint navigation
 └── [FUTURE] node_ekf_fusion - Multi-sensor fusion
 ```
@@ -249,6 +250,8 @@ Camera (30 FPS) → Lane Detection (30 FPS) → Steering Control (50 Hz)
 - `node_chassis_imu`: `chassis_imu_YYYYMMDD_HHMMSS.csv`
 - `node_chassis_sensors`: `chassis_sensors_YYYYMMDD_HHMMSS.csv`
 - `node_gnss_spresense`: `gnss_spresense_YYYYMMDD_HHMMSS.csv`
+- `node_gnss_ublox`: `gnss_ublox_YYYYMMDD_HHMMSS.csv`
+- `mission_monitoring_node`: `rtk_monitoring_YYYYMMDD_HHMMSS.csv`
 - `lane_detection_node`: `lane_pub_log.csv`
 - `steering_control_node`: `rover_ctl_log_ver_3.csv`
 

@@ -1,58 +1,46 @@
 # Almondmatcha - Autonomous Mobile Rover
 
-Distributed ROS2-based autonomous rover system with vision navigation, chassis dynamics control, and multi-sensor fusion architecture.
+Distributed ROS2 autonomous rover with vision navigation, centimeter-accurate RTK GPS, chassis dynamics control, and multi-sensor fusion.
 
-## System Overview
+## System Architecture
 
-**Purpose:** Autonomous mobile robot with lane-following, GPS waypoint navigation, and real-time telemetry
+**Platform**: Heterogeneous distributed computing (Raspberry Pi, Jetson Orin Nano, STM32)  
+**Communication**: ROS2 DDS over Gigabit Ethernet with multi-domain isolation  
+**Domains**: 4 (monitoring), 5 (control), 6 (vision)
 
-**Architecture:** Heterogeneous distributed computing (Raspberry Pi, Jetson Orin Nano, STM32 microcontrollers)
+## Hardware
 
-**Communication:** ROS2 DDS over Ethernet with multi-domain architecture (Domain 5: control, Domain 6: vision)
-
-## Hardware Components
-
-| Component | Hardware | IP Address | Function |
-|-----------|----------|------------|----------|
-| **Main Computer** | Raspberry Pi 4B | 192.168.1.1 | Sensor fusion, mission control, coordination |
-| **Vision Computer** | Jetson Orin Nano 8GB | 192.168.1.5 | Lane detection, visual navigation |
-| **Chassis Controller** | NUCLEO-F767ZI + IKS4A1 | 192.168.1.2 | Motor control, IMU sensing |
-| **Sensors Controller** | NUCLEO-F767ZI + SimpleRTK2b | 192.168.1.6 | GNSS, encoders, power monitoring |
-| **Base Station** | Linux PC | Variable | Ground station telemetry/command |
-| **GNSS Module** | Sony Spresense | USB (RPi) | High-precision GNSS receiver |
-
-### Sensors & Peripherals
-
-- **IMU:** LSM6DSV16X 6-axis (X-NUCLEO-IKS4A1 shield on chassis controller)
-- **RTK GNSS:** SimpleRTK2b board (attached to sensors controller)
-- **Camera:** Intel RealSense D415 RGB-D (on Jetson)
-- **Encoders:** Quadrature encoders on both drive motors
-- **Power Monitor:** INA226 voltage/current sensor
+| Component | Hardware | IP | Function |
+|-----------|----------|---------|---------|
+| **Main** | Raspberry Pi 4B | 192.168.1.1 | Sensor fusion, mission control |
+| **Vision** | Jetson Orin Nano 8GB | 192.168.1.5 | Lane detection, navigation |
+| **Chassis** | NUCLEO-F767ZI + IKS4A1 | 192.168.1.2 | Motor control, IMU |
+| **Sensors** | NUCLEO-F767ZI + SimpleRTK2b | 192.168.1.6 | Encoders, power monitoring |
+| **Base** | Linux PC | Variable | Ground station telemetry |
+| **GNSS** | Spresense | USB | Standard GPS |
+| **RTK GNSS** | u-blox SimpleRTK2b | USB | Centimeter-level positioning |
 
 ## Network Architecture
 
 ```
-                    Gigabit Ethernet Switch (192.168.1.0/24)
-                              |
-        ┌─────────────┬───────┼───────┬─────────────┬─────────────┐
-        |             |       |       |             |             |
-   Raspberry Pi  Jetson Orin  |  Base Station  STM32 Chassis  STM32 Sensors
-   192.168.1.1   192.168.1.5  |   192.168.1.10  192.168.1.2   192.168.1.6
-   Domain 5      D5 + D6      |   Domain 5      Domain 5      Domain 5
+             Gigabit Ethernet (192.168.1.0/24)
+                         |
+   ┌─────────┬───────────┼───────────┬─────────┬─────────┐
+   │         │           │           │         │         │
+ RPi 4   Jetson Orin  Base PC    STM32-1   STM32-2
+ .1:D5    .5:D5+D6    .10:D4+D5   .2:D5     .6:D5
 ```
 
-**Configuration:**
-- Domain 5 (Control): All systems participate (10 nodes total)
-- Domain 6 (Vision): Jetson localhost only (camera, lane detection)
-- Gigabit Ethernet switch (multicast-enabled)
-- Static IP addressing (192.168.1.0/24)
+**Domain 4**: Monitoring (base station display)  
+**Domain 5**: Control (all rover operations, STM32 boards)  
+**Domain 6**: Vision (Jetson localhost only)
 - Wired connections only for reliability
 
 ## ROS2 Domain Architecture
 
 | Domain | Purpose | Network Scope | Participants | Key Characteristics |
 |--------|---------|---------------|--------------|---------------------|
-| **5** | Control Network | Network-wide (all systems) | **10 nodes total:**<br>• ws_rpi: 5 nodes (GNSS spresense, mission monitor, chassis controller, IMU logger, sensors logger)<br>• ws_base: 2 nodes (mission command, monitoring)<br>• ws_jetson: 1 node (steering control)<br>• STM32: 2 nodes (chassis, sensors) | • Real-time control loop<br>• Low-frequency messages<br>• Visible to all systems<br>• Optimized for STM32 memory |
+| **5** | Control Network | Network-wide (all systems) | **10 nodes total:**<br>• ws_rpi: 6 nodes (GNSS spresense, GNSS ublox, mission monitor, chassis controller, IMU logger, sensors logger)<br>• ws_base: 2 nodes (mission command, monitoring)<br>• ws_jetson: 1 node (steering control)<br>• STM32: 2 nodes (chassis, sensors) | • Real-time control loop<br>• Low-frequency messages<br>• Visible to all systems<br>• Optimized for STM32 memory |
 | **6** | Vision Processing | Localhost only (Jetson) | **2 nodes:**<br>• camera_stream<br>• lane_detection | • High-bandwidth streams (30 FPS)<br>• RGB/Depth 1280×720<br>• Isolated from network<br>• Invisible to STM32 boards |
 
 **Cross-Domain Bridge:** The `steering_control` node subscribes to Domain 6 (`/tpc_rover_nav_lane`) and publishes to Domain 5 (`/tpc_rover_fmctl`), enabling seamless vision-to-control data flow.
@@ -73,7 +61,7 @@ almondmatcha/
 │   └── LAUNCH_INSTRUCTIONS.md         # Complete system launch guide
 │
 ├── common_ifaces/                     # Shared ROS2 interfaces (messages/actions/services)
-│   ├── msgs_ifaces/                   # ChassisCtrl, ChassisIMU, ChassisSensors, SpresenseGNSS
+│   ├── msgs_ifaces/                   # ChassisCtrl, ChassisIMU, ChassisSensors, SpresenseGNSS, UbloxGNSS
 │   ├── action_ifaces/                 # DesData (navigation goals)
 │   └── services_ifaces/               # SpdLimit (speed control)
 │

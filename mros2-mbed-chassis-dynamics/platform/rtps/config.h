@@ -49,11 +49,12 @@ const uint8_t DOMAIN_ID = 5; // 230 possible with UDP
 const uint8_t NUM_STATELESS_WRITERS = 4;
 const uint8_t NUM_STATELESS_READERS = 4;
 
-// MAXIMUM SAFE CONFIGURATION - Worst-case: Full network (Domain 5: 10-12 participants)
-// Memory usage: ~250-280 KB, Free: ~230-260 KB (45-50% headroom)
+// OPTIMIZED CONFIGURATION - Domain 4/5/6 architecture
+// Domain 5 participants: 11 actual (ws_rpi=6, ws_jetson=1, ws_base=1, STM32=2, rover_monitoring=1)
+// Memory usage: ~180-200 KB, Free: ~310-330 KB (60%+ headroom)
 const uint8_t NUM_STATEFUL_READERS = 32;              // Max endpoints for all remote writers
 const uint8_t NUM_STATEFUL_WRITERS = 28;              // Max endpoints for all remote readers
-const uint8_t MAX_NUM_PARTICIPANTS = 15;              // Domain 5: 10-12 actual + 3 burst margin
+const uint8_t MAX_NUM_PARTICIPANTS = 15;              // Domain 5: 11 actual + 4 margin (sufficient)
 const uint8_t NUM_WRITERS_PER_PARTICIPANT = 20;       // Max publishers per node (ws_base heavy)
 const uint8_t NUM_READERS_PER_PARTICIPANT = 20;       // Max subscribers per node (ws_base heavy)
 const uint8_t NUM_WRITER_PROXIES_PER_READER = 28;     // Track all possible remote writers

@@ -49,6 +49,18 @@ install(TARGETS node_gnss_spresense
 
 #------------------------------------------------------------------------------------#
 
+add_executable(node_gnss_ublox src/node_gnss_ublox.cpp)
+ament_target_dependencies(node_gnss_ublox rclcpp std_msgs msgs_ifaces)
+
+target_include_directories(node_gnss_ublox PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+
+install(TARGETS node_gnss_ublox
+  DESTINATION lib/${PROJECT_NAME})
+
+#------------------------------------------------------------------------------------#
+
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

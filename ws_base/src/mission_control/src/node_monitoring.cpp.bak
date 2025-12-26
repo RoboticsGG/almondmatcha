@@ -1,0 +1,208 @@
+#include "rclcpp/rclcpp.hpp"
+#include "std_msgs/msg/bool.hpp"
+#include "std_msgs/msg/float64.hpp"
+#include "std_msgs/msg/float64_multi_array.hpp"
+#include "msgs_ifaces/msg/spresense_gnss.hpp"
+#include "msgs_ifaces/msg/ublox_gnss.hpp"
+#include "msgs_ifaces/msg/chassis_ctrl.hpp"
+#include <fstream>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
+#include <rcpputils/filesystem_helper.hpp>
+
+const std::string LOG_DIR = "/home/curry/almondmatcha/runs/logs/";
+
+class NodeMonitoring : public rclcpp::Node {
+public:
+    NodeMonitoring() : Node("topic_subscriber") {
+        init_csv_logging();
+        
+        sub_cc_rcon_ = this->create_subscription<std_msgs::msg::Bool>(
+            "/tpc_gnss_mission_active", 10, 
+            std::bind(&NodeMonitoring::cc_rcon_callback, this, std::placeholders::_1)
+        );
+        
+        sub_dis_remain_ = this->create_subscription<std_msgs::msg::Float64>(
+            "/tpc_gnss_mission_remain_dist", 10, 
+            std::bind(&NodeMonitoring::dis_remain_callback, this, std::placeholders::_1)
+        );
+        
+        sub_gnss_data_ = this->create_subscription<msgs_ifaces::msg::SpresenseGNSS>(
+            "/tpc_gnss_spresense", 10, 
+            std::bind(&NodeMonitoring::gnss_data_callback, this, std::placeholders::_1)
+        );
+        
+        sub_rtk_position_ = this->create_subscription<msgs_ifaces::msg::UbloxGNSS>(
+            "/tpc_gnss_ublox", 10,
+            std::bind(&NodeMonitoring::rtk_gnss_callback, this, std::placeholders::_1)
+        );
+        
+        sub_pub_despose_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
+            "/tpc_rover_dest_coordinate", 10, 
+            std::bind(&NodeMonitoring::pub_despose_callback, this, std::placeholders::_1)
+        );
+        
+        sub_pub_rovercontrol_d2_ = this->create_subscription<msgs_ifaces::msg::ChassisCtrl>(
+            "/tpc_chassis_cmd", 10, 
+            std::bind(&NodeMonitoring::pub_rovercontrol_callback, this, std::placeholders::_1)
+        );
+
+        timer_ = this->create_wall_timer(
+            std::chrono::milliseconds(1000), 
+            std::bind(&NodeMonitoring::timer_callback, this)
+        );
+
+        RCLCPP_INFO(this->get_logger(), "Node Monitoring Initialized.");
+    }
+
+    ~NodeMonitoring() {
+        if (csv_file_.is_open()) {
+            csv_file_.close();
+        }
+    }
+
+private:
+    bool cc_rcon_;
+    float dis_remain_;
+    float current_lat_;
+    float current_long_;
+    float des_lat_;
+    float des_long_;
+    
+    // RTK GNSS Data
+    double rtk_latitude_ = 0.0;
+    double rtk_longitude_ = 0.0;
+    double rtk_altitude_ = 0.0;
+    std::string rtk_fix_quality_ = "No Fix";
+    float rtk_centimeter_error_ = 999.9f;
+    int32_t rtk_satellites_ = 0;
+
+    uint8_t fdr_msg_;
+    float ro_ctrl_msg_;
+    uint8_t spd_msg_;
+    uint8_t bdr_msg_;
+
+    std::string f_dir_;
+    std::string b_dir_;
+
+    std::ofstream csv_file_;
+
+    void init_csv_logging() {
+        if (!rcpputils::fs::exists(LOG_DIR)) {
+            try {
+                rcpputils::fs::create_directories(LOG_DIR);
+                RCLCPP_INFO(this->get_logger(), "Created log directory: %s", LOG_DIR.c_str());
+            } catch (const std::exception &e) {
+                RCLCPP_ERROR(this->get_logger(), "Failed to create log directory: %s", e.what());
+                return;
+            }
+        }
+
+        auto now = std::chrono::system_clock::now();
+        std::time_t now_c = std::chrono::system_clock::to_time_t(now);
+        std::tm *timeinfo = std::localtime(&now_c);
+        char buffer[50];
+        std::strftime(buffer, sizeof(buffer), "mission_monitor_%Y%m%d_%H%M%S.csv", timeinfo);
+        std::string filename = LOG_DIR + std::string(buffer);
+
+        csv_file_.open(filename, std::ios::out);
+        if (!csv_file_.is_open()) {
+            RCLCPP_ERROR(this->get_logger(), "Failed to open CSV file for writing!");
+            return;
+        }
+
+        csv_file_ << "Timestamp,RTK_Latitude,RTK_Longitude,RTK_Altitude,Fix_Quality,"
+                  << "Centimeter_Error,Satellites,Mission_Active,Distance_Remaining\n";
+        RCLCPP_INFO(this->get_logger(), "CSV logging initialized: %s", filename.c_str());
+    }
+
+    void cc_rcon_callback(const std_msgs::msg::Bool::SharedPtr msg) {
+        cc_rcon_ = msg->data;
+    }
+    
+    void dis_remain_callback(const std_msgs::msg::Float64::SharedPtr msg) {
+        dis_remain_ = msg->data;
+    }
+    
+    void gnss_data_callback(const msgs_ifaces::msg::SpresenseGNSS::SharedPtr msg) {
+        current_lat_ = msg->latitude;
+        current_long_ = msg->longitude;
+    }
+    
+    void rtk_gnss_callback(const msgs_ifaces::msg::UbloxGNSS::SharedPtr msg) {
+        rtk_latitude_ = msg->latitude;
+        rtk_longitude_ = msg->longitude;
+        rtk_altitude_ = msg->altitude;
+        rtk_fix_quality_ = msg->fix_quality;
+        rtk_centimeter_error_ = msg->centimeter_error;
+        rtk_satellites_ = msg->satellites_tracked;
+        
+        // Log to CSV
+        if (csv_file_.is_open()) {
+            auto now = std::chrono::system_clock::now();
+            auto time_t = std::chrono::system_clock::to_time_t(now);
+            csv_file_ << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S") << ","
+                      << rtk_latitude_ << "," << rtk_longitude_ << "," << rtk_altitude_ << ","
+                      << rtk_fix_quality_ << "," << rtk_centimeter_error_ << "," << rtk_satellites_ << ","
+                      << (cc_rcon_ ? "true" : "false") << "," << dis_remain_ << "\n";
+            csv_file_.flush();
+        }
+    }
+    
+    void pub_despose_callback(const std_msgs::msg::Float64MultiArray::SharedPtr msg) {
+        des_lat_ = msg->data[0];
+        des_long_ = msg->data[1];
+    }
+    
+    void pub_rovercontrol_callback(const msgs_ifaces::msg::ChassisCtrl::SharedPtr msg) {
+        fdr_msg_ = msg->fdr_msg;
+        ro_ctrl_msg_ = msg->ro_ctrl_msg;
+        spd_msg_ = msg->spd_msg;
+        bdr_msg_ = msg->bdr_msg;
+
+        if (fdr_msg_ == 1) {
+            f_dir_ = "Turn Left: " + std::to_string(ro_ctrl_msg_) + " Degree";
+        } else if (fdr_msg_ == 3) {
+            f_dir_ = "Turn Right: " + std::to_string(ro_ctrl_msg_) + " Degree";
+        } else {
+            f_dir_ = "Stay Middle";
+        }
+
+        if (bdr_msg_ == 1 && cc_rcon_==false) {
+            b_dir_ = "Forward at speed: " + std::to_string(spd_msg_) + "%";
+        } else if (bdr_msg_ == 2 && cc_rcon_==false) {
+            b_dir_ = "Backward at speed: " + std::to_string(spd_msg_) + "%";
+        } else {
+            b_dir_ = "Stop";
+        }
+    }
+    
+    void timer_callback() {
+        RCLCPP_INFO(this->get_logger(), "########## Status Update ##########");
+        RCLCPP_INFO(this->get_logger(), "Target coordinates: %f, %f", des_lat_, des_long_);
+        RCLCPP_INFO(this->get_logger(), "Current coordinates: %f, %f", current_lat_, current_long_);
+        RCLCPP_INFO(this->get_logger(), "RTK Position: %.6f, %.6f | Alt: %.2fm | Fix: %s | Err: %.1fcm | Sats: %d",
+            rtk_latitude_, rtk_longitude_, rtk_altitude_, rtk_fix_quality_.c_str(), rtk_centimeter_error_, rtk_satellites_);
+        RCLCPP_INFO(this->get_logger(), "Remaining distance: %f KM", dis_remain_);
+        RCLCPP_INFO(this->get_logger(), "Rover Front Direction: %s", f_dir_.c_str());
+        RCLCPP_INFO(this->get_logger(), "Rover Back Direction: %s", b_dir_.c_str());
+        RCLCPP_INFO(this->get_logger(), "##################################");
+    }
+
+    rclcpp::TimerBase::SharedPtr timer_;
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_cc_rcon_;
+    rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr sub_dis_remain_;
+    rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr sub_pub_despose_;
+    rclcpp::Subscription<msgs_ifaces::msg::SpresenseGNSS>::SharedPtr sub_gnss_data_;
+    rclcpp::Subscription<msgs_ifaces::msg::UbloxGNSS>::SharedPtr sub_rtk_position_;
+    rclcpp::Subscription<msgs_ifaces::msg::ChassisCtrl>::SharedPtr sub_pub_rovercontrol_d2_;
+};
+
+int main(int argc, char *argv[]) {
+    rclcpp::init(argc, argv);
+    auto node = std::make_shared<NodeMonitoring>();
+    rclcpp::spin(node);
+    rclcpp::shutdown();
+    return 0;
+}

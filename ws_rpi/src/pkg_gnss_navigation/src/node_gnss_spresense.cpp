@@ -1,18 +1,12 @@
 #include "rclcpp/rclcpp.hpp"
 #include "msgs_ifaces/msg/spresense_gnss.hpp"  
 #include <json/json.h>
-#include <fstream>
 #include <sstream>
-#include <chrono>
-#include <ctime>
 #include <fcntl.h>
 #include <unistd.h>
 #include <termios.h>
-#include <rcpputils/filesystem_helper.hpp> 
 
 using namespace std::chrono_literals;
-
-const std::string LOG_DIR = "/home/curry/almondmatcha/runs/logs/";
 
 class SpresenseGNSSNode : public rclcpp::Node {
 public:
@@ -23,24 +17,7 @@ public:
         
         pub_gnss_spresense_ = this->create_publisher<msgs_ifaces::msg::SpresenseGNSS>("tpc_gnss_spresense", qos_reliable);
 
-        if (!rcpputils::fs::exists(LOG_DIR)) {
-            try {
-                rcpputils::fs::create_directories(LOG_DIR);
-                RCLCPP_INFO(this->get_logger(), "Created log directory: %s", LOG_DIR.c_str());
-            } catch (const std::exception &e) {
-                RCLCPP_ERROR(this->get_logger(), "Failed to create log directory: %s", e.what());
-            }
-        }
-
-        std::string filename = generateFileName();
-        csv_file_.open(filename, std::ios::out);
-
-        if (!csv_file_.is_open()) {
-            RCLCPP_ERROR(this->get_logger(), "Failed to open CSV file for writing!");
-            return;
-        }
-
-        csv_file_ << "Date,Time,NumSatellites,Fix,Latitude,Longitude,Altitude\n";
+        RCLCPP_INFO(this->get_logger(), "CSV logging handled by node_rover_monitoring");
 
         serial_port_ = open("/dev/ttyUSB0", O_RDWR | O_NOCTTY | O_NDELAY);
         if (serial_port_ == -1) {
@@ -57,16 +34,12 @@ public:
         if (serial_port_ != -1) {
             close(serial_port_);
         }
-        if (csv_file_.is_open()) {
-            csv_file_.close();
-        }
     }
 
 private:
     rclcpp::Publisher<msgs_ifaces::msg::SpresenseGNSS>::SharedPtr pub_gnss_spresense_;
     rclcpp::TimerBase::SharedPtr timer_;
     int serial_port_;
-    std::ofstream csv_file_;
 
     void configureSerialPort() {
         struct termios options;
@@ -79,17 +52,6 @@ private:
         options.c_cflag &= ~CSIZE;
         options.c_cflag |= CS8;
         tcsetattr(serial_port_, TCSANOW, &options);
-    }
-
-    std::string generateFileName() {
-        auto now = std::chrono::system_clock::now();
-        std::time_t now_c = std::chrono::system_clock::to_time_t(now);
-        std::tm *timeinfo = std::localtime(&now_c);
-
-        char buffer[50];
-        std::strftime(buffer, sizeof(buffer), "gnss_spresense_%Y%m%d_%H%M%S.csv", timeinfo);
-
-        return LOG_DIR + std::string(buffer);
     }
 
     void readSerialData() {
@@ -142,10 +104,6 @@ private:
         pub_gnss_spresense_->publish(msg);
         RCLCPP_INFO(this->get_logger(), "GNSS - Date=%s, Time=%s, Sat=%d, Fix=%d, Lat=%f, Lon=%f, Alt=%f",
                     msg.date.c_str(), msg.time.c_str(), msg.num_satellites, msg.fix, msg.latitude, msg.longitude, msg.altitude);
-
-        csv_file_ << date << "," << time << "," << numSatellites << "," << fix 
-                  << "," << latitude << "," << longitude << "," << altitude << "\n";
-        csv_file_.flush();
     }    
 };
 

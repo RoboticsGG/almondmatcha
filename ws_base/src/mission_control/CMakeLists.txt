@@ -37,21 +37,20 @@ install(TARGETS mission_command_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
-# Mission Control Monitoring Node
-add_executable(mission_monitoring_node src/node_monitoring.cpp)
-ament_target_dependencies(mission_monitoring_node 
+# Base Station Monitoring Display Node
+add_executable(base_monitoring_node src/node_base_monitoring.cpp)
+ament_target_dependencies(base_monitoring_node 
   rclcpp 
-  std_msgs 
   msgs_ifaces
 )
 
-target_include_directories(mission_monitoring_node PUBLIC
+target_include_directories(base_monitoring_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_compile_features(mission_monitoring_node PUBLIC c_std_99 cxx_std_17)
+target_compile_features(base_monitoring_node PUBLIC c_std_99 cxx_std_17)
 
-install(TARGETS mission_monitoring_node
+install(TARGETS base_monitoring_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

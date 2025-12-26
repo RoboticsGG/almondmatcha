@@ -99,6 +99,7 @@ ros2 run mission_control mission_monitoring_node
 | Node | Package | Purpose | Topics |
 |------|---------|---------|--------|
 | **node_gnss_spresense** | pkg_gnss_navigation | Sony Spresense GNSS reader | Publishes: `tpc_gnss_spresense` |
+| **node_gnss_ublox** | pkg_gnss_navigation | u-blox RTK GNSS reader | Publishes: `tpc_gnss_ublox` |
 | **node_gnss_mission_monitor** | pkg_gnss_navigation | Waypoint tracking | Subscribes: `tpc_gnss_spresense`<br>Publishes: `tpc_gnss_mission_active`, `tpc_gnss_mission_remain_dist` |
 | **node_chassis_controller** | pkg_chassis_control | Motor command coordination | Subscribes: `tpc_rover_fmctl`, `tpc_gnss_mission_active`<br>Publishes: `tpc_chassis_cmd` |
 | **node_chassis_imu** | pkg_chassis_sensors | IMU data logger | Subscribes: `tpc_chassis_imu` |
@@ -109,7 +110,7 @@ ros2 run mission_control mission_monitoring_node
 | Node | Package | Purpose | Topics |
 |------|---------|---------|--------|
 | **mission_command_node** | mission_control | Send navigation goals and speed limits | Action: `/des_data`<br>Service: `/srv_spd_limit` |
-| **mission_monitoring_node** | mission_control | Display telemetry | Subscribes: All rover telemetry topics |
+| **mission_monitoring_node** | mission_control | Display telemetry & log RTK data | Subscribes: All rover telemetry topics<br>Logs: `rtk_monitoring_YYYYMMDD_HHMMSS.csv` |
 
 ## Communication (Domain 5 - Direct)
 
