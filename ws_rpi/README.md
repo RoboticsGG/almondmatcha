@@ -10,6 +10,11 @@ cd ~/almondmatcha/ws_rpi
 source install/setup.bash
 ./launch_rover_tmux.sh
 ```
+## Tmux Controls
+to end tmux session of ws_rpi
+```bash
+tmux kill-session -t rover
+```
 
 ## Hardware
 
