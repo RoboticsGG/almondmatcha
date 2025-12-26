@@ -20,15 +20,22 @@ public:
     NodeRoverMonitoring() : Node("node_rover_monitoring") {
         init_csv_logging();
         
-        // Subscribe to chassis sensors
+        // QoS profiles to match publishers
+        rclcpp::QoS qos_best_effort(10);
+        qos_best_effort.best_effort();  // Match STM32 publishers
+        
+        rclcpp::QoS qos_reliable(10);
+        qos_reliable.reliable().transient_local();  // Match GNSS publishers
+        
+        // Subscribe to chassis sensors (best_effort to match STM32)
         sub_chassis_sensors_ = this->create_subscription<msgs_ifaces::msg::ChassisSensors>(
-            "/tpc_chassis_sensors", 10,
+            "/tpc_chassis_sensors", qos_best_effort,
             std::bind(&NodeRoverMonitoring::chassis_sensors_callback, this, std::placeholders::_1)
         );
         
-        // Subscribe to chassis IMU
+        // Subscribe to chassis IMU (best_effort to match STM32)
         sub_chassis_imu_ = this->create_subscription<msgs_ifaces::msg::ChassisIMU>(
-            "/tpc_chassis_imu", 10,
+            "/tpc_chassis_imu", qos_best_effort,
             std::bind(&NodeRoverMonitoring::chassis_imu_callback, this, std::placeholders::_1)
         );
         

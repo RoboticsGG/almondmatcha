@@ -102,7 +102,7 @@ private:
         msg.altitude = altitude;
 
         pub_gnss_spresense_->publish(msg);
-        RCLCPP_INFO(this->get_logger(), "GNSS - Date=%s, Time=%s, Sat=%d, Fix=%d, Lat=%f, Lon=%f, Alt=%f",
+        RCLCPP_INFO(this->get_logger(), "Spresense GNSS - Date=%s, Time=%s, Sats=%d, Fix=%d, Lat=%.6f, Lon=%.6f, Alt=%.2f",
                     msg.date.c_str(), msg.time.c_str(), msg.num_satellites, msg.fix, msg.latitude, msg.longitude, msg.altitude);
     }    
 };

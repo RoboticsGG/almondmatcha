@@ -264,9 +264,9 @@ private:
         pub_gnss_ublox_->publish(msg);
         
         RCLCPP_INFO(this->get_logger(), 
-            "Ublox GNSS - Date=%s, Time=%s, Lat=%.6f, Lon=%.6f, Alt=%.2f, Sats=%d, Fix=%s, SNR=%.1f, Speed=%.2f m/s, Err=%.1f cm",
-            msg.date.c_str(), msg.time.c_str(), msg.latitude, msg.longitude, 
-            msg.altitude, msg.satellites_tracked, msg.fix_quality.c_str(), 
+            "u-blox RTK GNSS - Date=%s, Time=%s, Sats=%d, Fix=%s, Lat=%.6f, Lon=%.6f, Alt=%.2f, SNR=%.1f, Speed=%.2f m/s, Err=%.1f cm",
+            msg.date.c_str(), msg.time.c_str(), msg.satellites_tracked, msg.fix_quality.c_str(),
+            msg.latitude, msg.longitude, msg.altitude, 
             msg.snr, msg.speed, msg.centimeter_error);
     }
 
