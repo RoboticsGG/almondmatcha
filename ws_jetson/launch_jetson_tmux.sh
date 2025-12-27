@@ -67,7 +67,7 @@ tmux select-pane -t 3 -T "Bridge_D6→D5"
 tmux send-keys -t $SESSION_NAME:0.3 "cd ~/almondmatcha/ws_jetson && source install/setup.bash" C-m
 tmux send-keys -t $SESSION_NAME:0.3 "clear && echo -e '\\e[1;96m>>> [Bridge] D6→D5 CONTROL CMD RELAY <<<\\e[0m'" C-m
 tmux send-keys -t $SESSION_NAME:0.3 "echo 'Waiting for steering control (5s)...' && sleep 5" C-m
-tmux send-keys -t $SESSION_NAME:0.3 "python3 install/vision_navigation/lib/vision_navigation/domain_bridge_jetson.py" C-m
+tmux send-keys -t $SESSION_NAME:0.3 "ros2 run vision_navigation domain_bridge_jetson" C-m
 
 # Focus on camera pane and attach
 tmux select-pane -t 0

@@ -129,13 +129,13 @@ class DualDomainControlNode(Node):
         self.heartbeat_timer = self.create_timer(5.0, self._heartbeat_callback)
 
         self.get_logger().info(
-            f"Dual-domain control node initialized on Domain 5"
+            f"Steering control node initialized on Domain 6"
         )
         self.get_logger().info(
-            f"Subscribing to Domain 6 'tpc_rover_nav_lane' via localhost DDS"
-        )5 'tpc_rover_nav_lane' (via domain bridge)
+            f"Subscribing to 'tpc_rover_nav_lane' on Domain 6 (local)"
+        )
         self.get_logger().info(
-            f"Publishing to Domain 5 'tpc_rover_fmctl' for rover control"
+            f"Publishing 'tpc_rover_fmctl' on Domain 6 (relayed to D5 by bridge)"
         )
         self.get_logger().info(
             f"PID gains: Kp={self.k_p}, Ki={self.k_i}, Kd={self.k_d}"
