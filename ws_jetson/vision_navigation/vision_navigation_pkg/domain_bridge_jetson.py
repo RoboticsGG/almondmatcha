@@ -10,6 +10,7 @@ This bridge runs with TWO ROS2 contexts (one per domain) in separate threads.
 Only relays the final control command to minimize Domain 5 traffic.
 """
 
+import os
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
@@ -22,8 +23,8 @@ import threading
 class DomainBridgeSubscriber(Node):
     """Subscriber on Domain 6 (vision processing)"""
     
-    def __init__(self, callback):
-        super().__init__('bridge_sub_d6', context=rclpy.create_context())
+    def __init__(self, callback, context):
+        super().__init__('bridge_sub_d6', context=context)
         self.callback = callback
         
         qos = QoSProfile(
@@ -49,8 +50,8 @@ class DomainBridgeSubscriber(Node):
 class DomainBridgePublisher(Node):
     """Publisher on Domain 5 (rover network)"""
     
-    def __init__(self):
-        super().__init__('bridge_pub_d5', context=rclpy.create_context())
+    def __init__(self, context):
+        super().__init__('bridge_pub_d5', context=context)
         
         qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -81,26 +82,24 @@ class DomainBridgePublisher(Node):
 
 
 def main():
+    # Initialize rclpy
     rclpy.init()
     
-    # Create Domain 6 context
-    ctx_d6 = rclpy.create_context()
+    # Create two separate contexts for different domains
+    ctx_d6 = Context()
     ctx_d6.init()
     
-    # Create Domain 5 context  
-    ctx_d5 = rclpy.create_context()
+    ctx_d5 = Context()
     ctx_d5.init()
     
-    # Create publisher on Domain 5
-    import os
+    # Set domain IDs
     os.environ['ROS_DOMAIN_ID'] = '5'
-    pub_node = DomainBridgePublisher()
+    pub_node = DomainBridgePublisher(ctx_d5)
     
-    # Create subscriber on Domain 6
     os.environ['ROS_DOMAIN_ID'] = '6'
-    sub_node = DomainBridgeSubscriber(pub_node.relay_message)
+    sub_node = DomainBridgeSubscriber(pub_node.relay_message, ctx_d6)
     
-    # Multi-threaded executor for both contexts
+    # Create executors for each context
     executor_d6 = MultiThreadedExecutor(context=ctx_d6)
     executor_d6.add_node(sub_node)
     
@@ -123,10 +122,13 @@ def main():
     except KeyboardInterrupt:
         print("\n[Domain Bridge] Shutting down...")
     finally:
+        executor_d6.shutdown()
+        executor_d5.shutdown()
         sub_node.destroy_node()
         pub_node.destroy_node()
-        ctx_d6.shutdown()
-        ctx_d5.shutdown()
+        ctx_d6.try_shutdown()
+        ctx_d5.try_shutdown()
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':
