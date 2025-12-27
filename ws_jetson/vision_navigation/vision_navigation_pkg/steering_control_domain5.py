@@ -131,6 +131,12 @@ class DualDomainControlNode(Node):
         # ===================== Logging =====================
         self._init_logging()
 
+        # ===================== Heartbeat Timer =====================
+        # Show node is alive and waiting for data
+        self.lane_msg_count = 0
+        self.pub_msg_count = 0
+        self.heartbeat_timer = self.create_timer(5.0, self._heartbeat_callback)
+
         self.get_logger().info(
             f"Dual-domain control node initialized on Domain 5"
         )
@@ -168,6 +174,8 @@ class DualDomainControlNode(Node):
         Args:
             msg: Lane parameters [theta_deg, b_offset, detected_flag]
         """
+        self.lane_msg_count += 1
+        
         # ===== Extract and validate input =====
         if len(msg.data) < 3:
             self.get_logger().warn("Lane message incomplete")
@@ -217,6 +225,7 @@ class DualDomainControlNode(Node):
         cmd_msg = Float32MultiArray()
         cmd_msg.data = [steer_angle, float(detected_valid)]
         self.pub_fmctl.publish(cmd_msg)
+        self.pub_msg_count += 1
 
         # ===== Terminal Output =====
         status = "Detected" if detected_valid else "Lost"
@@ -224,7 +233,22 @@ class DualDomainControlNode(Node):
             f"[D6→D5] θ={theta_ema:.2f}° b={b_ema:.2f}px err={error_sum:.2f} "
             f"u={u:.2f} steer={steer_angle:.2f}° {status}"
         )
+Heartbeat Methods =====================
 
+    def _heartbeat_callback(self) -> None:
+        """Periodic status update to show node is alive."""
+        if self.lane_msg_count == 0:
+            self.get_logger().warn(
+                f"[D5 Steering] Waiting for lane data from Domain 6... "
+                f"(Received: 0 | Published: {self.pub_msg_count})"
+            )
+        else:
+            self.get_logger().info(
+                f"[D5 Steering] Alive - Received: {self.lane_msg_count} | "
+                f"Published: {self.pub_msg_count} to tpc_rover_fmctl"
+            )
+
+    # ===================== 
     # ===================== Logging Methods =====================
 
     def _log_control_data(
