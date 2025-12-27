@@ -224,7 +224,8 @@ class DualDomainControlNode(Node):
             f"[D6→D5] θ={theta_ema:.2f}° b={b_ema:.2f}px err={error_sum:.2f} "
             f"u={u:.2f} steer={steer_angle:.2f}° {status}"
         )
-Heartbeat Methods =====================
+
+    # ===================== Heartbeat Methods =====================
 
     def _heartbeat_callback(self) -> None:
         """Periodic status update to show node is alive."""
