@@ -1,28 +1,19 @@
 #!/usr/bin/env python3
 """
-Dual-Domain Steering Control Node - Domain 5 Output
+Steering Control Node - Domain 6 (Vision Processing Domain)
 
 Purpose:
-    Bridges vision processing (Domain 6) to rover control (Domain 5).
-    This node runs on Domain 5 but subscribes to Domain 6 topics via
-    localhost shared memory (same Jetson machine).
+    Receives lane detection and publishes steering commands, both on Domain 6.
+    Domain bridge relays tpc_rover_fmctl to Domain 5 for rover network.
 
 Architecture:
-    Input:  Domain 6 → /tpc_rover_nav_lane (from lane detection)
-    Output: Domain 5 → /tpc_rover_fmctl (to rover chassis controller)
+    Input:  Domain 6 → /tpc_rover_nav_lane (from lane_detection, same domain)
+    Output: Domain 6 → /tpc_rover_fmctl (relayed by domain_bridge to D5)
 
-Multi-Domain Strategy:
-    Since ROS2 Python doesn't easily support multiple contexts in one node,
-    we use a simple approach:
-    - Main node context on Domain 5 (publisher)
-    - Subscribes to Domain 6 topics via DDS localhost discovery
-    - Both domains run on same machine (Jetson) so DDS finds them automatically
-
-Benefits vs Bridge Node:
-    - No message relay overhead
-    - Simple architecture (one process, one node)
-    - Native ROS2 communication (no custom bridge logic)
-    - Automatic via DDS multicast on localhost
+Benefits:
+    - All vision processing stays in Domain 6 (isolated)
+    - Domain 5 only receives final control command (less network traffic)
+    - Simple architecture with local subscription
 
 Control Parameters:
     k_e1: Weight on heading error theta
@@ -61,10 +52,10 @@ from vision_navigation_pkg.control_filters import (
 
 class DualDomainControlNode(Node):
     """
-    Dual-domain steering controller.
+    Steering controller on Domain 6 (vision processing domain).
     
-    Subscribes to vision data from Domain 6 (localhost).
-    Publishes control commands to Domain 5 (rover network).
+    Subscribes to lane data on Domain 6 (local).
+    Publishes control commands on Domain 6 (relayed to Domain 5 by bridge).
     """
 
     def __init__(self) -> None:
@@ -110,17 +101,17 @@ class DualDomainControlNode(Node):
             depth=10
         )
 
-        # ===================== Publishers (Domain 5) =====================
-        # This publisher is on Domain 5 (set via ROS_DOMAIN_ID environment)
+        # ===================== Publishers (Domain 6) =====================
+        # This publisher is on Domain 6 (set via ROS_DOMAIN_ID environment)
+        # Domain bridge will relay to Domain 5
         self.pub_fmctl = self.create_publisher(
             Float32MultiArray,
             'tpc_rover_fmctl',
             qos_profile
         )
 
-        # ===================== Subscribers (Domain 6 via localhost) =====================
-        # This subscriber will discover Domain 6 topics via DDS localhost multicast
-        # No special configuration needed - DDS handles cross-domain on same machine
+        # ===================== Subscribers (Domain 6 local) =====================
+        # Subscribes to tpc_rover_nav_lane on Domain 6 (same domain as lane_detection)
         self.sub_lane = self.create_subscription(
             Float32MultiArray,
             'tpc_rover_nav_lane',
@@ -142,7 +133,7 @@ class DualDomainControlNode(Node):
         )
         self.get_logger().info(
             f"Subscribing to Domain 6 'tpc_rover_nav_lane' via localhost DDS"
-        )
+        )5 'tpc_rover_nav_lane' (via domain bridge)
         self.get_logger().info(
             f"Publishing to Domain 5 'tpc_rover_fmctl' for rover control"
         )
@@ -239,13 +230,13 @@ Heartbeat Methods =====================
         """Periodic status update to show node is alive."""
         if self.lane_msg_count == 0:
             self.get_logger().warn(
-                f"[D5 Steering] Waiting for lane data from Domain 6... "
+                f"[D6 Steering] Waiting for lane data... "
                 f"(Received: 0 | Published: {self.pub_msg_count})"
             )
         else:
             self.get_logger().info(
-                f"[D5 Steering] Alive - Received: {self.lane_msg_count} | "
-                f"Published: {self.pub_msg_count} to tpc_rover_fmctl"
+                f"[D6 Steering] Alive - Received: {self.lane_msg_count} | "
+                f"Published: {self.pub_msg_count} to tpc_rover_fmctl (D6→bridge→D5)"
             )
 
     # ===================== 
