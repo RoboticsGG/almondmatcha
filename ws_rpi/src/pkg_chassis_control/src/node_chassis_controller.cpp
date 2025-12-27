@@ -49,9 +49,9 @@ public:
         );
         
         // Create flight mode control subscription (from Jetson node)
-        // Jetson Python publisher uses default: reliable + volatile
+        // Jetson Python publisher uses BEST_EFFORT QoS - match it exactly
         rclcpp::QoS qos_jetson(10);
-        qos_jetson.reliable();  // volatile is default
+        qos_jetson.best_effort();  // Match Jetson's BEST_EFFORT policy
         
         sub_fmctl_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
             "tpc_rover_fmctl", qos_jetson,
