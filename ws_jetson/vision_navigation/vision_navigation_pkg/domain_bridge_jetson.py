@@ -82,20 +82,28 @@ class DomainBridgePublisher(Node):
 
 
 def main():
-    # Initialize rclpy
+    # Set domain IDs BEFORE initializing rclpy
+    # Domain 6 for subscriber (vision processing)
+    os.environ['ROS_DOMAIN_ID'] = '6'
+    
+    # Initialize rclpy with Domain 6
     rclpy.init()
     
-    # Create two separate contexts for different domains
+    # Create Domain 6 context (for subscriber)
     ctx_d6 = Context()
     ctx_d6.init()
     
+    # Now switch to Domain 5 and create its context
+    os.environ['ROS_DOMAIN_ID'] = '5'
+    
+    # Create Domain 5 context (for publisher)
     ctx_d5 = Context()
     ctx_d5.init()
     
-    # Set domain IDs
-    os.environ['ROS_DOMAIN_ID'] = '5'
+    # Create publisher on Domain 5
     pub_node = DomainBridgePublisher(ctx_d5)
     
+    # Switch back to Domain 6 for subscriber
     os.environ['ROS_DOMAIN_ID'] = '6'
     sub_node = DomainBridgeSubscriber(pub_node.relay_message, ctx_d6)
     
