@@ -96,7 +96,7 @@ private:
     float steer_msg_;                    // Steering command (-1.0 to 1.0)
     float detect_msg_;                   // Detection status
     uint8_t spd_msg_;                    // Speed limit
-    bool cc_rcon_msg_ = true;            // Cruise control/remote control flag
+    bool cc_rcon_msg_ = false;           // Cruise control flag (false=allow vision control, true=emergency stop)
     
     // === Timer Variables ===
     bool detect_zero_active_ = false;    // Detection zero state tracking
