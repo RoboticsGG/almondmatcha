@@ -19,23 +19,26 @@ Complete guide to launching the Almondmatcha rover system across all platforms.
 - **Control Loop (Domain 5):** ws_rpi, ws_base, STM32 boards, ws_jetson control interface
 - **Vision Processing (Domain 6):** ws_jetson camera and lane detection (localhost only)
 
-### Domain 5 Participants (Network-Wide)
+### Domain 5 Participants (Network-Wide, visible to STM32)
 
-Total: 10 nodes visible to STM32 boards
+Total: 11 nodes
 
-- ws_rpi: 5 nodes (GNSS spresense, GNSS monitor, chassis controller, chassis IMU, chassis sensors)
-- ws_base: 2 nodes (mission command, mission monitoring)
+- ws_rpi: 7 nodes (node_gnss_spresense, node_gnss_ublox, node_gnss_mission_monitor, node_chassis_controller, node_chassis_imu, node_chassis_sensors, mission_monitoring_node_rpi)
+- ws_base: 1 node (mission_command_node)
 - ws_jetson: 1 node (steering_control_domain5)
-- STM32: 2 nodes (rover_node, sensors_node)
+- STM32: 2 nodes (chassis_controller, sensors_node)
+
+### Domain 4 Participants (Telemetry, NOT visible to STM32)
+
+- ws_base: mission_monitoring_node_pc (telemetry display)
+- ws_jetson: node_rover_local_monitoring (CSV logging, future DB)
 
 ### Domain 6 Participants (Jetson Localhost Only)
 
 - camera_stream
 - lane_detection
 
-**Note:** Domain 6 nodes are invisible to STM32 boards and other systems.
-
-## Prerequisites
+Domain 6 nodes are invisible to STM32 boards and other systems.
 
 1. All systems powered on and connected to network (192.168.1.0/24)
 2. STM32 firmware built and flashed
@@ -154,17 +157,19 @@ tmux attach-session -t rover  # View all panes
 - `Ctrl+b` then `z`: Zoom current pane
 - `Ctrl+b` then `d`: Detach session
 
-### Step 4: Launch ws_base Mission Command (Optional)
+### Step 4: Launch ws_base Mission Control (Optional)
 
 **On Base Station:**
 ```bash
 cd ~/almondmatcha/ws_base
 source install/setup.bash
-export ROS_DOMAIN_ID=5
+# Script automatically launches both nodes on correct domains:
+# - mission_command_node: Domain 5 (commands/actions)
+# - mission_monitoring_node_pc: Domain 4 (telemetry display)
 ./launch_base_tmux.sh
 ```
 
-This enables mission planning and monitoring from base station.
+This enables mission planning on Domain 5 and telemetry monitoring on Domain 4 from the base station.
 
 ## Verification Checklist
 

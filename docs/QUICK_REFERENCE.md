@@ -1,7 +1,7 @@
 # Quick Reference: System Launch & Configuration
 
-**Date:** November 10, 2025  
-**Status:** ✅ Optimized for 14 participants (12 active + 2 headroom)  
+**Date:** February 26, 2026  
+**Status:** Optimized for 11 D5 participants + 1 headroom  
 **Network:** All systems connected via Gigabit Ethernet switch (192.168.1.0/24)
 
 ---
@@ -11,16 +11,15 @@
 ### Memory Pool Settings (Both Boards)
 
 ```cpp
-MAX_NUM_PARTICIPANTS = 14        // Current 12 + headroom 2
+MAX_NUM_PARTICIPANTS = 12        // 11 active D5 + headroom 1
 SPDP_WRITER_STACKSIZE = 4096     // Halved from 8192 (critical savings)
 NUM_WRITERS_PER_PARTICIPANT = 6  // Reduced from 10
 NUM_READERS_PER_PARTICIPANT = 6  // Reduced from 10
 ```
 
 **Memory Impact:**
-- SPDP heap: 57 KB (was 131 KB) → **-74 KB saved** ✅
-- Total heap: ~94 KB (was ~200 KB)
-- **Available: ~106 KB free** for application use
+- SPDP heap: ~50 KB (reduced from 131 KB)
+- **Available: ~112 KB free** for application use
 - **Headroom: 2 spare participant slots** for development
 
 ---
@@ -71,14 +70,23 @@ cd ~/almondmatcha/ws_base
 
 ## Participant Count
 
-| System | Nodes | Total |
-|--------|-------|-------|
+**Domain 5 (Control Network — visible to STM32):**
+
+| System | Nodes | D5 Total |
+|--------|-------|---------|
 | STM32 boards | 2 | 2 |
-| ws_rpi | 5 | 7 |
-| ws_jetson | 3 | 10 |
-| ws_base | 2 | **12** |
-| **Headroom** | - | **+2** |
-| **Capacity** | - | **14** |
+| ws_rpi | 7 | 9 |
+| ws_jetson | 1 (steering_control_domain5) | 10 |
+| ws_base | 1 (mission_command_node) | **11** |
+| **Headroom** | - | **+1** |
+| **STM32 capacity** | - | **12** |
+
+**Domain 4 (Telemetry — not visible to STM32):**
+
+| System | Nodes |
+|--------|-------|
+| ws_base | 1 (mission_monitoring_node_pc) |
+| ws_jetson | 1 (node_rover_local_monitoring) |
 
 ---
 
@@ -100,13 +108,17 @@ ping 192.168.1.2  # Chassis STM32
 ping 192.168.1.6  # Sensors STM32
 ping 192.168.1.10 # Base (if connected)
 
-# Check participant count
+# Check participant count in D5
 export ROS_DOMAIN_ID=5
-ros2 node list | wc -l  # Should be ≤ 14
+ros2 node list | wc -l  # Should be 11
+
+# Check D4 telemetry nodes
+export ROS_DOMAIN_ID=4
+ros2 node list  # mission_monitoring_node_pc, node_rover_local_monitoring
 
 # Check STM32 config
 grep "MAX_NUM_PARTICIPANTS" ~/almondmatcha/mros2-mbed-*/platform/rtps/config.h
-# Should show: 14
+# Should show: 12
 
 # Verify data flow (from any machine on switch)
 ros2 topic hz /tpc_chassis_imu      # ~10 Hz

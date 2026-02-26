@@ -3,6 +3,7 @@
 Complete topic reference for Almondmatcha rover system.
 
 **Domain Architecture:**
+- **Domain 4 (Telemetry):** Base station + Jetson, subscribers to aggregated relay only
 - **Domain 5 (Control):** Network-wide control topics visible to all systems
 - **Domain 6 (Vision):** Jetson localhost vision topics (camera streams)
 
@@ -405,25 +406,42 @@ uint8 ack           # Acknowledgment
 
 ### `tpc_telemetry` (Removed)
 
-This topic was planned for aggregated telemetry but is no longer needed with Domain 5 unification. All telemetry topics are directly accessible to ws_base.# Sensors
-float32 battery_voltage
-float32 system_current
+This topic was planned for aggregated telemetry and has been superseded by `tpc_telemetry_relay` on Domain 4 (see below).
 
-# Status
-bool mission_active
-float64 distance_to_waypoint
-uint8 lane_detected
-```
+### `tpc_command` (Archived)
 
----
-### `tpc_command` (Archived - No Longer Used)
-
-Commands from base station are now sent directly via actions and services on Domain 5:
+Commands from base station are sent directly via actions/services on Domain 5:
 - Navigation goals: `/des_data` action
 - Speed limits: `/srv_spd_limit` service
 
-This topic is no longer needed with Domain 5 unification.float64 param2          # Longitude (if waypoint)
-```
+---
+
+## Domain 4 Topics
+
+### `tpc_telemetry_relay`
+
+**Type:** `msgs_ifaces/msg/TelemetryRelay`  
+**Publisher:** `mission_monitoring_node_rpi` (RPi, internal D4 context)  
+**Subscribers:** `mission_monitoring_node_pc` (Base, display), `node_rover_local_monitoring` (Jetson, CSV)  
+**Rate:** 5 Hz  
+**QoS:** Reliable, Depth 10  
+**Domain:** 4 (not visible from D5 or D6)
+
+Aggregated rover state published from RPi to Domain 4. The RPi node subscribes to 10 Domain 5 topics and republishes aggregated data at 5 Hz to isolate monitoring traffic from the control network.
+
+**Key Fields:**
+- Mission: `mission_active`, `distance_remaining_km`
+- RTK GNSS: `ublox_valid`, `ublox_latitude`, `ublox_longitude`, `ublox_altitude`, `ublox_fix_quality`, `ublox_centimeter_error`
+- Spresense GNSS: `spresense_valid`, `spresense_latitude`, `spresense_longitude`, `spresense_altitude`
+- Chassis: `encoder_left/right`, `voltage`, `current`, `power_watts`
+- IMU: `accel_x/y/z`, `gyro_x/y/z`
+- Commands: `chassis_cmd_left/right_speed/direction`
+- Navigation: `steering_command`, `lane_theta`, `lane_b`, `lane_detected`
+- Destination: `destination_latitude`, `destination_longitude`
+
+**Size:** ~280 bytes/message
+
+See [msgs_ifaces/msg/TelemetryRelay.msg](../common_ifaces/msgs_ifaces/msg/) for complete definition.
 
 ---
 
@@ -435,33 +453,36 @@ camera_stream (D6)
     └── tpc_rover_d415_rgb (D6)
             └── lane_detection (D6)
                     └── tpc_rover_nav_lane (D5)
-                            └── steering_control (D5)
+                            └── steering_control_domain5 (D5, Jetson)
                                     └── tpc_rover_fmctl (D5)
 ```
 
 **Chassis Control (Domain 5):**
 ```
-node_chassis_controller (RPi)
+node_chassis_controller (RPi, D5)
     └── tpc_chassis_cmd (D5)
             └── chassis_controller (STM32 mROS2)
                     └── tpc_chassis_imu (D5)
-                            └── node_chassis_imu (RPi)
 ```
 
 **Sensor Data Flow (Domain 5):**
 ```
 sensors_node (STM32 mROS2)
     └── tpc_chassis_sensors (D5)
-            └── node_chassis_sensors (RPi)
-                    └── (Data logging/processing)
+            └── mission_monitoring_node_rpi (RPi)
 
-node_gnss_spresense (RPi)
-    └── tpc_gnss_spresense (D5)
-            └── node_gnss_mission_monitor (RPi)
+node_gnss_spresense (RPi) → tpc_gnss_spresense (D5) → mission_monitoring_node_rpi
+node_gnss_ublox (RPi)     → tpc_gnss_ublox (D5)     → mission_monitoring_node_rpi
+```
 
-node_gnss_ublox (RPi)
-    └── tpc_gnss_ublox (D5)
-            └── mission_monitoring_node (Base Station)
+**Telemetry Relay (Domain 5 → Domain 4):**
+```
+mission_monitoring_node_rpi (RPi)
+    ├── Subscribes: 10 D5 topics (sensors, GNSS, commands, navigation)
+    ├── CSV: 6 files in ws_rpi/runs/ (native rates: 4–50 Hz)
+    └── tpc_telemetry_relay (D4, 5 Hz)
+            ├── mission_monitoring_node_pc (Base, D4) — display
+            └── node_rover_local_monitoring (Jetson, D4) — CSV in ws_jetson/runs/
 ```
 
 ---
@@ -490,7 +511,7 @@ node_gnss_ublox (RPi)
 
 All custom message types defined in `common_ifaces/`:
 
-- **msgs_ifaces:** ChassisCtrl, ChassisIMU, ChassisSensors, SpresenseGNSS, UbloxGNSS
+- **msgs_ifaces:** ChassisCtrl, ChassisIMU, ChassisSensors, SpresenseGNSS, UbloxGNSS, **TelemetryRelay**
 - **action_ifaces:** DesData (navigation goals)
 - **services_ifaces:** SpdLimit (speed limit updates)
 

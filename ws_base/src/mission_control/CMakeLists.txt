@@ -17,7 +17,7 @@ find_package(action_ifaces REQUIRED)
 find_package(msgs_ifaces REQUIRED)
 
 # Mission Control Command Node
-add_executable(mission_command_node src/node_commands.cpp)
+add_executable(mission_command_node src/node_mission_command.cpp)
 ament_target_dependencies(mission_command_node 
   rclcpp 
   rclcpp_action 
@@ -37,20 +37,20 @@ install(TARGETS mission_command_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
-# Base Station Monitoring Display Node
-add_executable(base_monitoring_node src/node_base_monitoring.cpp)
-ament_target_dependencies(base_monitoring_node 
+# Mission Monitoring Node (PC) - Telemetry Relay Subscriber
+add_executable(mission_monitoring_node_pc src/node_mission_monitoring_pc.cpp)
+ament_target_dependencies(mission_monitoring_node_pc 
   rclcpp 
   msgs_ifaces
 )
 
-target_include_directories(base_monitoring_node PUBLIC
+target_include_directories(mission_monitoring_node_pc PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_compile_features(base_monitoring_node PUBLIC c_std_99 cxx_std_17)
+target_compile_features(mission_monitoring_node_pc PUBLIC c_std_99 cxx_std_17)
 
-install(TARGETS base_monitoring_node
+install(TARGETS mission_monitoring_node_pc
   DESTINATION lib/${PROJECT_NAME}
 )
 

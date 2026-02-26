@@ -14,14 +14,13 @@ find_package(msgs_ifaces REQUIRED)
 add_executable(node_rover_monitoring src/node_rover_monitoring.cpp)
 ament_target_dependencies(node_rover_monitoring rclcpp std_msgs msgs_ifaces)
 
+add_executable(mission_monitoring_node_rpi src/node_mission_monitoring_rpi.cpp)
+ament_target_dependencies(mission_monitoring_node_rpi rclcpp std_msgs msgs_ifaces)
+
 # Install executables
 install(TARGETS
   node_rover_monitoring
-  DESTINATION lib/${PROJECT_NAME})
-
-# Install Python scripts
-install(PROGRAMS
-  scripts/domain_relay.py
+  mission_monitoring_node_rpi
   DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)

@@ -37,14 +37,14 @@ screen -S $SESSION -X send-keys "clear && echo -e '\\e[1;36m>>> MISSION COMMAND 
 sleep 0.2
 screen -S $SESSION -X send-keys "ros2 run mission_control mission_command_node" C-m
 
-# Window 1: Monitoring node
+# Window 1: Mission Monitoring node (Domain 4)
 screen -S $SESSION -X screen -t "Mission_Mon"
 sleep 0.3
-screen -S $SESSION -X send-keys "cd $WS && source install/setup.bash && export ROS_DOMAIN_ID=5" C-m
+screen -S $SESSION -X send-keys "cd $WS && source install/setup.bash && export ROS_DOMAIN_ID=4" C-m
 sleep 0.2
-screen -S $SESSION -X send-keys "clear && echo -e '\\e[1;32m>>> MISSION MONITORING (Domain 5) <<<\\e[0m'" C-m
+screen -S $SESSION -X send-keys "clear && echo -e '\\e[1;32m>>> MISSION MONITORING (Domain 4) <<<\\e[0m'" C-m
 sleep 0.2
-screen -S $SESSION -X send-keys "ros2 run mission_control mission_monitoring_node" C-m
+screen -S $SESSION -X send-keys "ros2 run mission_control mission_monitoring_node_pc" C-m
 
 ok "Nodes launched"
 

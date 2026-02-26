@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Multi-Domain Rover Monitoring Launch
-- Domain 5: Subscribes to rover control topics
-- Domain 4: Publishes aggregated monitoring status
+Dual Monitor Node Launch - Telemetry Relay Architecture
+- Mission Monitoring Node (RPi): Aggregates all Domain 5 telemetry and publishes unified relay
+- Published topic: /tpc_telemetry_relay (Domain 5)
+- Consumed by: mission_monitoring_node_pc on base station
 """
 
 import os
@@ -13,34 +14,30 @@ from launch.substitutions import LaunchConfiguration
 
 def generate_launch_description():
     
-    # Rover monitoring node - runs in Domain 5
-    # Subscribes to all Domain 5 rover topics
-    rover_monitoring_node = Node(
+    # Mission monitoring node (RPi) - runs in Domain 5
+    # Subscribes to all Domain 5 rover topics and publishes aggregated telemetry relay
+    mission_monitoring_node_rpi = Node(
+        package='pkg_rover_monitoring',
+        executable='mission_monitoring_node_rpi',
+        name='mission_monitoring_node_rpi',
+        output='screen',
+        parameters=[],
+        # This node runs in Domain 5 to subscribe to all rover topics
+        # and publishes TelemetryRelay to /tpc_telemetry_relay
+        environment={'ROS_DOMAIN_ID': '5'}
+    )
+    
+    # CSV data logger (optional) - for local data recording
+    csv_logger_node = Node(
         package='pkg_rover_monitoring',
         executable='node_rover_monitoring',
         name='node_rover_monitoring',
         output='screen',
         parameters=[],
-        # This node runs in Domain 5 to subscribe to rover topics
-        # and publishes RoverStatus also in Domain 5
         environment={'ROS_DOMAIN_ID': '5'}
     )
     
-    # Domain bridge: republish /tpc_rover_status from Domain 5 to Domain 4
-    # This way base station can subscribe in Domain 4 without seeing Domain 5
-    domain_bridge_node = Node(
-        package='domain_bridge',
-        executable='domain_bridge',
-        name='domain_bridge_monitoring',
-        output='screen',
-        parameters=[{
-            'from_domain': 5,
-            'to_domain': 4,
-            'topics': ['/tpc_rover_status']
-        }]
-    )
-    
     return LaunchDescription([
-        rover_monitoring_node,
-        domain_bridge_node,
+        mission_monitoring_node_rpi,
+        csv_logger_node,
     ])

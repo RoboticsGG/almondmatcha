@@ -7,7 +7,6 @@
 #include "msgs_ifaces/msg/chassis_ctrl.hpp"
 #include "msgs_ifaces/msg/chassis_sensors.hpp"
 #include "msgs_ifaces/msg/chassis_imu.hpp"
-#include "msgs_ifaces/msg/rover_status.hpp"
 #include <fstream>
 #include <chrono>
 #include <ctime>
@@ -74,18 +73,7 @@ public:
             std::bind(&NodeRoverMonitoring::pub_rovercontrol_callback, this, std::placeholders::_1)
         );
 
-        // Publisher for aggregated status to base station (Domain 4)
-        pub_rover_status_ = this->create_publisher<msgs_ifaces::msg::RoverStatus>(
-            "/tpc_rover_status", 10
-        );
-
-        // Timer for publishing aggregated status (1 Hz)
-        timer_ = this->create_wall_timer(
-            std::chrono::milliseconds(1000), 
-            std::bind(&NodeRoverMonitoring::timer_callback, this)
-        );
-
-        RCLCPP_INFO(this->get_logger(), "=== Rover Monitoring Node Initialized ===");
+        RCLCPP_INFO(this->get_logger(), "=== CSV Data Logger Node Initialized ===");
         RCLCPP_INFO(this->get_logger(), "Event-driven CSV logging to: %s", log_dir_.c_str());
         RCLCPP_INFO(this->get_logger(), "Per-topic CSVs at full rate:");
         RCLCPP_INFO(this->get_logger(), "  - rtk_gnss.csv (~10 Hz)");
@@ -165,9 +153,6 @@ private:
     std::ofstream csv_mission_state_;
     std::string log_dir_;
     
-    rclcpp::Publisher<msgs_ifaces::msg::RoverStatus>::SharedPtr pub_rover_status_;
-    rclcpp::TimerBase::SharedPtr timer_;
-
     // Subscriptions
     rclcpp::Subscription<msgs_ifaces::msg::ChassisSensors>::SharedPtr sub_chassis_sensors_;
     rclcpp::Subscription<msgs_ifaces::msg::ChassisIMU>::SharedPtr sub_chassis_imu_;
@@ -469,29 +454,6 @@ private:
                            << static_cast<int>(msg->bdr_msg) << "\n";
             csv_chassis_cmd_.flush();
         }
-    }
-    
-    void timer_callback() {
-        // Publish aggregated status for base station (relayed to Domain 4)
-        auto status_msg = msgs_ifaces::msg::RoverStatus();
-        status_msg.mission_active = cc_rcon_;
-        status_msg.distance_remaining = dis_remain_;
-        status_msg.current_latitude = current_lat_;
-        status_msg.current_longitude = current_long_;
-        status_msg.destination_latitude = des_lat_;
-        status_msg.destination_longitude = des_long_;
-        status_msg.rtk_latitude = rtk_latitude_;
-        status_msg.rtk_longitude = rtk_longitude_;
-        status_msg.rtk_altitude = rtk_altitude_;
-        status_msg.rtk_fix_quality = rtk_fix_quality_;
-        status_msg.rtk_centimeter_error = rtk_centimeter_error_;
-        status_msg.rtk_satellites = rtk_satellites_;
-        status_msg.fdr_msg = fdr_msg_;
-        status_msg.ro_ctrl_msg = ro_ctrl_msg_;
-        status_msg.spd_msg = spd_msg_;
-        status_msg.bdr_msg = bdr_msg_;
-        
-        pub_rover_status_->publish(status_msg);
     }
 };
 

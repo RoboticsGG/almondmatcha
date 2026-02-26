@@ -72,18 +72,19 @@ tmux send-keys -t $SESSION_NAME:0.5 "export ROS_DOMAIN_ID=5" C-m
 tmux send-keys -t $SESSION_NAME:0.5 "clear && echo -e '\\e[1;31m>>> [6/8] CHASSIS SENSORS <<<\\e[0m' && sleep 1" C-m
 tmux send-keys -t $SESSION_NAME:0.5 "ros2 run pkg_chassis_sensors node_chassis_sensors" C-m
 
-# Pane 6 (second-bottom-right): Rover Monitoring (CSV Logger)
-tmux select-pane -t 6 -T "Rover_Monitoring"
+# Pane 6 (second-bottom-right): Mission Monitoring (Telemetry Relay Publisher)
+tmux select-pane -t 6 -T "Mission_Monitor_RPi"
 tmux send-keys -t $SESSION_NAME:0.6 "cd ~/almondmatcha/ws_rpi && source install/setup.bash" C-m
 tmux send-keys -t $SESSION_NAME:0.6 "export ROS_DOMAIN_ID=5" C-m
-tmux send-keys -t $SESSION_NAME:0.6 "clear && echo -e '\\e[1;93m>>> [7/8] ROVER MONITORING (CSV LOGGER) <<<\\e[0m' && sleep 1" C-m
-tmux send-keys -t $SESSION_NAME:0.6 "ros2 run pkg_rover_monitoring node_rover_monitoring" C-m
+tmux send-keys -t $SESSION_NAME:0.6 "clear && echo -e '\\e[1;93m>>> [7/8] MISSION MONITORING (TELEMETRY RELAY) <<<\\e[0m' && sleep 1" C-m
+tmux send-keys -t $SESSION_NAME:0.6 "ros2 run pkg_rover_monitoring mission_monitoring_node_rpi" C-m
 
-# Pane 7 (bottom-right): Domain Relay (5→4)
-tmux select-pane -t 7 -T "Domain_Relay"
+# Pane 7 (bottom-right): CSV Data Logger
+tmux select-pane -t 7 -T "CSV_Logger"
 tmux send-keys -t $SESSION_NAME:0.7 "cd ~/almondmatcha/ws_rpi && source install/setup.bash" C-m
-tmux send-keys -t $SESSION_NAME:0.7 "clear && echo -e '\\e[1;96m>>> [8/8] DOMAIN RELAY (5→4) <<<\\e[0m' && sleep 1" C-m
-tmux send-keys -t $SESSION_NAME:0.7 "python3 install/pkg_rover_monitoring/lib/pkg_rover_monitoring/domain_relay.py" C-m
+tmux send-keys -t $SESSION_NAME:0.7 "export ROS_DOMAIN_ID=5" C-m
+tmux send-keys -t $SESSION_NAME:0.7 "clear && echo -e '\\e[1;96m>>> [8/8] CSV DATA LOGGER <<<\\e[0m' && sleep 1" C-m
+tmux send-keys -t $SESSION_NAME:0.7 "ros2 run pkg_rover_monitoring node_rover_monitoring" C-m
 
 # Focus on monitoring pane and attach
 tmux select-pane -t 6

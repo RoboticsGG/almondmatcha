@@ -1,7 +1,7 @@
 #!/bin/bash
-# Launch Rover Monitoring with Domain Bridge
-# - Domain 5: node_rover_monitoring + node_gnss_ublox (subscribe to rover topics, publish status)
-# - Domain 4: domain_relay.py (relay status to base station)
+# Launch Rover Monitoring with Telemetry Relay
+# - Domain 5: mission_monitoring_node_rpi + node_gnss_ublox (subscribe to rover topics, publish telemetry relay)
+# - Base station subscribes to /tpc_telemetry_relay on Domain 5
 
 SESSION_NAME="rover_monitoring"
 
@@ -32,21 +32,21 @@ tmux send-keys -t $SESSION_NAME:0.0 "export ROS_DOMAIN_ID=5" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "clear && echo -e '\\e[1;36m>>> UBLOX RTK GNSS (Domain 5) <<<\\e[0m' && sleep 1" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "ros2 run pkg_gnss_navigation node_gnss_ublox" C-m
 
-# Pane 1 (bottom-left): Rover Monitoring
-tmux select-pane -t 1 -T "Rover_Monitoring"
+# Pane 1 (bottom-left): Mission Monitoring (Telemetry Relay Publisher)
+tmux select-pane -t 1 -T "Mission_Monitor_RPi"
 tmux send-keys -t $SESSION_NAME:0.1 "cd ~/almondmatcha/ws_rpi && source install/setup.bash" C-m
 tmux send-keys -t $SESSION_NAME:0.1 "export ROS_DOMAIN_ID=5" C-m
-tmux send-keys -t $SESSION_NAME:0.1 "clear && echo -e '\\e[1;32m>>> ROVER MONITORING (Domain 5) <<<\\e[0m' && sleep 2" C-m
-tmux send-keys -t $SESSION_NAME:0.1 "ros2 run pkg_rover_monitoring node_rover_monitoring" C-m
+tmux send-keys -t $SESSION_NAME:0.1 "clear && echo -e '\\e[1;32m>>> MISSION MONITORING (Domain 5 - Telemetry Relay) <<<\\e[0m' && sleep 2" C-m
+tmux send-keys -t $SESSION_NAME:0.1 "ros2 run pkg_rover_monitoring mission_monitoring_node_rpi" C-m
 
-# Pane 2 (right): Domain Relay (5→4)
-tmux select-pane -t 2 -T "Domain_Relay_5to4"
+# Pane 2 (right): CSV Data Logger
+tmux select-pane -t 2 -T "CSV_Logger"
 tmux send-keys -t $SESSION_NAME:0.2 "cd ~/almondmatcha/ws_rpi && source install/setup.bash" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "clear && echo -e '\\e[1;33m>>> DOMAIN RELAY (5→4) <<<\\e[0m'" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "echo 'Waiting for node_rover_monitoring to start...'" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "sleep 5" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "echo 'Starting domain bridge...'" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "python3 install/pkg_rover_monitoring/lib/pkg_rover_monitoring/domain_relay.py" C-m
+tmux send-keys -t $SESSION_NAME:0.2 "export ROS_DOMAIN_ID=5" C-m
+tmux send-keys -t $SESSION_NAME:0.2 "clear && echo -e '\\e[1;33m>>> CSV DATA LOGGER (Domain 5) <<<\\e[0m'" C-m
+tmux send-keys -t $SESSION_NAME:0.2 "echo 'Waiting for other nodes to start...'" C-m
+tmux send-keys -t $SESSION_NAME:0.2 "sleep 3" C-m
+tmux send-keys -t $SESSION_NAME:0.2 "ros2 run pkg_rover_monitoring node_rover_monitoring" C-m
 
 # Focus on top-left pane and attach
 tmux select-pane -t 0

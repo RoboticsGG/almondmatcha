@@ -15,8 +15,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ChassisCtrl.msg"
   "msg/ChassisIMU.msg"
   "msg/ChassisSensors.msg"
-  "msg/RoverStatus.msg"
   "msg/SpresenseGNSS.msg"
+  "msg/TelemetryRelay.msg"
   "msg/UbloxGNSS.msg"
   DEPENDENCIES std_msgs
 )

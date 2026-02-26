@@ -75,43 +75,59 @@ Almondmatcha rover system architecture: distributed heterogeneous computing with
 
 ### ROS2 Multi-Domain Strategy
 
-**Domain 5 (Control Network):** Network-wide communication (10 participants)
-- All control systems: ws_rpi (5 nodes), ws_base (2 nodes), ws_jetson (1 node), STM32 (2 nodes)
+**Domain 5 (Control Network):** Network-wide, 10 participants
+- All control systems: ws_rpi (7 nodes), ws_base (1 command node), ws_jetson (1 node), STM32 (2 nodes)
 - Low-frequency control messages optimized for STM32 memory constraints
 - Native action/service support across all systems
 
-**Domain 6 (Vision Processing):** Jetson localhost only (2 participants)
+**Domain 4 (Telemetry):** Base + Jetson, 2 participants
+- `mission_monitoring_node_pc` (Base): displays aggregated telemetry relay, no D5 participation
+- `node_rover_local_monitoring` (Jetson): logs TelemetryRelay CSV at 5 Hz, future DB backend
+
+**Domain 6 (Vision Processing):** Jetson localhost only, 2 participants
 - camera_stream, lane_detection nodes
 - High-bandwidth RGB/Depth streams (30 FPS, 1280×720) isolated from network
 - Invisible to STM32 boards
 
-**Cross-Domain Bridge:** `steering_control` node subscribes to Domain 6 (`/tpc_rover_nav_lane`) and publishes to Domain 5 (`/tpc_rover_fmctl`) using native ROS2 multi-domain subscription.
+**Cross-domain bridges:** `steering_control_domain5` (D6→D5 for vision), `mission_monitoring_node_rpi` (D5→D4 for telemetry relay + CSV logging).
 
-**Rationale:** Domain isolation reduces STM32 discovery overhead (10 vs 12+ participants), enables scalable vision expansion, optimizes network bandwidth, and maintains 60% free RAM on STM32 boards.
+**Rationale:** Domain isolation reduces STM32 discovery overhead (10 vs 13+ participants), enables scalable vision expansion, and completely isolates monitoring traffic from the control network.
 
 ### Node Distribution
 
-**Raspberry Pi 4 (192.168.1.1 - Domain 5):**
+**Raspberry Pi 4 (192.168.1.1 — Domain 5, 6 nodes):**
 ```
-├── node_chassis_controller - Motor command coordination
-├── node_chassis_imu - IMU data logging
-├── node_chassis_sensors - Encoder/power data logging
-├── node_gnss_spresense - Standard GPS position processing
-├── node_gnss_ublox - RTK GNSS with cm-level accuracy
+├── node_chassis_controller     - Motor command coordination (D5 sub/pub)
+├── node_chassis_imu            - IMU data relay (D5 sub)
+├── node_chassis_sensors        - Encoder/power relay (D5 sub)
+├── node_gnss_spresense         - Standard GPS position processing (D5 pub)
+├── node_gnss_ublox             - RTK GNSS centimeter-level processing (D5 pub)
+├── node_gnss_mission_monitor   - Waypoint navigation state machine (D5)
+└── mission_monitoring_node_rpi - Aggregates 10 D5 topics:
+                                    Sub: D5 (all sensor/command topics)
+                                    Pub: D4 /tpc_telemetry_relay (5 Hz)
+                                    CSV: 6 per-topic files, native rates (4-50 Hz)
+```
 ├── node_gnss_mission_monitor - Waypoint navigation
 └── [FUTURE] node_ekf_fusion - Multi-sensor fusion
 ```
 
-**Jetson Orin Nano (192.168.1.5 - Multi-Domain):**
+**Jetson Orin Nano (192.168.1.5 — Multi-Domain):**
 ```
-Domain 6 (Vision Processing - localhost):
-├── camera_stream - D415 RGB/depth streaming @ 30 FPS
-└── lane_detection - Lane feature extraction @ 30 FPS
+Domain 6 (Vision Processing — localhost):
+├── camera_stream       - D415 RGB/depth streaming @ 30 FPS
+└── lane_detection      - Lane feature extraction @ 30 FPS
 
 Domain 5 (Control Network):
-└── steering_control - PID steering control @ 50 Hz
-    ├── Subscribes: tpc_rover_nav_lane (Domain 6)
-    └── Publishes: tpc_rover_fmctl (Domain 5)
+└── steering_control_domain5 - PID steering control @ 50 Hz
+    ├── Sub: tpc_rover_nav_lane (Domain 6)
+    └── Pub: tpc_rover_fmctl (Domain 5)
+
+Domain 4 (Telemetry):
+└── node_rover_local_monitoring  - Telemetry CSV logger
+    ├── Sub: /tpc_telemetry_relay (Domain 4, 5 Hz)
+    └── CSV: telemetry_unified + categorical files in ws_jetson/runs/
+    (Future: DB backend replacing CSV)
 ```
 
 **STM32 Chassis (192.168.1.2):**
@@ -244,18 +260,20 @@ Camera (30 FPS) → Lane Detection (30 FPS) → Steering Control (50 Hz)
 
 ### Data Logging
 
-**Location:** `~/almondmatcha/runs/logs/` (centralized on RPi)
+**Primary — RPi** (`mission_monitoring_node_rpi`, ws_rpi/runs/run_NNN_YYYYMMDD_HHMMSS/):
+- `rtk_gnss.csv` — RTK position, ~10 Hz
+- `spresense_gnss.csv` — Spresense GPS, ~10 Hz
+- `chassis_imu.csv` — Accel/gyro, ~10 Hz
+- `chassis_sensors.csv` — Encoders, voltage, current, ~4 Hz
+- `chassis_cmd.csv` — Motor commands, ~50 Hz
+- `mission_state.csv` — Event-driven mission status
 
-**CSV Logging Nodes:**
-- `node_chassis_imu`: `chassis_imu_YYYYMMDD_HHMMSS.csv`
-- `node_chassis_sensors`: `chassis_sensors_YYYYMMDD_HHMMSS.csv`
-- `node_gnss_spresense`: `gnss_spresense_YYYYMMDD_HHMMSS.csv`
-- `node_gnss_ublox`: `gnss_ublox_YYYYMMDD_HHMMSS.csv`
-- `mission_monitoring_node`: `rtk_monitoring_YYYYMMDD_HHMMSS.csv`
-- `lane_detection_node`: `lane_pub_log.csv`
-- `steering_control_node`: `rover_ctl_log_ver_3.csv`
+**Secondary — Jetson** (`node_rover_local_monitoring`, ws_jetson/runs/run_NNN_YYYYMMDD_HHMMSS/):
+- `telemetry_unified.csv` — All fields, 5 Hz
+- `rtk_gnss.csv`, `spresense_gnss.csv`, `chassis_data.csv`, `mission_state.csv` — 5 Hz
+- Future: replaces CSV with SQLite/PostgreSQL backend
 
-**Rate:** 1 Hz (to minimize I/O overhead)
+See [CSV_LOGGING.md](CSV_LOGGING.md) for full schema and analysis guidance.
 
 ### Configuration Storage
 
