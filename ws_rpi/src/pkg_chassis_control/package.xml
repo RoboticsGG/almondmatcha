@@ -4,7 +4,7 @@
   <name>pkg_chassis_control</name>
   <version>0.0.0</version>
   <description>Chassis Control Package - Low-level motor control and domain bridging</description>
-  <maintainer email="viewjirapat@gmail.com">yupi</maintainer>
+  <maintainer email="viewjirapat@gmail.com">curry</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

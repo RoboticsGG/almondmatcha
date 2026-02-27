@@ -30,7 +30,7 @@ import datetime
 
 set_custom_log_dir = SetEnvironmentVariable(
     name='ROS_LOG_DIR',
-    value=f'/home/yupi/almondmatcha/runs/ros_logs/{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}'
+    value=f'/home/curry/almondmatcha/runs/ros_logs/{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}'
 )
 
 def generate_launch_description():

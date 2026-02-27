@@ -126,7 +126,7 @@ Wait for all nodes to be ready (30 FPS messages flowing).
 
 ### Step 3: Launch ws_rpi Control System
 
-**On Raspberry Pi:**
+**On Raspberry Pi** (`ssh curry@192.168.1.1`):
 ```bash
 cd ~/almondmatcha/ws_rpi
 source install/setup.bash

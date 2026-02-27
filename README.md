@@ -22,15 +22,15 @@ Distributed ROS2 outdoor autonomous rover with vision-based lane following, cent
 
 ## Hardware
 
-| Component | Hardware | IP | Function |
-|-----------|----------|---------|---------|
-| **Main** | Raspberry Pi 4B | 192.168.1.1 | Sensor fusion, mission control |
-| **Vision** | Jetson Orin Nano 8GB | 192.168.1.5 | Lane detection, navigation |
-| **Chassis** | NUCLEO-F767ZI + IKS4A1 | 192.168.1.2 | Motor control, IMU |
-| **Sensors** | NUCLEO-F767ZI + SimpleRTK2b | 192.168.1.6 | Encoders, power monitoring |
-| **Base** | Linux PC | Variable | Ground station telemetry |
-| **GNSS** | Spresense | USB | Standard GPS |
-| **RTK GNSS** | u-blox SimpleRTK2b | USB | Centimeter-level positioning |
+| Component | Hardware | IP | Username | Function |
+|-----------|----------|---------|---------|----------|
+| **Main** | Raspberry Pi 4B | 192.168.1.1 | `curry` | Sensor fusion, mission control |
+| **Vision** | Jetson Orin Nano 8GB | 192.168.1.5 | `yupi` | Lane detection, navigation |
+| **Chassis** | NUCLEO-F767ZI + IKS4A1 | 192.168.1.2 | — | Motor control, IMU |
+| **Sensors** | NUCLEO-F767ZI + SimpleRTK2b | 192.168.1.6 | — | Encoders, power monitoring |
+| **Base** | Linux PC | Variable | `yupi` | Ground station telemetry |
+| **GNSS** | Spresense | USB | — | Standard GPS |
+| **RTK GNSS** | u-blox SimpleRTK2b | USB | — | Centimeter-level positioning |
 
 ## Network Architecture
 
@@ -272,6 +272,7 @@ ping 192.168.1.1 && ping 192.168.1.5 && ping 192.168.1.2 && ping 192.168.1.6
 # 1. Power on STM32 boards → wait for "Discovery complete" (~10s)
 
 # 2. Launch Raspberry Pi (Domain 5 - wait 3-5s)
+ssh curry@192.168.1.1
 cd ~/almondmatcha/ws_rpi
 export ROS_DOMAIN_ID=5
 ./launch_rover_tmux.sh

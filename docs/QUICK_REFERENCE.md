@@ -43,7 +43,7 @@ Monitor serial consoles (115200 baud) for confirmation
 
 ### 3. ws_rpi (10-15s)
 ```bash
-# On RPi or via SSH (192.168.1.1)
+# On RPi or via SSH: ssh curry@192.168.1.1
 cd ~/almondmatcha/ws_rpi
 ./launch_rover_tmux.sh
 # Wait 3-5 seconds before next system
@@ -51,7 +51,7 @@ cd ~/almondmatcha/ws_rpi
 
 ### 4. ws_jetson (15-20s)
 ```bash
-# On Jetson or via SSH (192.168.1.5)
+# On Jetson or via SSH: ssh yupi@192.168.1.5
 ssh yupi@192.168.1.5
 cd ~/almondmatcha/ws_jetson
 ./launch_headless.sh  # or ./launch_gui.sh
@@ -60,7 +60,7 @@ cd ~/almondmatcha/ws_jetson
 
 ### 5. ws_base (20-25s)
 ```bash
-# On base PC (192.168.1.10 or similar)
+# On base PC (192.168.1.10, username: yupi)
 cd ~/almondmatcha/ws_base
 ./launch_base_tmux.sh
 # System fully operational

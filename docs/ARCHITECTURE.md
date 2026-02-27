@@ -195,13 +195,13 @@ flowchart LR
 
 ### Network Topology
 
-| Device | IP | Domains | Role |
-|--------|-----|---------|------|
-| Raspberry Pi | 192.168.1.1 | D5 (7 nodes) + D4 (relay) | Coordination, sensing, mission |
-| Jetson Orin | 192.168.1.5 | D6 (vision) + D5 (control) + D4 (logging) | Vision processing, kinematic control |
-| Base Station | 192.168.1.10 | D5 (command) + D4 (display) | Mission command, telemetry monitoring |
-| STM32 Chassis | 192.168.1.2 | D5 only | Motor control, IMU |
-| STM32 Sensors | 192.168.1.6 | D5 only | GNSS, encoders, power |
+| Device | IP | SSH | Domains | Role |
+|--------|-----|-----|---------|------|
+| Raspberry Pi | 192.168.1.1 | `curry@192.168.1.1` | D5 (7 nodes) + D4 (relay) | Coordination, sensing, mission |
+| Jetson Orin | 192.168.1.5 | `yupi@192.168.1.5` | D6 (vision) + D5 (control) + D4 (logging) | Vision processing, kinematic control |
+| Base Station | 192.168.1.10 | `yupi@192.168.1.10` | D5 (command) + D4 (display) | Mission command, telemetry monitoring |
+| STM32 Chassis | 192.168.1.2 | — (mROS2) | D5 only | Motor control, IMU |
+| STM32 Sensors | 192.168.1.6 | — (mROS2) | D5 only | GNSS, encoders, power |
 
 **DDS:** Fast-RTPS on Linux; embeddedRTPS (mROS2) on STM32. Multicast discovery on 239.255.0.1, UDP 7400–7500. Critical commands use Reliable QoS; high-frequency sensor streams use Best-Effort.
 
