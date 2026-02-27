@@ -1,3 +1,20 @@
+/**
+ * node_rover_monitoring.cpp
+ * Workspace:  ws_rpi  |  Package: pkg_rover_monitoring  |  Domain: 5
+ *
+ * Purpose:
+ *   Lightweight local monitoring node on RPi.
+ *   Subscribes to rover sensor/state topics and logs them to CSV files.
+ *   Does NOT relay to Domain 4 (that is done by node_mission_monitoring_rpi).
+ *
+ * Subscribed Topics (Domain 5):
+ *   /tpc_gnss_spresense, /tpc_gnss_ublox, /tpc_chassis_ctrl,
+ *   /tpc_chassis_imu, /tpc_chassis_sensors
+ *
+ * Author: AlmondMatcha Rover Team
+ * Date:   February 27, 2026
+ */
+
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/float64.hpp"

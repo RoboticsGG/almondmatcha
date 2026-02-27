@@ -149,7 +149,7 @@ ros2 node list | wc -l  # Should show 12
 # Monitor key topics
 ros2 topic hz /tpc_rover_d415_rgb     # ~30 Hz (vision)
 ros2 topic hz /tpc_chassis_imu        # ~10 Hz (STM32)
-ros2 topic hz /tpc_rover_fmctl        # ~50 Hz (steering)
+ros2 topic hz /tpc_rover_ctrl_cmd        # ~50 Hz (steering)
 
 # STM32 serial output (115200 baud)
 # Expected: "Discovery wait complete - initializing sensors"

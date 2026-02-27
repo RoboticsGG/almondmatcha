@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 """
+lane_detection_node.py
+Workspace:  ws_jetson  |  Package: vision_navigation_pkg  |  Domain: 6
+
 Visual Navigation Image Processing Node
 
 Purpose:

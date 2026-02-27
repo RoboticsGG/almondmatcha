@@ -1,7 +1,7 @@
 #!/bin/bash
 # Multi-Domain Vision Navigation Launcher (Headless Mode)
 # Domain 6: Vision processing (camera_stream, lane_detection)
-# Domain 5: Control interface (steering_control_domain5)
+# Domain 5: Control interface (rover_kinematic_control)
 
 source ~/almondmatcha/ws_jetson/install/setup.bash
 

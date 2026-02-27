@@ -1,10 +1,13 @@
 """
+config.py
+Workspace:  ws_jetson  |  Package: vision_navigation_pkg
+
 Configuration Module - Vision Navigation System
 
 Centralizes all system parameters and tunable constants.
 
-Author: Vision Navigation System
-Date: November 4, 2025
+Author: AlmondMatcha Rover Team
+Date: February 27, 2026
 """
 
 
@@ -194,7 +197,7 @@ class TopicConfig:
     LANE_PARAMETERS = "tpc_rover_nav_lane"    # [theta, b, detected]
     
     # Control topics
-    STEERING_COMMAND = "tpc_rover_fmctl"      # [steer_angle, detected]
+    ROVER_CTRL_CMD = "tpc_rover_ctrl_cmd"   # [steer_angle, speed_cmd, detected]
     
     @classmethod
     def get_all_topics(cls):
@@ -203,7 +206,7 @@ class TopicConfig:
             "rgb": cls.RGB_STREAM,
             "depth": cls.DEPTH_STREAM,
             "lane": cls.LANE_PARAMETERS,
-            "steering": cls.STEERING_COMMAND
+            "rover_ctrl_cmd": cls.ROVER_CTRL_CMD
         }
 
 

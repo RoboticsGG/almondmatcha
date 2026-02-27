@@ -1,3 +1,19 @@
+/**
+ * node_chassis_sensors.cpp
+ * Workspace:  ws_rpi  |  Package: pkg_chassis_sensors  |  Domain: 5
+ *
+ * Purpose:
+ *   Subscriber-only monitoring node for STM32 chassis sensor data.
+ *   Heartbeat-logs that the topic is alive. CSV logging is delegated
+ *   to node_mission_monitoring_rpi to preserve single-writer discipline.
+ *
+ * Subscribed Topics:
+ *   /tpc_chassis_sensors (msgs_ifaces/ChassisSensors) - encoders, voltage, current from STM32 at 4 Hz
+ *
+ * Author: AlmondMatcha Rover Team
+ * Date:   February 27, 2026
+ */
+
 #include <memory>
 #include "rclcpp/rclcpp.hpp"
 #include "msgs_ifaces/msg/chassis_sensors.hpp"

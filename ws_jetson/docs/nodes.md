@@ -73,7 +73,7 @@ lane_detection --ros-args -p show_window:=True
 - `/tpc_rover_nav_lane` (std_msgs/Float32MultiArray): Lane parameters [theta, b, detected]
 
 **Published Topics**:
-- `/tpc_rover_fmctl` (std_msgs/Float32MultiArray): [steer_angle, detected]
+- `/tpc_rover_ctrl_cmd` (std_msgs/Float32MultiArray): [steer_angle, speed_cmd, detected]
 
 **Parameters**:
 - `k_e1` (float, default: 1.0): Weight on heading error (theta)
@@ -83,9 +83,11 @@ lane_detection --ros-args -p show_window:=True
 - `k_d` (float, default: 0.0): Derivative gain
 - `ema_alpha` (float, default: 0.05): Exponential moving average smoothing factor
 - `steer_max_deg` (float, default: 60.0): Maximum steering angle saturation (±degrees)
-- `steer_when_lost` (float, default: 0.0): Steering command when lane not detected
+- `speed_ref` (float, default: 50.0): Base speed command when lane is detected (0–100% duty cycle)
+- `speed_lost_ratio` (float, default: 0.5): Speed multiplier when lane is temporarily lost
+- `detection_timeout_sec` (float, default: 10.0): Seconds before speed drops to 0 on sustained lane loss
 
-**CSV Logging**: `logs/rover_ctl_log_ver_3.csv` (time_sec, theta_ema, b_ema, u, e_sum)
+**CSV Logging**: `logs/ws_jetson_kinematic_ctrl_TIMESTAMP.csv` (time_sec, theta_ema, b_ema, pid_u, e_sum, steer_angle, speed_cmd, detected)
 
 **Run individually**:
 ```bash
@@ -115,9 +117,9 @@ ros2 topic hz /tpc_rover_d415_rgb
 ros2 topic echo /tpc_rover_nav_lane
 ```
 
-**Monitor Steering Commands**:
+**Monitor Control Commands**:
 ```bash
-ros2 topic hz /tpc_rover_fmctl
+ros2 topic hz /tpc_rover_ctrl_cmd
 ```
 
 **View All Topics**:

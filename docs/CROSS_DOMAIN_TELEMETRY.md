@@ -28,7 +28,7 @@ The telemetry relay system uses cross-domain architecture to optimize STM32 memo
 │  │   • /tpc_gnss_spresense                      │            │
 │  │   • /tpc_gnss_ublox                          │            │
 │  │   • /tpc_rover_dest_coordinate               │            │
-│  │   • /tpc_rover_fmctl                         │            │
+│  │   • /tpc_rover_ctrl_cmd                         │            │
 │  │   • /tpc_rover_nav_lane                      │            │
 │  └──────────────────┬───────────────────────────┘            │
 │                     │                                         │

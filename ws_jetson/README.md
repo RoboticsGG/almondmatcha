@@ -53,9 +53,9 @@ This architecture reduces STM32 discovery overhead and enables scalable vision/A
 |------|--------|----------|------|
 | `camera_stream` | 6 | D415 RGB/depth streaming | 30 FPS |
 | `lane_detection` | 6 | Lane parameter extraction | 25-30 FPS |
-| `steering_control_domain5` | 5 | PID steering control | 50 Hz |
+| `rover_kinematic_control` | 5 | Kinematic control (steering + speed) | 50 Hz |
 
-The steering control node bridges domains: subscribes to Domain 6 vision data, publishes Domain 5 control commands.
+The kinematic control node bridges domains: subscribes to Domain 6 vision data, publishes Domain 5 control commands.
 
 ## Building
 
@@ -200,16 +200,16 @@ ros2 topic hz /tpc_rover_nav_lane  # Should be ~30 Hz
 **Check Domain 5 (control):**
 ```bash
 export ROS_DOMAIN_ID=5
-ros2 node list  # Should show: /steering_control_domain5, /chassis_controller, etc.
+ros2 node list  # Should show: /rover_kinematic_control, /chassis_controller, etc.
 ros2 topic list  # Should NOT show camera topics
-ros2 topic hz /tpc_rover_fmctl  # Should be ~50 Hz
+ros2 topic hz /tpc_rover_ctrl_cmd  # Should be ~50 Hz
 ```
 
 **Verify cross-domain communication:**
 ```bash
 # Both should show data flowing
 ros2 topic echo /tpc_rover_nav_lane  # Domain 6
-ros2 topic echo /tpc_rover_fmctl     # Domain 5
+ros2 topic echo /tpc_rover_ctrl_cmd     # Domain 5
 ```
 
 ## Troubleshooting
@@ -228,7 +228,7 @@ ros2 topic info /tpc_rover_nav_lane -v
 ```bash
 # Check Domain 5 publisher
 export ROS_DOMAIN_ID=5
-ros2 topic info /tpc_rover_fmctl -v
+ros2 topic info /tpc_rover_ctrl_cmd -v
 ```
 
 **Camera not detected:**
@@ -267,7 +267,7 @@ ros2 daemon stop && ros2 daemon start
 - `tpc_rover_nav_lane` - Lane parameters [theta, b, detected] (30 FPS)
 
 **Domain 5 (network-wide):**
-- `tpc_rover_fmctl` - Steering commands [angle, detected] (50 Hz)
+- `tpc_rover_ctrl_cmd` - Kinematic control commands [steer_angle, speed_cmd, detected] (50 Hz)
 
 Steering commands are consumed by `node_chassis_controller` (ws_rpi) and converted to motor commands for STM32.
 

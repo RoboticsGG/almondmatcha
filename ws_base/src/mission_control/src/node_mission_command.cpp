@@ -1,23 +1,24 @@
 /*
- * Mission Control Command Node
- * 
+ * node_mission_command.cpp
+ * Workspace:  ws_base  |  Package: mission_control  |  Domain: 5
+ *
  * Purpose:
  *   Manages rover mission commands including destination navigation and speed limits.
  *   Communicates with the rover via ROS2 actions and services.
- * 
+ *
  * Key Responsibilities:
  *   - Load mission parameters (destination coordinates, speed limit)
  *   - Send navigation goals to the rover
  *   - Monitor goal progress via feedback
  *   - Handle mission cancellation on shutdown
- * 
+ *
  * Topics/Actions/Services:
- *   Action Client: /des_data (DesData action)
- *   Service Client: /spd_limit (SpdLimit service)
- *   Parameters: rover_spd, des_lat, des_long
- * 
- * Author: Mission Control System
- * Date: November 4, 2025
+ *   Action Client:  /des_data     (action_ifaces/DesData)
+ *   Service Client: /srv_spd_limit (services_ifaces/SpdLimit) - 0-100% PWM duty cycle
+ *   Parameters:     rover_spd, des_lat, des_long
+ *
+ * Author: AlmondMatcha Rover Team
+ * Date:   February 27, 2026
  */
 
 #include <rclcpp/rclcpp.hpp>

@@ -1,4 +1,7 @@
 """
+control_filters.py
+Workspace:  ws_jetson  |  Package: vision_navigation_pkg
+
 Control System Filters and Utilities
 
 Provides low-pass filters and helper functions for rover control system.
@@ -10,8 +13,8 @@ Classes:
 Functions:
     clamp: Saturate value to min/max bounds
 
-Author: Vision Navigation System
-Date: November 4, 2025
+Author: AlmondMatcha Rover Team
+Date: February 27, 2026
 """
 
 from collections import deque

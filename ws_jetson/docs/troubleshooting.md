@@ -60,23 +60,23 @@ realsense-viewer  # Visual test
 
 ---
 
-## Steering Control Issues
+## Kinematic Control Issues
 
-### Steering Commands Not Received
+### Control Commands Not Received
 
-**Problem**: `/tpc_rover_fmctl` topic empty
+**Problem**: `/tpc_rover_ctrl_cmd` topic empty
 
 **Check system status**:
 ```bash
 ros2 node list
-ros2 topic list | grep fmctl
-ros2 topic info /tpc_rover_fmctl
+ros2 topic list | grep ctrl_cmd
+ros2 topic info /tpc_rover_ctrl_cmd
 ```
 
 **Verify dependencies**:
 1. Camera stream running: `ros2 topic hz /tpc_rover_d415_rgb`
 2. Lane detection running: `ros2 topic hz /tpc_rover_nav_lane`
-3. Steering control running: `ros2 node list | grep steering`
+3. Kinematic control running: `ros2 node list | grep rover_kinematic`
 
 ### Steering Oscillation
 

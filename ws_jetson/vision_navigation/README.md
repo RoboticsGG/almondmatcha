@@ -25,9 +25,9 @@ Camera (D415/Video) → Camera Stream Node → /tpc_rover_d415_rgb
                                            ↓
                      Steering Control Node ← Lane Parameters
                                            ↓
-                                    /tpc_rover_fmctl [steer_angle, detected]
+                                    /tpc_rover_ctrl_cmd [steer_angle, speed_cmd, detected]
                                            ↓
-                                    Steering Actuator
+                                    Chassis Controller (RPi)
 ```
 
 ### Node Descriptions
@@ -80,16 +80,17 @@ Processing Pipeline:
 9. Polyfit lane boundary detection
 10. Theta and b parameter calculation
 
-#### Steering Control Node (steering_control)
+#### Rover Kinematic Control Node (rover_kinematic_control)
 
-Implements closed-loop PID steering control based on lane detection parameters.
+Implements closed-loop PID steering + speed control based on lane detection parameters.
 
 Subscribed Topics:
 - `/tpc_rover_nav_lane` (std_msgs/Float32MultiArray): Lane parameters [theta, b, detected]
 
 Published Topics:
-- `/tpc_rover_fmctl` (std_msgs/Float32MultiArray): [steer_angle, detected]
+- `/tpc_rover_ctrl_cmd` (std_msgs/Float32MultiArray): [steer_angle, speed_cmd, detected]
   - steer_angle: Steering command in degrees (positive = right, negative = left)
+  - speed_cmd: Speed command (0–100% PWM duty cycle)
   - detected: Lane detection status flag
 
 Parameters:
@@ -98,6 +99,9 @@ Parameters:
 - `k_p` (float, default 4.0): Proportional gain
 - `k_i` (float, default 0.0): Integral gain
 - `k_d` (float, default 0.0): Derivative gain
+- `speed_ref` (float, default 50.0): Base speed when lane detected (0–100% duty cycle)
+- `speed_lost_ratio` (float, default 0.5): Speed multiplier when lane temporarily lost
+- `detection_timeout_sec` (float, default 10.0): Seconds before speed drops to 0 on sustained lane loss
 - `ema_alpha` (float, default 0.05): Exponential moving average smoothing (0-1)
 - `steer_max_deg` (float, default 60.0): Maximum steering angle saturation
 - `steer_when_lost` (float, default 0.0): Steering command when lane not detected
@@ -250,9 +254,9 @@ Terminal 3 - Steering control:
 ros2 run vision_navigation steering_control
 ```
 
-Terminal 4 - Monitor steering output:
+Terminal 4 - Monitor control output:
 ```bash
-ros2 topic echo /tpc_rover_fmctl
+ros2 topic echo /tpc_rover_ctrl_cmd
 ```
 
 Or use launch file (automated sequencing):

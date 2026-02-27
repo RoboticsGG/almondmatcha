@@ -1,17 +1,23 @@
+/**
+ * node_mission_monitoring_pc.cpp
+ * Workspace:  ws_base  |  Package: mission_control  |  Domain: 4
+ *
+ * Purpose:
+ *   Telemetry display node on the base station PC.
+ *   Subscribes only to the pre-aggregated TelemetryRelay from the RPi
+ *   (Domain 4). No direct Domain 5 subscriptions — avoids STM32 memory cost.
+ *
+ * Subscribed Topics (Domain 4):
+ *   /tpc_telemetry_relay (msgs_ifaces/TelemetryRelay) - unified rover state at 5 Hz
+ *
+ * Author: AlmondMatcha Rover Team
+ * Date:   February 27, 2026
+ */
+
 #include "rclcpp/rclcpp.hpp"
 #include "msgs_ifaces/msg/telemetry_relay.hpp"
 #include <iomanip>
 
-/**
- * Mission Monitoring Node (Base Station PC)
- * 
- * Subscribes to aggregated telemetry relay from RPi
- * Subscribed topic: /tpc_telemetry_relay (Domain 5)
- * 
- * Architecture: Dual monitor node design for predictability
- * - No direct Domain 5 topic subscriptions (no fallback)
- * - Only receives pre-aggregated data from mission_monitoring_node_rpi
- */
 class MissionMonitoringNodePc : public rclcpp::Node {
 public:
     MissionMonitoringNodePc() : Node("mission_monitoring_node_pc") {

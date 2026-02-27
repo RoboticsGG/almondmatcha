@@ -318,7 +318,7 @@ Last Updated: November 7, 2025
 | `tpc_gnss_mission_active` | node_gnss_mission_monitor | reliable + transient_local | node_chassis_controller, ws_base | Same | Mission status |
 | `tpc_gnss_mission_remain_dist` | node_gnss_mission_monitor | reliable + transient_local | ws_base | Same | Distance remaining |
 | `tpc_rover_dest_coordinate` | ws_base mission_command | reliable + transient_local | node_gnss_mission_monitor | Same | Waypoint coords |
-| `tpc_rover_fmctl` | ws_jetson/ws_base | reliable + transient_local | node_chassis_controller | Same | Vision control |
+| `tpc_rover_ctrl_cmd` | ws_jetson/ws_base | reliable + transient_local | node_chassis_controller | Same | Kinematic control cmd |
 | `/des_data` (action) | ws_base mission_command | reliable (default) | node_gnss_mission_monitor | reliable | Navigation goals |
 | `/srv_spd_limit` (service) | ws_base mission_command | reliable (default) | node_chassis_controller | reliable | Speed limits |
 

@@ -178,7 +178,7 @@ All systems on Domain 5 via Ethernet switch - direct DDS discovery:
 | `tpc_chassis_sensors` | ChassisSensors | GNSS/encoders/power (STM32 → RPi) |
 | `tpc_rover_d415_rgb` | Image | Camera stream (Jetson) |
 | `tpc_rover_nav_lane` | NavLane | Lane parameters (Jetson) |
-| `tpc_rover_fmctl` | RoverCtrl | Steering commands (Jetson) |
+| `tpc_rover_ctrl_cmd` | Float32MultiArray | Kinematic control commands (Jetson) |
 
 ### Commands to Rover (Domain 5)
 

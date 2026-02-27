@@ -89,7 +89,7 @@ Almondmatcha rover system architecture: distributed heterogeneous computing with
 - High-bandwidth RGB/Depth streams (30 FPS, 1280×720) isolated from network
 - Invisible to STM32 boards
 
-**Cross-domain bridges:** `steering_control_domain5` (D6→D5 for vision), `mission_monitoring_node_rpi` (D5→D4 for telemetry relay + CSV logging).
+**Cross-domain bridges:** `rover_kinematic_control` (D6→D5 for vision + kinematic control), `mission_monitoring_node_rpi` (D5→D4 for telemetry relay + CSV logging).
 
 **Rationale:** Domain isolation reduces STM32 discovery overhead (10 vs 13+ participants), enables scalable vision expansion, and completely isolates monitoring traffic from the control network.
 
@@ -119,9 +119,9 @@ Domain 6 (Vision Processing — localhost):
 └── lane_detection      - Lane feature extraction @ 30 FPS
 
 Domain 5 (Control Network):
-└── steering_control_domain5 - PID steering control @ 50 Hz
+└── rover_kinematic_control - Bicycle-model PID: steering + speed @ 50 Hz
     ├── Sub: tpc_rover_nav_lane (Domain 6)
-    └── Pub: tpc_rover_fmctl (Domain 5)
+    └── Pub: tpc_rover_ctrl_cmd [steer_angle, speed_cmd, detected] (Domain 5)
 
 Domain 4 (Telemetry):
 └── node_rover_local_monitoring  - Telemetry CSV logger

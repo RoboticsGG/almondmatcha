@@ -16,7 +16,7 @@ Domain 5 (RPi)
 ├── tpc_gnss_mission_active     ─┤       ├── CSV: 6 per-topic files (native rates)
 ├── tpc_gnss_mission_remain_dist─┤       └── Pub: /tpc_telemetry_relay (D4, 5 Hz)
 ├── tpc_rover_dest_coordinate   ─┤
-├── tpc_rover_fmctl (50 Hz)     ─┤
+├── tpc_rover_ctrl_cmd (50 Hz)     ─┤
 └── tpc_rover_nav_lane (30 Hz)  ─┘
 
 Domain 4 (Jetson)

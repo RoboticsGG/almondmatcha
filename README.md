@@ -69,7 +69,7 @@ graph TB
     end
 
     subgraph D5["Domain 5 — Control Network"]
-        STR["steering_control_domain5<br/>Jetson"]
+        STR["rover_kinematic_control<br/>Jetson"]
         CC["node_chassis_controller<br/>RPi"]
         IMU_N["node_chassis_imu<br/>RPi"]
         SENS_N["node_chassis_sensors<br/>RPi"]
@@ -88,7 +88,7 @@ graph TB
     end
 
     LANE -- "tpc_rover_nav_lane" --> STR
-    STR -- "tpc_rover_fmctl" --> CC
+    STR -- "tpc_rover_ctrl_cmd" --> CC
     CC -- "tpc_chassis_cmd" --> CHD
     CHD -- "tpc_chassis_imu" --> IMU_N
     CHD -- "tpc_chassis_imu" --> MON
@@ -112,15 +112,15 @@ graph TB
 | Domain | Purpose | Network Scope | Participants | Key Characteristics |
 |--------|---------|---------------|--------------|---------------------|
 | **4** | Telemetry | Base + Jetson | **2 nodes:**<br>• mission_monitoring_node_pc (Base)<br>• node_rover_local_monitoring (Jetson) | • Read-only telemetry from /tpc_telemetry_relay<br>• No D5 participation (no STM32 memory cost)<br>• Jetson logs CSV at 5 Hz for future DB migration |
-| **5** | Control Network | All rover systems + base command | **11 nodes:**<br>• RPi: 7 nodes<br>• Base: 1 node (mission_command_node)<br>• Jetson: 1 node (steering_control_domain5)<br>• STM32: 2 nodes | • Bidirectional command/control<br>• Action/service communication<br>• Real-time control loops (50 Hz)<br>• STM32 memory optimized (~60% free RAM) |
-| **6** | Vision Processing | Jetson localhost | **2 nodes:**<br>• camera_stream<br>• lane_detection | • RGB/Depth streams (30 FPS, 1280×720)<br>• Network isolated (not visible from network)<br>• Lane params relayed to D5 via steering_control_domain5 |
+| **5** | Control Network | All rover systems + base command | **11 nodes:**<br>• RPi: 7 nodes<br>• Base: 1 node (mission_command_node)<br>• Jetson: 1 node (rover_kinematic_control)<br>• STM32: 2 nodes | • Bidirectional command/control<br>• Action/service communication<br>• Real-time control loops (50 Hz)<br>• STM32 memory optimized (~60% free RAM) |
+| **6** | Vision Processing | Jetson localhost | **2 nodes:**<br>• camera_stream<br>• lane_detection | • RGB/Depth streams (30 FPS, 1280×720)<br>• Network isolated (not visible from network)<br>• Lane params relayed to D5 via rover_kinematic_control |
 
 **Base station dual-domain:**
 - `mission_command_node` (D5): sends mission goals, calls RPi action/service servers
 - `mission_monitoring_node_pc` (D4): subscribes to `/tpc_telemetry_relay`, displays telemetry
 
 **Cross-domain relay:**
-- Vision to control: `steering_control_domain5` (Jetson) bridges D6 `/tpc_rover_nav_lane` → D5 `/tpc_rover_fmctl`
+- Vision to control: `rover_kinematic_control` (Jetson) bridges D6 `/tpc_rover_nav_lane` → D5 `/tpc_rover_ctrl_cmd`
 - Telemetry relay: `mission_monitoring_node_rpi` (RPi) aggregates 10 D5 topics → D4 `/tpc_telemetry_relay` at 5 Hz
 
 **CSV logging (dual-tier):**
@@ -283,14 +283,14 @@ ros2 node list
 #      node_gnss_spresense, node_gnss_ublox, node_gnss_mission_monitor,
 #      mission_monitoring_node_rpi
 # Base: mission_command_node
-# Jetson: steering_control_domain5
+# Jetson: rover_kinematic_control
 # STM32: chassis_controller, sensors_node
 #
 # Note: Domain 4 nodes (mission_monitoring_node_pc, node_rover_local_monitoring)
 #       are not visible here
 
 # Monitor key topics (all on Domain 5)
-ros2 topic hz /tpc_rover_fmctl        # ~50 Hz (steering commands from Jetson)
+ros2 topic hz /tpc_rover_ctrl_cmd     # ~50 Hz (kinematic control cmds from Jetson)
 ros2 topic hz /tpc_chassis_cmd        # ~50 Hz (motor commands to STM32)
 ros2 topic hz /tpc_chassis_imu        # ~10 Hz (IMU from STM32)
 ros2 topic hz /tpc_rover_nav_lane     # ~30 Hz (lane parameters from Jetson)
@@ -324,7 +324,7 @@ To gracefully stop all running nodes and close the tmux session:
 
 | Topic | Rate | Publisher | Description |
 |-------|------|-----------|-------------|
-| `tpc_rover_fmctl` | 50 Hz | Jetson (steering_control_domain5) | Steering commands to RPi |
+| `tpc_rover_ctrl_cmd` | 50 Hz | Jetson (rover_kinematic_control) | Kinematic control commands to RPi |
 | `tpc_chassis_cmd` | 50 Hz | RPi (node_chassis_controller) | Motor commands to STM32 |
 | `tpc_chassis_imu` | 10 Hz | STM32 (chassis_controller) | IMU accel/gyro data |
 | `tpc_chassis_sensors` | 4 Hz | STM32 (sensors_node) | Encoders, voltage, current |

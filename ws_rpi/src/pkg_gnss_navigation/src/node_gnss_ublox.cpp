@@ -1,3 +1,18 @@
+/**
+ * node_gnss_ublox.cpp
+ * Workspace:  ws_rpi  |  Package: pkg_gnss_navigation  |  Domain: 5
+ *
+ * Purpose:
+ *   Reads NMEA / UBX sentences from u-blox RTK GNSS module over serial UART,
+ *   parses RTK-corrected position data, and publishes to Domain 5.
+ *
+ * Published Topics:
+ *   /tpc_gnss_ublox (msgs_ifaces/UbloxGNSS) - RTK position at 10 Hz
+ *
+ * Author: AlmondMatcha Rover Team
+ * Date:   February 27, 2026
+ */
+
 #include "rclcpp/rclcpp.hpp"
 #include "msgs_ifaces/msg/ublox_gnss.hpp"
 #include <sstream>

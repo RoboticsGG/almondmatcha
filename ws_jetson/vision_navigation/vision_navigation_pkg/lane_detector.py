@@ -1,11 +1,14 @@
 """
+lane_detector.py
+Workspace:  ws_jetson  |  Package: vision_navigation_pkg
+
 Lane Detection Image Processing Pipeline
 
 Provides image processing functions for detecting lane markers in RGB frames.
 Includes preprocessing, perspective transformation, and lane fitting algorithms.
 
-Author: Vision Navigation System
-Date: November 4, 2025
+Author: AlmondMatcha Rover Team
+Date: February 27, 2026
 """
 
 import cv2

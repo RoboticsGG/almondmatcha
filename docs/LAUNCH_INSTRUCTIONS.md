@@ -25,7 +25,7 @@ Total: 11 nodes
 
 - ws_rpi: 7 nodes (node_gnss_spresense, node_gnss_ublox, node_gnss_mission_monitor, node_chassis_controller, node_chassis_imu, node_chassis_sensors, mission_monitoring_node_rpi)
 - ws_base: 1 node (mission_command_node)
-- ws_jetson: 1 node (steering_control_domain5)
+- ws_jetson: 1 node (rover_kinematic_control)
 - STM32: 2 nodes (chassis_controller, sensors_node)
 
 ### Domain 4 Participants (Telemetry, NOT visible to STM32)
@@ -121,8 +121,8 @@ ros2 launch vision_navigation control_domain5.launch.py
 ```
 [camera_stream]: Starting camera stream at 30 FPS
 [lane_detection]: Lane detection pipeline initialized
-[steering_control_domain5]: Waiting for lane detection data...
-[steering_control_domain5]: Control loop initialized
+[rover_kinematic_control]: Waiting for lane detection data...
+[rover_kinematic_control]: Rover Kinematic Control node initialized on Domain 6
 ```
 
 Wait for all nodes to be ready (30 FPS messages flowing).
@@ -193,7 +193,7 @@ ros2 topic hz /tpc_rover_nav_lane
 export ROS_DOMAIN_ID=5
 ros2 node list
 # Expected: 10 nodes total (8 without ws_base, 10 with ws_base)
-# /steering_control_domain5   (Jetson - control interface)
+# /rover_kinematic_control      (Jetson - kinematic control interface)
 # /node_chassis_controller    (ws_rpi)
 # /node_gnss_mission_monitor  (ws_rpi)
 # /node_gnss_spresense        (ws_rpi)
@@ -205,10 +205,10 @@ ros2 node list
 # /mission_monitoring_node    (ws_base, if launched)
 
 ros2 topic list
-# Should see: tpc_rover_fmctl, tpc_chassis_cmd, tpc_chassis_imu, tpc_rover_nav_lane, etc.
+# Should see: tpc_rover_ctrl_cmd, tpc_chassis_cmd, tpc_chassis_imu, tpc_rover_nav_lane, etc.
 # Should NOT see camera topics like tpc_rover_d415_rgb (Domain 6 isolation)
 
-ros2 topic hz /tpc_rover_fmctl
+ros2 topic hz /tpc_rover_ctrl_cmd
 # Expected: ~50 Hz
 ```
 
@@ -277,7 +277,7 @@ sudo ./build.bash all NUCLEO_F767ZI chassis_controller
 
 ### Vision Data Not Reaching Control
 
-**Symptom:** `/steering_control_domain5` node stuck waiting for lane data
+**Symptom:** `/rover_kinematic_control` node stuck waiting for lane data
 
 **Troubleshooting:**
 ```bash
@@ -287,7 +287,7 @@ ros2 topic list | grep nav_lane
 
 # Check control node subscribing to Domain 6
 export ROS_DOMAIN_ID=5
-ros2 node info /steering_control_domain5
+ros2 node info /rover_kinematic_control
 # Should show subscription to tpc_rover_nav_lane
 
 # Verify localhost DDS discovery
@@ -346,15 +346,15 @@ ros2 multicast receive
 ```bash
 export ROS_DOMAIN_ID=5
 
-# Steering command latency (end-to-end)
-ros2 topic delay /tpc_rover_fmctl
+# Control command latency (end-to-end)
+ros2 topic delay /tpc_rover_ctrl_cmd
 # Expected: 50-100 ms
 
-# Camera-to-steering latency (includes cross-domain)
+# Camera-to-control latency (includes cross-domain)
 export ROS_DOMAIN_ID=6
 ros2 topic delay /tpc_rover_nav_lane  # Get D6 timestamp
 export ROS_DOMAIN_ID=5
-ros2 topic delay /tpc_rover_fmctl  # Compare timestamps
+ros2 topic delay /tpc_rover_ctrl_cmd  # Compare timestamps
 # Expected: 100-150 ms end-to-end
 ```
 
@@ -364,7 +364,7 @@ ros2 topic delay /tpc_rover_fmctl  # Compare timestamps
 # On Jetson
 top -p $(pgrep -f camera_stream)
 top -p $(pgrep -f lane_detection)
-top -p $(pgrep -f steering_control_domain5)
+top -p $(pgrep -f rover_kinematic_control)
 # Expected: 40-50% total CPU
 
 # On RPi

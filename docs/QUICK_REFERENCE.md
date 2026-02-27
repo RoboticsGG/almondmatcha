@@ -76,7 +76,7 @@ cd ~/almondmatcha/ws_base
 |--------|-------|---------|
 | STM32 boards | 2 | 2 |
 | ws_rpi | 7 | 9 |
-| ws_jetson | 1 (steering_control_domain5) | 10 |
+| ws_jetson | 1 (rover_kinematic_control) | 10 |
 | ws_base | 1 (mission_command_node) | **11** |
 | **Headroom** | - | **+1** |
 | **STM32 capacity** | - | **12** |

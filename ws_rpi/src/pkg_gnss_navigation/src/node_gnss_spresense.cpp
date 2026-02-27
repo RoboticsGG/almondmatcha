@@ -1,5 +1,20 @@
+/**
+ * node_gnss_spresense.cpp
+ * Workspace:  ws_rpi  |  Package: pkg_gnss_navigation  |  Domain: 5
+ *
+ * Purpose:
+ *   Reads NMEA data from Sony Spresense GNSS module over serial UART,
+ *   parses latitude/longitude/fix status, and publishes to Domain 5.
+ *
+ * Published Topics:
+ *   /tpc_gnss_spresense (msgs_ifaces/SpresenseGNSS) - position at 10 Hz
+ *
+ * Author: AlmondMatcha Rover Team
+ * Date:   February 27, 2026
+ */
+
 #include "rclcpp/rclcpp.hpp"
-#include "msgs_ifaces/msg/spresense_gnss.hpp"  
+#include "msgs_ifaces/msg/spresense_gnss.hpp"
 #include <json/json.h>
 #include <sstream>
 #include <fcntl.h>

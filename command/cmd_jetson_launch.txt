@@ -52,9 +52,9 @@ $ ros2 topic hz /tpc_rover_d415_rgb
 Monitor lane detection:
 $ ros2 topic echo /tpc_rover_nav_lane
 
-Monitor steering commands:
-$ ros2 topic echo /tpc_rover_fmctl
-$ ros2 topic hz /tpc_rover_fmctl
+Monitor control commands:
+$ ros2 topic echo /tpc_rover_ctrl_cmd
+$ ros2 topic hz /tpc_rover_ctrl_cmd
 
 GPU OPTIMIZATION
 -----------------

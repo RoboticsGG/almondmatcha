@@ -1,3 +1,26 @@
+/**
+ * node_gnss_mission_monitor.cpp
+ * Workspace:  ws_rpi  |  Package: pkg_gnss_navigation  |  Domain: 5
+ *
+ * Purpose:
+ *   Tracks rover position against a target waypoint received via ROS2 Action.
+ *   Publishes mission active flag and remaining distance to goal.
+ *
+ * Subscribed Topics:
+ *   /tpc_gnss_spresense (msgs_ifaces/SpresenseGNSS) - current position
+ *
+ * Published Topics:
+ *   /tpc_gnss_mission_active      (std_msgs/Bool)    - true while navigating
+ *   /tpc_gnss_mission_remain_dist (std_msgs/Float64)  - metres to waypoint
+ *   /tpc_rover_dest_coordinate    (std_msgs/Float64MultiArray) - [lat, lon]
+ *
+ * Action Server:
+ *   /des_data (action_ifaces/DesData) - receives navigation goals from base station
+ *
+ * Author: AlmondMatcha Rover Team
+ * Date:   February 27, 2026
+ */
+
 #include <rclcpp/rclcpp.hpp> // Core ROS2 C++ API
 #include "rclcpp_action/rclcpp_action.hpp" // ROS2 Action API
 #include <std_msgs/msg/string.hpp> // Standard ROS2 message types

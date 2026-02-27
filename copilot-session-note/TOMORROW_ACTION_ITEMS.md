@@ -42,7 +42,7 @@ ros2 launch vision_navigation vision_nav_system.launch.py
 
 ### Phase 3: Integration with ws_rpi (20-30 min)
 
-Verify /tpc_rover_fmctl data flow to ws_rpi rover control nodes
+Verify /tpc_rover_ctrl_cmd data flow to ws_rpi rover control nodes
 
 ---
 
@@ -62,7 +62,7 @@ cd ~/almondmatcha/ws_rpi
 ./launch_rover_tmux.sh
 
 # Monitor topics
-ros2 topic echo /tpc_rover_fmctl
+ros2 topic echo /tpc_rover_ctrl_cmd
 ```
 
 ---

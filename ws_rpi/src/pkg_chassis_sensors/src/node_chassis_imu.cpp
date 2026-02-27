@@ -1,3 +1,19 @@
+/**
+ * node_chassis_imu.cpp
+ * Workspace:  ws_rpi  |  Package: pkg_chassis_sensors  |  Domain: 5
+ *
+ * Purpose:
+ *   Subscriber-only monitoring node for STM32 IMU data.
+ *   Heartbeat-logs that the topic is alive. CSV logging is delegated
+ *   to node_mission_monitoring_rpi to preserve single-writer discipline.
+ *
+ * Subscribed Topics:
+ *   /tpc_chassis_imu (msgs_ifaces/ChassisIMU) - IMU accel/gyro from STM32 at 10 Hz
+ *
+ * Author: AlmondMatcha Rover Team
+ * Date:   February 27, 2026
+ */
+
 #include <memory>
 #include "rclcpp/rclcpp.hpp"
 #include "msgs_ifaces/msg/chassis_imu.hpp"

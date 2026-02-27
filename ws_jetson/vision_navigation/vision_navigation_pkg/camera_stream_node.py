@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 """
+camera_stream_node.py
+Workspace:  ws_jetson  |  Package: vision_navigation_pkg  |  Domain: 6
+
 Visual Navigation Camera Stream Node
 
 Purpose:

@@ -1,6 +1,28 @@
+/**
+ * node_mission_monitoring_rpi.cpp
+ * Workspace:  ws_rpi  |  Package: pkg_rover_monitoring  |  Domain: 5 (sub) → 4 (pub)
+ *
+ * Purpose:
+ *   Dual-role monitoring node running on the Raspberry Pi.
+ *   1. Cross-domain relay: aggregates Domain 5 telemetry and re-publishes
+ *      a unified TelemetryRelay message on Domain 4 at 5 Hz.
+ *   2. CSV logging: writes per-topic CSV files to local storage at native rates.
+ *
+ * Subscribed Topics (Domain 5):
+ *   /tpc_gnss_spresense, /tpc_gnss_ublox, /tpc_chassis_cmd,
+ *   /tpc_chassis_imu, /tpc_chassis_sensors, /tpc_rover_ctrl_cmd
+ *
+ * Published Topics:
+ *   /tpc_telemetry_relay (msgs_ifaces/TelemetryRelay) - Domain 4, 5 Hz
+ *
+ * Author: AlmondMatcha Rover Team
+ * Date:   February 27, 2026
+ */
+
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/float32.hpp"
+#include "std_msgs/msg/float32_multi_array.hpp"
 #include "std_msgs/msg/float64.hpp"
 #include "std_msgs/msg/float64_multi_array.hpp"
 #include "msgs_ifaces/msg/spresense_gnss.hpp"
@@ -93,9 +115,10 @@ public:
             std::bind(&MissionMonitoringNodeRpi::destination_callback, this, std::placeholders::_1)
         );
         
-        // Steering control (from Jetson)
-        sub_steering_ = this->create_subscription<msgs_ifaces::msg::ChassisCtrl>(
-            "/tpc_rover_fmctl", qos_reliable,
+        // Kinematic control command (from Jetson → tpc_rover_ctrl_cmd)
+        // Format: Float32MultiArray [steer_angle, speed_cmd, detected]
+        sub_steering_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
+            "/tpc_rover_ctrl_cmd", qos_reliable,
             std::bind(&MissionMonitoringNodeRpi::steering_callback, this, std::placeholders::_1)
         );
         
@@ -221,7 +244,7 @@ private:
     rclcpp::Subscription<msgs_ifaces::msg::SpresenseGNSS>::SharedPtr sub_spresense_gnss_;
     rclcpp::Subscription<msgs_ifaces::msg::UbloxGNSS>::SharedPtr sub_ublox_gnss_;
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr sub_destination_;
-    rclcpp::Subscription<msgs_ifaces::msg::ChassisCtrl>::SharedPtr sub_steering_;
+    rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr sub_steering_;
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr sub_lane_detection_;
     
     // CSV logging
@@ -471,9 +494,13 @@ private:
         write_mission_state_csv();
     }
     
-    void steering_callback(const msgs_ifaces::msg::ChassisCtrl::SharedPtr msg) {
-        steering_valid_ = true;
-        steering_command_ = msg->ro_ctrl_msg;  // Assuming this is the steering angle
+    void steering_callback(const std_msgs::msg::Float32MultiArray::SharedPtr msg) {
+        // tpc_rover_ctrl_cmd format: [steer_angle_deg, speed_cmd, detected]
+        if (msg->data.size() < 3) {
+            return;
+        }
+        steering_valid_   = true;
+        steering_command_ = msg->data[0];  // Steering angle in degrees
     }
     
     void lane_detection_callback(const std_msgs::msg::Float64MultiArray::SharedPtr msg) {

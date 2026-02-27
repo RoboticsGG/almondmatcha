@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 """
+steering_control_node.py  (entry point: steering_control — legacy single-domain node)
+Workspace:  ws_jetson  |  Package: vision_navigation_pkg  |  Domain: 5
+
 Rover Control Node - Lane Following Control
 
 Purpose:
@@ -13,9 +16,10 @@ Topics Subscribed:
         detected: Detection flag (1.0 = valid, 0.0 = lost)
 
 Topics Published:
-    /tpc_rover_fmctl (std_msgs/Float32MultiArray) - Front module control [steer_angle, detected]
+    /tpc_rover_ctrl_cmd (std_msgs/Float32MultiArray) - Rover control command [steer_angle, speed_cmd, detected]
         steer_angle: Steering command in degrees (+right, -left)
-        detected: Whether lane is currently detected
+        speed_cmd:   Chassis speed command (0–255); constant speed_ref — no encoder feedback in this node
+        detected:    Whether lane is currently detected
 
 Control Parameters:
     k_e1: Weight on heading error theta
@@ -99,10 +103,15 @@ class RoverControlNode(Node):
         self.last_time: float = time.time()
         self.last_error: float = 0.0
 
+        # ===================== Speed Parameters =====================
+        # Unit: 0–100 (% PWM duty cycle). STM32 motor_control divides by 100 for PWM.
+        self.declare_parameter('speed_ref', 50)          # Constant target speed (0–100%)
+        self.speed_ref: int = int(self.get_parameter('speed_ref').value)
+
         # ===================== Publishers =====================
-        self.pub_fmctl = self.create_publisher(
-            Float32MultiArray, 
-            'tpc_rover_fmctl', 
+        self.pub_ctrl_cmd = self.create_publisher(
+            Float32MultiArray,
+            'tpc_rover_ctrl_cmd',
             10
         )
 
@@ -207,9 +216,11 @@ class RoverControlNode(Node):
         self._log_control_data(time.time(), theta_ema, b_ema, u, error_sum)
 
         # ===== Publish Control Command =====
+        # Format: [steer_angle, speed_cmd, detected]
+        # speed_ref is used as a constant; no encoder-based feedback in this legacy node.
         cmd_msg = Float32MultiArray()
-        cmd_msg.data = [steer_angle, float(detected_valid)]
-        self.pub_fmctl.publish(cmd_msg)
+        cmd_msg.data = [steer_angle, float(self.speed_ref), float(detected_valid)]
+        self.pub_ctrl_cmd.publish(cmd_msg)
 
         # ===== Terminal Output =====
         self._log_control_status(theta_ema, b_ema, error_sum, u, steer_angle, detected_valid)

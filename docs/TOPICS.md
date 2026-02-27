@@ -105,28 +105,32 @@ data: [theta, b, detected]
 
 ## Control Topics (Jetson/Base)
 
-### `tpc_rover_fmctl`
+### `tpc_rover_ctrl_cmd`
 
 **Type:** `std_msgs/msg/Float32MultiArray`  
-**Publisher:** `steering_control`  
-**Subscribers:** `node_chassis_controller`  
+**Publisher:** `rover_kinematic_control` (Jetson, Domain 6 → bridge → Domain 5)  
+**Subscribers:** `node_chassis_controller` (RPi)  
 **Rate:** 50 Hz  
-**QoS:** Reliable, Depth 10  
+**QoS:** Best Effort, Depth 10  
 **Domain:** 5  
 
-Steering control output from PID controller.
+Combined kinematic control output: steering angle and chassis speed from the bicycle-model PID controller. The domain bridge relays this from Domain 6 (Jetson internal) to Domain 5 (control network).
 
 **Fields:**
 ```yaml
-data: [steering_angle, detected]
+data: [steer_angle, speed_cmd, detected]
 ```
 
 **Data Array:**
-- `data[0]` - **steering_angle (degrees):** Commanded steering angle
+- `data[0]` - **steer_angle (degrees):** Commanded steering angle
   - Positive: turn right
   - Negative: turn left
-  - Range: -45° to +45° (configurable limits)
-- `data[1]` - **detected (0 or 1):** Lane detection status pass-through
+  - Range: configurable (default ±60°)
+- `data[1]` - **speed_cmd (0–100):** Chassis speed command in % PWM duty cycle
+  - The STM32 converts: `motor_duty = speed_cmd / 100.0`
+  - 100 = full throttle, 50 = half throttle, 0 = stopped
+  - Detection-timeout logic applied here (caution/stop when lane lost)
+- `data[2]` - **detected (0 or 1):** Lane detection validity flag (informational pass-through)
 
 ---
 
@@ -392,7 +396,10 @@ Speed limit command service.
 
 **Request:**
 ```yaml
-uint8 rover_spd     # Speed limit (0-100%)
+uint8 rover_spd     # Speed safety cap (0–100% PWM duty cycle)
+                    # STM32 converts: motor_duty = rover_spd / 100.0
+                    # Values > 100 are meaningless (exceed 100% duty)
+                    # Default at startup: 50 (conservative safe value)
 ```
 
 **Response:**
@@ -452,9 +459,9 @@ See [msgs_ifaces/msg/TelemetryRelay.msg](../common_ifaces/msgs_ifaces/msg/) for 
 camera_stream (D6)
     └── tpc_rover_d415_rgb (D6)
             └── lane_detection (D6)
-                    └── tpc_rover_nav_lane (D5)
-                            └── steering_control_domain5 (D5, Jetson)
-                                    └── tpc_rover_fmctl (D5)
+                    └── tpc_rover_nav_lane (D6)
+                            └── rover_kinematic_control (D6, Jetson)
+                                    └── tpc_rover_ctrl_cmd (D6 → bridge → D5)
 ```
 
 **Chassis Control (Domain 5):**
@@ -494,7 +501,7 @@ mission_monitoring_node_rpi (RPi)
 | `tpc_rover_d415_rgb` | Best Effort | Volatile | Keep Last | 1 |
 | `tpc_rover_d415_depth` | Best Effort | Volatile | Keep Last | 1 |
 | `tpc_rover_nav_lane` | Reliable | Volatile | Keep Last | 10 |
-| `tpc_rover_fmctl` | Reliable | Volatile | Keep Last | 10 |
+| `tpc_rover_ctrl_cmd` | Best Effort | Volatile | Keep Last | 10 |
 | `tpc_chassis_cmd` | Reliable | Volatile | Keep Last | 10 |
 | `tpc_chassis_imu` | Reliable | Volatile | Keep Last | 10 |
 | `tpc_chassis_sensors` | Reliable | Volatile | Keep Last | 10 |

@@ -101,7 +101,7 @@ ros2 run mission_control mission_monitoring_node
 | **node_gnss_spresense** | pkg_gnss_navigation | Sony Spresense GNSS reader | Publishes: `tpc_gnss_spresense` |
 | **node_gnss_ublox** | pkg_gnss_navigation | u-blox RTK GNSS reader | Publishes: `tpc_gnss_ublox` |
 | **node_gnss_mission_monitor** | pkg_gnss_navigation | Waypoint tracking | Subscribes: `tpc_gnss_spresense`<br>Publishes: `tpc_gnss_mission_active`, `tpc_gnss_mission_remain_dist` |
-| **node_chassis_controller** | pkg_chassis_control | Motor command coordination | Subscribes: `tpc_rover_fmctl`, `tpc_gnss_mission_active`<br>Publishes: `tpc_chassis_cmd` |
+| **node_chassis_controller** | pkg_chassis_control | Motor command coordination | Subscribes: `tpc_rover_ctrl_cmd`, `tpc_gnss_mission_active`<br>Publishes: `tpc_chassis_cmd` |
 | **node_chassis_imu** | pkg_chassis_sensors | IMU data logger | Subscribes: `tpc_chassis_imu` |
 | **node_chassis_sensors** | pkg_chassis_sensors | Encoder/power logger | Subscribes: `tpc_chassis_sensors` |
 

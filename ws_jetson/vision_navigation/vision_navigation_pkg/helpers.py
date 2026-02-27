@@ -1,11 +1,14 @@
 """
+helpers.py
+Workspace:  ws_jetson  |  Package: vision_navigation_pkg
+
 Helper Functions Module - Vision Navigation System
 
 Centralizes utility functions for image processing, validation, math,
 logging, and timing operations used across multiple nodes.
 
-Author: Vision Navigation System
-Date: November 4, 2025
+Author: AlmondMatcha Rover Team
+Date: February 27, 2026
 """
 
 import os

@@ -10,7 +10,7 @@
 - Domain 5 actual participants: 10 nodes
   - ws_rpi: 5 nodes
   - ws_base: 2 nodes  
-  - ws_jetson: 1 node (steering_control_domain5)
+  - ws_jetson: 1 node (rover_kinematic_control)
   - STM32: 2 nodes
 - Domain 6: 2 nodes (camera, lane detection) - **invisible to STM32**
 

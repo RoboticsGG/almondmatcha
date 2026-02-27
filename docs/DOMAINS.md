@@ -7,7 +7,7 @@ The rover implements a tri-domain architecture: Domain 4 (telemetry), Domain 5 (
 | Domain | Purpose | Network Scope | Participants | Key Characteristics |
 |--------|---------|---------------|--------------|---------------------|
 | **4** | Telemetry | Base + Jetson | **2 nodes:**<br>• mission_monitoring_node_pc (Base)<br>• node_rover_local_monitoring (Jetson) | • Subscribes to /tpc_telemetry_relay (5 Hz)<br>• No D5 participation (no STM32 RAM cost)<br>• Jetson logs CSV; future DB backend |
-| **5** | Control Network | All rover systems + base command | **11 nodes:**<br>• RPi: 7 nodes<br>• Base: 1 (mission_command_node)<br>• Jetson: 1 (steering_control_domain5)<br>• STM32: 2 (chassis, sensors) | • Bidirectional command/control<br>• Action/service communication<br>• Real-time control loops (50 Hz)<br>• STM32 optimized (~60% free RAM) |
+| **5** | Control Network | All rover systems + base command | **11 nodes:**<br>• RPi: 7 nodes<br>• Base: 1 (mission_command_node)<br>• Jetson: 1 (rover_kinematic_control)<br>• STM32: 2 (chassis, sensors) | • Bidirectional command/control<br>• Action/service communication<br>• Real-time control loops (50 Hz)<br>• STM32 optimized (~60% free RAM) |
 | **6** | Vision Processing | Jetson localhost | **2 nodes:**<br>• camera_stream<br>• lane_detection | • RGB/Depth streams (30 FPS, 1280×720)<br>• Network isolated (not visible to other hosts)<br>• Lane params relayed to D5 via steering_control |
 
 ## Architecture Overview
@@ -22,8 +22,8 @@ Domain 6: Vision Processing (Jetson localhost)
                  ▼
 Domain 5: Rover Control (Network-wide)
 ┌──────────────┤ Jetson ├────────────────────┐
-│ steering_control_domain5 (D6→D5 bridge) │
-│ Pub: tpc_rover_fmctl                     │
+│ rover_kinematic_control (D6→D5 bridge) │
+│ Pub: tpc_rover_ctrl_cmd                 │
 └──────────────┤ RPi ├───────────────────────┘
                  │
 ┌────────────────▼───────────────────────────┐
@@ -63,7 +63,7 @@ Domain 5: Base Command (Base station)
 **Result:** One fewer D5 participant; dual-tier logging with no STM32 overhead.
 
 **Cross-domain links:**
-- Vision to control: `steering_control_domain5` (D6 sub → D5 pub)
+- Vision to control: `rover_kinematic_control` (D6 sub → D5 pub)
 - Telemetry relay: `mission_monitoring_node_rpi` (D5 sub → D4 pub + CSV)
 
 **Benefits:** 10 D5 participants; network bandwidth optimized; scalable vision/AI expansion without STM32 impact; Jetson logger ready for database migration.
@@ -147,7 +147,7 @@ export ROS_DOMAIN_ID=5
 ros2 node list
 
 # Expected output (11 nodes visible to all D5 systems):
-/steering_control_domain5       # ws_jetson (D6→D5 bridge)
+/rover_kinematic_control        # ws_jetson (D6→D5 bridge)
 /node_chassis_controller        # ws_rpi
 /node_gnss_mission_monitor      # ws_rpi
 /node_gnss_spresense            # ws_rpi
@@ -195,7 +195,7 @@ ros2 topic echo /tpc_rover_nav_lane
 
 # Check Domain 5 control output
 export ROS_DOMAIN_ID=5
-ros2 topic echo /tpc_rover_fmctl
+ros2 topic echo /tpc_rover_ctrl_cmd
 ```
 
 ## Scalability
@@ -245,7 +245,7 @@ ros2 topic info /tpc_rover_nav_lane -v
 **Check Domain 5 publisher:**
 ```bash
 export ROS_DOMAIN_ID=5
-ros2 topic info /tpc_rover_fmctl -v
+ros2 topic info /tpc_rover_ctrl_cmd -v
 # Should show 1 publisher (Jetson) and 1 subscriber (ws_rpi)
 ```
 

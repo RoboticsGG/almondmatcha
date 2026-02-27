@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """
-Jetson Domain Bridge: Domain 6 → Domain 5
-Relays steering control commands from internal vision domain to rover network domain.
+domain_bridge_jetson.py
+Workspace:  ws_jetson  |  Package: vision_navigation_pkg  |  Domain: 6 (sub) → 5 (pub)
 
-Subscribes: /tpc_rover_fmctl (Domain 6) - from steering_control
-Publishes:  /tpc_rover_fmctl (Domain 5) - to rover chassis_controller
+Jetson Domain Bridge: Domain 6 → Domain 5
+Relays the rover kinematic control command from the vision domain to the rover network domain.
+
+Subscribes: /tpc_rover_ctrl_cmd (Domain 6) - from rover_kinematic_control
+Publishes:  /tpc_rover_ctrl_cmd (Domain 5) - to chassis_controller (RPi)
+
+Message format (Float32MultiArray): [steer_angle, speed_cmd, detected]
 
 This bridge runs with TWO ROS2 contexts (one per domain) in separate threads.
 Only relays the final control command to minimize Domain 5 traffic.
@@ -35,12 +40,12 @@ class DomainBridgeSubscriber(Node):
         
         self.sub = self.create_subscription(
             Float32MultiArray,
-            'tpc_rover_fmctl',
+            'tpc_rover_ctrl_cmd',
             self._relay_callback,
             qos
         )
-        
-        self.get_logger().info("[Bridge D6 Sub] Subscribed to tpc_rover_fmctl on Domain 6")
+
+        self.get_logger().info("[Bridge D6 Sub] Subscribed to tpc_rover_ctrl_cmd on Domain 6")
     
     def _relay_callback(self, msg):
         """Forward message to Domain 5 publisher"""
@@ -61,12 +66,12 @@ class DomainBridgePublisher(Node):
         
         self.pub = self.create_publisher(
             Float32MultiArray,
-            'tpc_rover_fmctl',
+            'tpc_rover_ctrl_cmd',
             qos
         )
-        
+
         self.msg_count = 0
-        self.get_logger().info("[Bridge D5 Pub] Publishing tpc_rover_fmctl to Domain 5")
+        self.get_logger().info("[Bridge D5 Pub] Publishing tpc_rover_ctrl_cmd to Domain 5")
         
         # Heartbeat timer
         self.timer = self.create_timer(5.0, self._heartbeat)
@@ -121,7 +126,7 @@ def main():
     thread_d6.start()
     thread_d5.start()
     
-    print("[Domain Bridge] Running D6→D5 relay for /tpc_rover_fmctl")
+    print("[Domain Bridge] Running D6→D5 relay for /tpc_rover_ctrl_cmd")
     print("Press Ctrl+C to stop")
     
     try:

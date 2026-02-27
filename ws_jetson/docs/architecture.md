@@ -12,8 +12,8 @@ Camera Input (D415 or Video)
 [Lane Detection Node] -> /tpc_rover_nav_lane (Lane parameters)
     |                 -> lane_pub_log.csv (Detection logging)
     v
-[Steering Control Node] -> /tpc_rover_fmctl (Steering command)
-                        -> logs/rover_ctl_log_ver_3.csv (Control logging)
+[Rover Kinematic Control Node] -> /tpc_rover_ctrl_cmd (Kinematic control cmd)
+                               -> logs/ws_jetson_kinematic_ctrl_TIMESTAMP.csv (Control logging)
     v
 Steering Actuator (Front Module)
 ```
@@ -24,7 +24,7 @@ Steering Actuator (Front Module)
 |------|-----------|-----------|------|
 | **camera_stream** | `/tpc_rover_d415_rgb`, `/tpc_rover_d415_depth` | - | 30 FPS |
 | **lane_detection** | `/tpc_rover_nav_lane` | `/tpc_rover_d415_rgb` | 25-30 FPS |
-| **steering_control** | `/tpc_rover_fmctl` | `/tpc_rover_nav_lane` | 50 Hz |
+| **rover_kinematic_control** | `/tpc_rover_ctrl_cmd` | `/tpc_rover_nav_lane` | 50 Hz |
 
 ## Message Types
 

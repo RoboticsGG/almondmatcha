@@ -1,3 +1,29 @@
+/**
+ * node_chassis_controller.cpp
+ * Workspace:  ws_rpi  |  Package: pkg_chassis_control  |  Domain: 5
+ *
+ * Purpose:
+ *   Safety translator between Jetson kinematic commands and STM32 motor commands.
+ *   Subscribes to /tpc_rover_ctrl_cmd [steer_angle, speed_cmd, detected] from Jetson,
+ *   applies a configurable speed safety cap (set via /srv_spd_limit service),
+ *   translates steering angle to ChassisCtrl direction enum, and publishes
+ *   /tpc_chassis_cmd to the STM32 chassis_controller node.
+ *   Emergency-stop is triggered by /tpc_gnss_mission_active going false.
+ *
+ * Subscribed Topics:
+ *   /tpc_rover_ctrl_cmd  (std_msgs/Float32MultiArray) - [steer_angle°, speed_cmd 0-100%, detected]
+ *   /tpc_gnss_mission_active (std_msgs/Bool)          - mission alive flag
+ *
+ * Published Topics:
+ *   /tpc_chassis_cmd (msgs_ifaces/ChassisCtrl) - motor command to STM32
+ *
+ * Services:
+ *   /srv_spd_limit (services_ifaces/SpdLimit) - set speed cap ceiling (0–100% PWM)
+ *
+ * Author: AlmondMatcha Rover Team
+ * Date:   February 27, 2026
+ */
+
 // ROS2 Core
 #include "rclcpp/rclcpp.hpp"
 
@@ -20,60 +46,71 @@
 
 /**
  * @brief Rover Chassis Low-Level Controller Node
- * 
- * This node manages low-level chassis control in Domain ID 5 (rover internal):
- * - Receives control commands from vision navigation
- * - Provides speed limit service
- * - Publishes chassis control messages to STM32 boards
+ *
+ * Thin command executor sitting between the Jetson kinematic controller and the STM32.
+ *
+ * Responsibilities:
+ *   - Translate tpc_rover_ctrl_cmd [steer_angle, speed_cmd, detected] into ChassisCtrl
+ *   - Apply the srv_spd_limit safety cap (hard maximum speed ceiling)
+ *   - Emit a full emergency stop when tpc_gnss_mission_active is true
+ *
+ * All detection-timeout speed logic lives in the Jetson's rover_kinematic_control node;
+ * this node trusts the speed_cmd it receives and only clamps it against the safety cap.
  */
 class ChassisController : public rclcpp::Node {
 public:
     ChassisController() : Node("chassis_controller") {
         RCLCPP_INFO(this->get_logger(), "Initializing Chassis Controller (Domain 5 - Rover Internal)");
-        
-        // Create speed limit service
+
+        // --- Speed limit safety-cap service ---
+        // Sets the hard maximum speed that chassis_controller will ever send to the STM32.
+        // The Jetson kinematic node is responsible for computing actual target speed;
+        // this cap is an independent safety override (e.g. from base station / operator).
         srv_spd_limit_ = this->create_service<services_ifaces::srv::SpdLimit>(
             "srv_spd_limit",
-            std::bind(&ChassisController::handleSpeedLimitRequest, 
+            std::bind(&ChassisController::handleSpeedLimitRequest,
                      this, std::placeholders::_1, std::placeholders::_2)
         );
-        
-        // Create mission active subscription (from ws_rpi node)
+
+        // --- Mission active: emergency stop flag (reliable + transient_local) ---
         rclcpp::QoS qos_reliable(10);
         qos_reliable.reliable().transient_local();
-        
+
         sub_cc_rcon_ = this->create_subscription<std_msgs::msg::Bool>(
             "tpc_gnss_mission_active", qos_reliable,
-            std::bind(&ChassisController::cruiseControlCallback, 
+            std::bind(&ChassisController::cruiseControlCallback,
                      this, std::placeholders::_1)
         );
-        
-        // Create flight mode control subscription (from Jetson node)
-        // Jetson Python publisher uses BEST_EFFORT QoS - match it exactly
+
+        // --- Kinematic control command from Jetson (BEST_EFFORT, 50 Hz) ---
+        // Format: Float32MultiArray [steer_angle_deg, speed_cmd (0-255), detected (0|1)]
+        // Jetson Python publisher uses BEST_EFFORT QoS; match exactly.
         rclcpp::QoS qos_jetson(10);
-        qos_jetson.best_effort();  // Match Jetson's BEST_EFFORT policy
-        
-        sub_fmctl_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
-            "tpc_rover_fmctl", qos_jetson,
-            std::bind(&ChassisController::flightModeControlCallback, 
+        qos_jetson.best_effort();
+
+        sub_ctrl_cmd_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
+            "tpc_rover_ctrl_cmd", qos_jetson,
+            std::bind(&ChassisController::ctrlCmdCallback,
                      this, std::placeholders::_1)
         );
-        
-        // Create publisher to STM32 chassis (Domain 5)
+
+        // --- Chassis command publisher → STM32 (Domain 5, reliable) ---
         pub_chassis_cmd_ = this->create_publisher<msgs_ifaces::msg::ChassisCtrl>(
             "tpc_chassis_cmd", qos_reliable
         );
-        
-        // Status timer to show node is alive
+
+        // Status heartbeat
         status_timer_ = this->create_wall_timer(
             std::chrono::seconds(10),
             [this]() {
-                RCLCPP_INFO(this->get_logger(), 
-                    "Chassis Controller alive - waiting for vision commands on tpc_rover_fmctl");
+                RCLCPP_INFO(this->get_logger(),
+                    "Chassis Controller alive — waiting for tpc_rover_ctrl_cmd (spd_cap=%d)",
+                    spd_limit_cap_);
             }
         );
-        
-        RCLCPP_INFO(this->get_logger(), "Chassis Controller initialized");
+
+        RCLCPP_INFO(this->get_logger(), "Chassis Controller initialized (spd_limit_cap default=%d)",
+                   spd_limit_cap_);
     }
 
     ~ChassisController() = default;
@@ -81,180 +118,178 @@ public:
 private:
     // === Services ===
     rclcpp::Service<services_ifaces::srv::SpdLimit>::SharedPtr srv_spd_limit_;
-    
+
     // === Subscribers ===
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_cc_rcon_;
-    rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr sub_fmctl_;
-    
+    rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr sub_ctrl_cmd_;
+
     // === Publishers ===
     rclcpp::Publisher<msgs_ifaces::msg::ChassisCtrl>::SharedPtr pub_chassis_cmd_;
-    
+
     // === Timers ===
     rclcpp::TimerBase::SharedPtr status_timer_;
-    
-    // === State Variables ===
-    float steer_msg_;                    // Steering command (-1.0 to 1.0)
-    float detect_msg_;                   // Detection status
-    uint8_t spd_msg_;                    // Speed limit
-    bool cc_rcon_msg_ = false;           // Cruise control flag (false=allow vision control, true=emergency stop)
-    
-    // === Timer Variables ===
-    bool detect_zero_active_ = false;    // Detection zero state tracking
-    rclcpp::Time detect_zero_start_time_;
-    
+
+    // === Control State ===
+    float    steer_angle_cmd_ = 0.0f;   // Steering angle in degrees from Jetson (-max to +max)
+    float    speed_cmd_       = 0.0f;   // Chassis speed command (0–255) from Jetson kinematic node
+    bool     cc_rcon_msg_     = false;  // Emergency stop flag: true = mission active, halt motion
+
+    // === Safety Cap (set via srv_spd_limit service) ===
+    // Unit: 0–100 (STM32 motor_control.cpp divides by 100.0 to get PWM duty cycle).
+    // Values above 100 are meaningless and will exceed 100% duty on the STM32.
+    //
+    // Default: 50 (50% duty) — conservative safe startup speed.
+    // Raise via srv_spd_limit once the operator confirms safe operating conditions.
+    uint8_t  spd_limit_cap_   = 50;
+
     // === Thread Safety ===
     std::mutex data_lock_;
     
     // === Callback Methods ===
     
     /**
-     * @brief Callback for cruise control/remote control flag
-     * @param msg Boolean message indicating CC/RC state
+     * @brief Callback for mission-active/emergency-stop flag (tpc_gnss_mission_active).
+     *
+     * When true the rover must halt immediately; all motion outputs are zeroed regardless
+     * of whatever the Jetson kinematic node is sending.
      */
     void cruiseControlCallback(const std::shared_ptr<std_msgs::msg::Bool> msg) {
         std::lock_guard<std::mutex> lock(data_lock_);
-        if (msg->data != cc_rcon_msg_) { 
+        if (msg->data != cc_rcon_msg_) {
             cc_rcon_msg_ = msg->data;
-            RCLCPP_INFO(this->get_logger(), 
-                       "Cruise control state changed: %s", 
-                       msg->data ? "ACTIVE (OVERRIDE)" : "INACTIVE (NORMAL)");
-        }   
+            RCLCPP_INFO(this->get_logger(),
+                       "Emergency stop flag: %s",
+                       msg->data ? "ACTIVE — halting motion" : "CLEARED — resuming normal control");
+        }
     }
     
     /**
-     * @brief Service handler for speed limit requests
-     * @param request Speed limit request containing rover_spd
-     * @param response Response message confirming speed limit change
+     * @brief Service handler for speed safety-cap requests (srv_spd_limit).
+     *
+     * Sets the hard maximum speed ceiling.  The Jetson kinematic node computes
+     * the actual target speed; this cap is an independent operator override that
+     * clamps the outgoing spd_msg to the STM32 to at most rover_spd.
+     *
+     * Unit: 0–100 (percentage duty cycle — the STM32 divides by 100 for PWM).
+     * Values above 100 will be accepted but treated as 100% duty on the STM32 hardware.
+     * Default at startup: 50 (50% duty).  Set to 0 for an operator-imposed full stop.
      */
     void handleSpeedLimitRequest(
         const std::shared_ptr<services_ifaces::srv::SpdLimit::Request> request,
         std::shared_ptr<services_ifaces::srv::SpdLimit::Response> response) {
         std::lock_guard<std::mutex> lock(data_lock_);
-        spd_msg_ = request->rover_spd;
-        response->spd_result = "Speed Limit set to " + std::to_string(request->rover_spd);
-        RCLCPP_INFO(this->get_logger(), "Speed limit updated to: %d", request->rover_spd);
+        spd_limit_cap_ = request->rover_spd;
+        response->spd_result = "Speed safety cap set to " + std::to_string(request->rover_spd);
+        RCLCPP_INFO(this->get_logger(), "Speed safety cap updated to: %d", request->rover_spd);
     }
     
     /**
-     * @brief Callback for flight mode control messages
-     * @param msg Float32MultiArray containing [steering, detection]
+     * @brief Callback for the kinematic control command from the Jetson (tpc_rover_ctrl_cmd).
+     *
+     * Expected format: Float32MultiArray [steer_angle_deg, speed_cmd, detected]
+     *   data[0]  steer_angle_deg  Steering angle in degrees (+ = right, - = left)
+     *   data[1]  speed_cmd        Chassis speed (0–255); detection-timeout logic applied on Jetson
+     *   data[2]  detected         Lane visibility flag (informational, 0 or 1)
      */
-    void flightModeControlCallback(const std::shared_ptr<std_msgs::msg::Float32MultiArray> msg) {
-        if (msg->data.size() >= 2) {
-            std::lock_guard<std::mutex> lock(data_lock_);
-            steer_msg_ = msg->data[0];   // Steering command
-            detect_msg_ = msg->data[1];  // Detection status
-        } else {
-            RCLCPP_WARN(this->get_logger(), 
-                       "Insufficient data received on tpc_rover_fmctl (expected 2, got %zu)", 
+    void ctrlCmdCallback(const std::shared_ptr<std_msgs::msg::Float32MultiArray> msg) {
+        if (msg->data.size() < 3) {
+            RCLCPP_WARN(this->get_logger(),
+                       "tpc_rover_ctrl_cmd: expected 3 fields, got %zu — ignoring",
                        msg->data.size());
             return;
         }
-        
-        // Process and publish control commands
-        processAndPublishControl();
+
+        {
+            std::lock_guard<std::mutex> lock(data_lock_);
+            steer_angle_cmd_ = msg->data[0];   // Steering angle (degrees)
+            speed_cmd_       = msg->data[1];   // Speed command (0–255)
+            // data[2] = detected flag — already factored into speed_cmd by Jetson
+        }
+
+        packAndPublishChassisCtrl();
     }
     
     // === Control Logic Methods ===
     
     /**
-     * @brief Process control inputs and publish rover control messages
-     * 
-     * This method implements the main control logic:
-     * - Handles cruise control override
-     * - Processes steering commands
-     * - Manages detection-based speed control
-     * - Publishes directly to STM32 chassis (Domain 5)
+     * @brief Pack state into a ChassisCtrl message and publish to the STM32.
+     *
+     * Two modes:
+     *   Emergency stop (cc_rcon_msg_ == true): zero all fields immediately.
+     *   Normal        (cc_rcon_msg_ == false): translate steer_angle_cmd_ and speed_cmd_
+     *                                          into ChassisCtrl fields, applying spd_limit_cap_.
      */
-    void processAndPublishControl() {
+    void packAndPublishChassisCtrl() {
         auto chassis_ctrl = msgs_ifaces::msg::ChassisCtrl();
-        
+
         {
             std::lock_guard<std::mutex> lock(data_lock_);
 
             if (cc_rcon_msg_) {
-                // Cruise control is ACTIVE - override all controls (emergency stop)
-                chassis_ctrl.fdr_msg = 2;        // Front direction: Stop
-                chassis_ctrl.ro_ctrl_msg = 0.0;  // Steering: Zero
-                chassis_ctrl.spd_msg = 0;        // Speed: Zero
-                chassis_ctrl.bdr_msg = 0;        // Back direction: Stop
+                // Emergency stop — zero everything regardless of incoming commands
+                chassis_ctrl.fdr_msg     = 2;    // Straight (no turn)
+                chassis_ctrl.ro_ctrl_msg = 0.0f; // Steering: neutral
+                chassis_ctrl.spd_msg     = 0;    // Speed: stopped
+                chassis_ctrl.bdr_msg     = 0;    // Back drive: stopped
             } else {
-                // Normal operation - process steering and detection
-                
-                // Process steering commands
-                processSteeringCommand(chassis_ctrl);
-                
-                // Process detection and speed control
-                processDetectionAndSpeed(chassis_ctrl);
-                
-                // Set forward direction when active
-                chassis_ctrl.bdr_msg = 1;  // Move forward
+                // Normal operation
+                translateSteeringAngle(chassis_ctrl);
+                applySpeedSafetyCap(chassis_ctrl);
+                chassis_ctrl.bdr_msg = 1;  // Forward
             }
 
-            // Publish directly to STM32 chassis on Domain 5
             pub_chassis_cmd_->publish(chassis_ctrl);
         }
 
-        // Log published control values
-        RCLCPP_INFO(this->get_logger(), 
-                   "Control: [Dir:%d, Steer:%.2f, Speed:%d, Back:%d]", 
-                   chassis_ctrl.fdr_msg, 
-                   chassis_ctrl.ro_ctrl_msg, 
-                   chassis_ctrl.spd_msg, 
+        RCLCPP_INFO(this->get_logger(),
+                   "ChassisCtrl → [fdr:%d  steer:%.2f  spd:%d  bdr:%d]",
+                   chassis_ctrl.fdr_msg,
+                   chassis_ctrl.ro_ctrl_msg,
+                   chassis_ctrl.spd_msg,
                    chassis_ctrl.bdr_msg);
     }
     
     /**
-     * @brief Process steering command and set direction
-     * @param chassis_ctrl Output message to populate with steering data
+     * @brief Translate steer_angle_cmd_ (degrees) into fdr_msg direction + ro_ctrl_msg magnitude.
+     *
+     * Sign convention (matches Jetson PID output):
+     *   steer_angle_cmd_ > 0  → turn right  (fdr_msg = 1)
+     *   steer_angle_cmd_ < 0  → turn left   (fdr_msg = 3)
+     *   steer_angle_cmd_ == 0 → straight     (fdr_msg = 2)
+     *
+     * ro_ctrl_msg carries the absolute angle value forwarded to the STM32 servo driver.
      */
-    void processSteeringCommand(msgs_ifaces::msg::ChassisCtrl& chassis_ctrl) {
-        if (steer_msg_ > 0.0) {
-            chassis_ctrl.fdr_msg = 1;                        // Turn right
-            chassis_ctrl.ro_ctrl_msg = std::fabs(steer_msg_);
-        } else if (steer_msg_ < 0.0) {
-            chassis_ctrl.fdr_msg = 3;                        // Turn left
-            chassis_ctrl.ro_ctrl_msg = std::fabs(steer_msg_);
+    void translateSteeringAngle(msgs_ifaces::msg::ChassisCtrl& chassis_ctrl) {
+        if (steer_angle_cmd_ > 0.0f) {
+            chassis_ctrl.fdr_msg     = 1;                              // Right
+            chassis_ctrl.ro_ctrl_msg = std::fabs(steer_angle_cmd_);
+        } else if (steer_angle_cmd_ < 0.0f) {
+            chassis_ctrl.fdr_msg     = 3;                              // Left
+            chassis_ctrl.ro_ctrl_msg = std::fabs(steer_angle_cmd_);
         } else {
-            chassis_ctrl.fdr_msg = 2;                        // Straight
-            chassis_ctrl.ro_ctrl_msg = 0.0;
+            chassis_ctrl.fdr_msg     = 2;                              // Straight
+            chassis_ctrl.ro_ctrl_msg = 0.0f;
         }
     }
     
     /**
-     * @brief Process detection signal and adjust speed accordingly
-     * @param chassis_ctrl Output message to populate with speed data
-     * 
-     * Speed Logic:
-     * - If detection active: Use full speed limit
-     * - If no detection for <10s: Use half speed (caution mode)
-     * - If no detection for >=10s: Stop completely (safety mode)
+     * @brief Clamp the incoming speed_cmd_ against the operator safety cap.
+     *
+     * Unit: 0–100 (% duty cycle). The STM32 motor_control.cpp converts to PWM as:
+     *     motor_duty = speed_percent / 100.0
+     * So 100 = full throttle, 50 = half throttle, 0 = stop.
+     * Values above 100 are clamped here before they reach the STM32.
+     *
+     * The Jetson's rover_kinematic_control node is responsible for detection-based
+     * speed modulation (full speed, caution half-speed, and safety stop on timeout).
+     * This node simply ensures the final value never exceeds spd_limit_cap_.
      */
-    void processDetectionAndSpeed(msgs_ifaces::msg::ChassisCtrl& chassis_ctrl) {
-        const double DETECTION_TIMEOUT_SEC = 10.0;
-        
-        if (detect_msg_ == 0.0) {
-            // No detection signal
-            if (!detect_zero_active_) {
-                // First time detecting zero - start timer
-                detect_zero_start_time_ = this->now();
-                detect_zero_active_ = true;
-            }
-
-            auto elapsed = (this->now() - detect_zero_start_time_).seconds();
-
-            if (elapsed >= DETECTION_TIMEOUT_SEC) {
-                // No detection for too long - stop for safety
-                chassis_ctrl.spd_msg = 0;
-            } else {
-                // Caution mode - reduce speed to half
-                chassis_ctrl.spd_msg = spd_msg_ / 2;
-            }
-        } else {
-            // Detection signal present - normal operation
-            detect_zero_active_ = false;
-            chassis_ctrl.spd_msg = spd_msg_;
-        }
+    void applySpeedSafetyCap(msgs_ifaces::msg::ChassisCtrl& chassis_ctrl) {
+        // Clamp to [0, 100] first (valid duty-cycle range), then apply operator cap
+        const uint8_t duty_clamped = static_cast<uint8_t>(
+            std::min(100.0f, std::max(0.0f, speed_cmd_))
+        );
+        chassis_ctrl.spd_msg = std::min(duty_clamped, spd_limit_cap_);
     }
 
 };

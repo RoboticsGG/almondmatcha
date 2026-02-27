@@ -6,14 +6,14 @@
 # This script launches all ws_jetson nodes in a tmux session with 4 panes:
 #   [0] Camera Stream (Domain 6)
 #   [1] Lane Detection (Domain 6)
-#   [2] Steering Control (Domain 6)
-#   [3] Domain Bridge (D6→D5 relay for tpc_rover_fmctl only)
+#   [2] Rover Kinematic Control (Domain 6) — computes steering + speed
+#   [3] Domain Bridge (D6→D5 relay for tpc_rover_ctrl_cmd)
 #
 # Architecture:
 #   Domain 6: camera_stream → lane_detection → tpc_rover_nav_lane
-#             steering_control subscribes to tpc_rover_nav_lane → publishes tpc_rover_fmctl
-#   Bridge: tpc_rover_fmctl (D6) → tpc_rover_fmctl (D5)
-#   Domain 5: Only receives final control command (less network traffic)
+#             rover_kinematic_control subscribes to tpc_rover_nav_lane → publishes tpc_rover_ctrl_cmd
+#   Bridge: tpc_rover_ctrl_cmd (D6) → tpc_rover_ctrl_cmd (D5)
+#   Domain 5: Only receives final control command [steer_angle, speed_cmd, detected]
 
 SESSION_NAME="jetson_vision"
 
@@ -54,15 +54,15 @@ tmux send-keys -t $SESSION_NAME:0.1 "clear && echo -e '\\e[1;32m>>> [Domain 6] L
 tmux send-keys -t $SESSION_NAME:0.1 "echo 'Waiting for camera initialization (3s)...' && sleep 3" C-m
 tmux send-keys -t $SESSION_NAME:0.1 "ros2 run vision_navigation lane_detection --ros-args --params-file vision_navigation/config/vision_nav_headless.yaml" C-m
 
-# Pane 2 (middle-right): Steering Control - Domain 6
-tmux select-pane -t 2 -T "Steering_D6"
+# Pane 2 (middle-right): Rover Kinematic Control - Domain 6
+tmux select-pane -t 2 -T "Kinematic_Ctrl_D6"
 tmux send-keys -t $SESSION_NAME:0.2 "cd ~/almondmatcha/ws_jetson && source install/setup.bash" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "export ROS_DOMAIN_ID=6" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "clear && echo -e '\\e[1;33m>>> [Domain 6] STEERING CONTROL <<<\\e[0m'" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "echo 'Waiting for lane detection (4s)...' && sleep 4" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "ros2 run vision_navigation steering_control_domain5 --ros-args --params-file vision_navigation/config/steering_control_params.yaml" C-m
+tmux send-keys -t $SESSION_NAME:0.2 "ros2 run vision_navigation rover_kinematic_control --ros-args --params-file vision_navigation/config/steering_control_params.yaml" C-m
 
-# Pane 3 (bottom-right): Domain Bridge (D6→D5) - tpc_rover_fmctl only
+# Pane 3 (bottom-right): Domain Bridge (D6→D5) - tpc_rover_ctrl_cmd relay
 tmux select-pane -t 3 -T "Bridge_D6→D5"
 tmux send-keys -t $SESSION_NAME:0.3 "cd ~/almondmatcha/ws_jetson && source install/setup.bash" C-m
 tmux send-keys -t $SESSION_NAME:0.3 "clear && echo -e '\\e[1;96m>>> [Bridge] D6→D5 CONTROL CMD RELAY <<<\\e[0m'" C-m

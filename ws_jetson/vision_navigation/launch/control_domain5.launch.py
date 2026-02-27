@@ -13,7 +13,7 @@ Domain Architecture:
 
     Domain 5: Control interface (THIS LAUNCH FILE)
         - Single node that reads Domain 6 results via shared memory
-        - Publishes /tpc_rover_fmctl to Domain 5 for rover control
+        - Publishes /tpc_rover_ctrl_cmd to Domain 5 for rover control
         - Minimal discovery burden on STM32 boards
 
 Multi-Domain Communication:
@@ -84,13 +84,13 @@ def generate_launch_description():
     
     # NOTE: This node internally creates TWO contexts:
     # - Context for Domain 6: subscribes to tpc_rover_nav_lane
-    # - Context for Domain 5: publishes tpc_rover_fmctl
+    # - Context for Domain 5: publishes tpc_rover_ctrl_cmd
     # Both contexts run in the same process (simple two-process approach)
     
     steering_control_node = Node(
         package='vision_navigation',
-        executable='steering_control_domain5',
-        name='steering_control_domain5',
+        executable='rover_kinematic_control',
+        name='rover_kinematic_control',
         output='screen',
         emulate_tty=True,
         parameters=[steering_config],
@@ -109,9 +109,9 @@ def generate_launch_description():
         LogInfo(msg='Vision Navigation - Domain 5 (Control Output)'),
         LogInfo(msg='========================================'),
         LogInfo(msg='Domain: 5 (Rover control loop)'),
-        LogInfo(msg='Node: steering_control_domain5 (dual-context)'),
+        LogInfo(msg='Node: rover_kinematic_control (dual-context)'),
         LogInfo(msg='Input: tpc_rover_nav_lane from Domain 6 (localhost)'),
-        LogInfo(msg='Output: tpc_rover_fmctl to Domain 5 (rover control)'),
+        LogInfo(msg='Output: tpc_rover_ctrl_cmd to Domain 5 (rover control)'),
         LogInfo(msg='========================================'),
         LogInfo(msg='[PREREQUISITE] Ensure vision_domain6.launch.py is running!'),
         LogInfo(msg='========================================'),
