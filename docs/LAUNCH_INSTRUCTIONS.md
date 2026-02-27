@@ -176,17 +176,18 @@ ros2 topic hz /tpc_rover_nav_lane
 ```bash
 export ROS_DOMAIN_ID=5
 ros2 node list
-# Expected: 10 nodes total (8 without ws_base, 10 with ws_base)
-# /rover_kinematic_control      (Jetson - kinematic control interface)
-# /node_chassis_controller    (ws_rpi)
-# /node_gnss_mission_monitor  (ws_rpi)
-# /node_gnss_spresense        (ws_rpi)
-# /node_chassis_imu           (ws_rpi)
-# /node_chassis_sensors       (ws_rpi)
-# /rover_node                 (STM32 chassis)
-# /sensors_node               (STM32 sensors)
-# /mission_command_node       (ws_base, if launched)
-# /mission_monitoring_node    (ws_base, if launched)
+# Expected: 11 nodes total (9 without ws_base, 11 with ws_base)
+# /rover_kinematic_control        (Jetson — dual-context D6 sub / D5 pub)
+# /node_chassis_controller        (ws_rpi)
+# /node_gnss_mission_monitor      (ws_rpi)
+# /node_gnss_spresense            (ws_rpi)
+# /node_gnss_ublox                (ws_rpi)
+# /node_chassis_imu               (ws_rpi)
+# /node_chassis_sensors           (ws_rpi)
+# /mission_monitoring_node_rpi    (ws_rpi — D5 sub / D4 pub + CSV)
+# /chassis_controller             (STM32 chassis)
+# /sensors_node                   (STM32 sensors)
+# /mission_command_node           (ws_base, if launched)
 
 ros2 topic list
 # Should see: tpc_rover_ctrl_cmd, tpc_chassis_cmd, tpc_chassis_imu, tpc_rover_nav_lane, etc.

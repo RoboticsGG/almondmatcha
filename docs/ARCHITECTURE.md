@@ -14,30 +14,41 @@ Almondmatcha rover system architecture: distributed heterogeneous computing with
 
 ## System Diagram
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     ROVER SYSTEM ARCHITECTURE                   │
-│                    (Domain 5 - Unified System)                  │
-│                All systems connected via Ethernet Switch        │
-└─────────────────────────────────────────────────────────────────┘
+The rover uses **three DDS domains**: D6 (Jetson vision, localhost only), D5 (control network, all systems), D4 (telemetry relay, Base + Jetson only, never visible to STM32).
 
-                    Gigabit Ethernet Switch
-                       (192.168.1.0/24)
-                              |
-        ┌─────────────┬───────┼───────┬─────────────┬─────────────┐
-        |             |       |       |             |             |
-   Raspberry Pi  Jetson Orin  |  Base Station  STM32 Chassis  STM32 Sensors
-   192.168.1.1   192.168.1.5  |   192.168.1.10  192.168.1.2   192.168.1.6
-        |             |       |       |             |             |
-┌───────▼─────┐ ┌─────▼──────┐ ┌─────▼─────┐ ┌─────▼─────┐ ┌─────▼─────┐
-│   ws_rpi    │ │ ws_jetson  │ │  ws_base  │ │  mros2    │ │  mros2    │
-│             │ │            │ │           │ │           │ │           │
-│ Coordination│ │  Vision    │ │ Telemetry │ │ Motor +   │ │ Sensors + │
-│ Sensor      │ │  Lane      │ │ Command   │ │ IMU       │ │ GNSS +    │
-│ Fusion      │ │  Detection │ │ Monitor   │ │ Control   │ │ Encoders  │
-│ Mission     │ │  Steering  │ │           │ │           │ │ Power     │
-└─────────────┘ └────────────┘ └───────────┘ └───────────┘ └───────────┘
-     Domain 5       Domain 5      Domain 5      Domain 5      Domain 5
+```mermaid
+graph LR
+    SW[["Gigabit Ethernet Switch\n192.168.1.0/24"]]
+
+    subgraph RPi ["Raspberry Pi · 192.168.1.1"]
+        R1["D5 · 7 control nodes\nGNSS, chassis, mission"]
+        R2["D4 · mission_monitoring_node_rpi\ntelemetry relay + CSV"]
+    end
+
+    subgraph JET ["Jetson Orin · 192.168.1.5"]
+        J1["D6 · camera_stream + lane_detection\nlocalhost only · 30 FPS"]
+        J2["D5 · rover_kinematic_control\ndual-context: D6 sub / D5 pub"]
+        J3["D4 · node_rover_local_monitoring\nCSV + future DB"]
+    end
+
+    subgraph BASE ["Base Station · 192.168.1.10"]
+        B1["D5 · mission_command_node\nactions + services"]
+        B2["D4 · mission_monitoring_node_pc\ntelemetry display"]
+    end
+
+    subgraph CHS ["STM32 Chassis · 192.168.1.2"]
+        C1["D5 · chassis_controller\nmotor + IMU"]
+    end
+
+    subgraph SNS ["STM32 Sensors · 192.168.1.6"]
+        S1["D5 · sensors_node\nGNSS + encoders + power"]
+    end
+
+    RPi --- SW
+    JET --- SW
+    BASE --- SW
+    CHS --- SW
+    SNS --- SW
 ```
 
 ## Hardware Architecture
@@ -75,8 +86,8 @@ Almondmatcha rover system architecture: distributed heterogeneous computing with
 
 ### ROS2 Multi-Domain Strategy
 
-**Domain 5 (Control Network):** Network-wide, 10 participants
-- All control systems: ws_rpi (7 nodes), ws_base (1 command node), ws_jetson (1 node), STM32 (2 nodes)
+**Domain 5 (Control Network):** Network-wide, 11 nodes
+- ws_rpi (7) + ws_base (1) + ws_jetson (1) + STM32 (2) = 11 nodes
 - Low-frequency control messages optimized for STM32 memory constraints
 - Native action/service support across all systems
 
@@ -89,9 +100,9 @@ Almondmatcha rover system architecture: distributed heterogeneous computing with
 - High-bandwidth RGB/Depth streams (30 FPS, 1280×720) isolated from network
 - Invisible to STM32 boards
 
-**Cross-domain bridges:** `rover_kinematic_control` (D6→D5 for vision + kinematic control), `mission_monitoring_node_rpi` (D5→D4 for telemetry relay + CSV logging).
+**Dual-context nodes:** `rover_kinematic_control` subscribes D6 + publishes D5 in one process (no bridge); `mission_monitoring_node_rpi` subscribes D5 + publishes D4 in one process (no bridge).
 
-**Rationale:** Domain isolation reduces STM32 discovery overhead (10 vs 13+ participants), enables scalable vision expansion, and completely isolates monitoring traffic from the control network.
+**Rationale:** Domain isolation reduces STM32 discovery overhead (11 vs 14+ participants), enables scalable vision/AI expansion without STM32 firmware changes, and completely isolates monitoring/logging traffic from the control network.
 
 ### Node Distribution
 
@@ -149,12 +160,12 @@ Domain 5 (mROS2):
 
 ### Vision-Based Lane Following
 
-```
-Camera (30 FPS) → Lane Detection (30 FPS) → Steering Control (50 Hz)
-                                              ↓
-                                        Chassis Controller (50 Hz)
-                                              ↓
-                                        STM32 Motor Control (20 Hz)
+```mermaid
+flowchart LR
+    CAM["camera_stream\nD6 · 30 FPS"] -->|tpc_rover_d415_rgb| LANE["lane_detection\nD6 · 30 FPS"]
+    LANE -->|tpc_rover_nav_lane| CTRL["rover_kinematic_control\nD6 sub / D5 pub · 50 Hz"]
+    CTRL -->|tpc_rover_ctrl_cmd| CC["node_chassis_controller\nD5 · 50 Hz"]
+    CC -->|tpc_chassis_cmd| MTR["STM32 chassis_controller\nD5 · 20 Hz"]
 ```
 
 **Latency Budget:**
@@ -172,37 +183,25 @@ Camera (30 FPS) → Lane Detection (30 FPS) → Steering Control (50 Hz)
 - Sensor data: STM32s → RPi logging nodes
 - Control commands: steering_control → chassis_controller
 
-**Request-Response (Services):** Speed limit updates — base station → chassis controller.
-
-**Action (Goal-Based):** Destination waypoints — base station → mission monitor, with remaining-distance feedback.
-
 **Request-Response (Services):**
 - Speed limit updates: base station → chassis controller
 - Navigation goals: base station → mission monitor
 
 **Action (Goal-Based):**
 - Destination waypoints: base station → mission monitor
-- Feedback: remaining distance, ETA
+- Feedback: remaining distance
 
 ## Communication Architecture
 
 ### Network Topology
 
-```
-                 Gigabit Ethernet Switch (192.168.1.0/24)
-                              |
-        ┌─────────────┬───────┼───────┬─────────────┬─────────────┐
-        |             |       |       |             |             |
-   RPi (.1)      Jetson (.5)  |  Base (.10)    Chassis (.2)  Sensors (.6)
-```
-
-| Device | IP Address | Role |
-|--------|-----------|------|
-| Raspberry Pi | 192.168.1.1 | Coordination / sensor fusion |
-| Jetson Orin | 192.168.1.5 | Vision processing / kinematic control |
-| Base Station | 192.168.1.10 | Command / monitoring |
-| STM32 Chassis | 192.168.1.2 | Motor / IMU control |
-| STM32 Sensors | 192.168.1.6 | GNSS / encoders / power |
+| Device | IP | Domains | Role |
+|--------|-----|---------|------|
+| Raspberry Pi | 192.168.1.1 | D5 (7 nodes) + D4 (relay) | Coordination, sensing, mission |
+| Jetson Orin | 192.168.1.5 | D6 (vision) + D5 (control) + D4 (logging) | Vision processing, kinematic control |
+| Base Station | 192.168.1.10 | D5 (command) + D4 (display) | Mission command, telemetry monitoring |
+| STM32 Chassis | 192.168.1.2 | D5 only | Motor control, IMU |
+| STM32 Sensors | 192.168.1.6 | D5 only | GNSS, encoders, power |
 
 **DDS:** Fast-RTPS on Linux; embeddedRTPS (mROS2) on STM32. Multicast discovery on 239.255.0.1, UDP 7400–7500. Critical commands use Reliable QoS; high-frequency sensor streams use Best-Effort.
 

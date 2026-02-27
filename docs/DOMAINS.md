@@ -12,61 +12,56 @@ The rover implements a tri-domain architecture: Domain 4 (telemetry), Domain 5 (
 
 ## Architecture Overview
 
-```
-Domain 6: Vision Processing (Jetson localhost)
-┌──────────────────────────────────────────┐
-│ camera_stream → lane_detection          │
-│ (30 FPS RGB/Depth, localhost only)       │
-└────────────┤ tpc_rover_nav_lane ├──────────┘
-                 │
-                 ▼
-Domain 5: Rover Control (Network-wide)
-┌──────────────┤ Jetson ├────────────────────┐
-│ rover_kinematic_control (D6→D5 bridge) │
-│ Pub: tpc_rover_ctrl_cmd                 │
-└──────────────┤ RPi ├───────────────────────┘
-                 │
-┌────────────────▼───────────────────────────┐
-│ mission_monitoring_node_rpi             │
-│ Aggregates: All D5 topics               │
-│ Pub: tpc_telemetry_relay (to D4)       │
-└────────────────┬───────────────────────────┘
-                 │
-                 │ Cross-domain relay
-                 │
-                 ▼
-Domain 4: Base Telemetry (Base station)
-┌─────────────────────────────────────────┐
-│ mission_monitoring_node_pc              │
-│ Sub: tpc_telemetry_relay (read-only)   │
-└─────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph D6["Domain 6 — Jetson localhost only"]
+        CAM["camera_stream"] -->|tpc_rover_d415_rgb| LANE["lane_detection"]
+    end
 
-Domain 5: Base Command (Base station)
-┌─────────────────────────────────────────┐
-│ mission_command_node                    │
-│ Pub: Commands/goals to RPi action servers│
-└─────────────────────────────────────────┘
+    subgraph D5["Domain 5 — Control Network (all systems via Ethernet)"]
+        CTRL["rover_kinematic_control (Jetson)\ndual-context: D6 sub / D5 pub\n→ tpc_rover_ctrl_cmd @ 50 Hz"]
+        CC["node_chassis_controller (RPi)"]
+        STM32C["chassis_controller (STM32)"]
+        STM32S["sensors_node (STM32)"]
+        GNSS["GNSS nodes (RPi)"]
+        MON["mission_monitoring_node_rpi (RPi)\nAggregates all D5 topics\n→ CSV @ native rates"]
+        CMD["mission_command_node (Base)\nactions/services → RPi"]
+    end
+
+    subgraph D4["Domain 4 — Telemetry (Base + Jetson, invisible to STM32)"]
+        PC["mission_monitoring_node_pc (Base)\ntelemetry display"]
+        JLOG["node_rover_local_monitoring (Jetson)\nCSV @ 5 Hz · future DB"]
+    end
+
+    LANE -->|tpc_rover_nav_lane| CTRL
+    CTRL --> CC --> STM32C
+    GNSS --> MON
+    STM32C --> MON
+    STM32S --> MON
+    CTRL --> MON
+    MON -->|tpc_telemetry_relay 5 Hz| PC
+    MON -->|tpc_telemetry_relay 5 Hz| JLOG
 ```
 
 ## Design Rationale
 
 **Problem 1:** STM32 boards (512 KB SRAM) consume RAM per DDS participant for discovery and message tracking.  
-**Solution 1:** Isolate vision traffic to Domain 6 (Jetson localhost), reducing D5 participants from 13 to 10.  
+**Solution 1:** Isolate vision traffic to Domain 6 (Jetson localhost), reducing D5 participants from 13 to 11.  
 **Result:** ~60% free RAM on STM32 vs OOM without isolation.
 
 **Problem 2:** Base station telemetry node adds an unnecessary D5 participant.  
 **Solution 2:** Cross-domain relay — `mission_monitoring_node_rpi` aggregates D5 topics and publishes to D4 at 5 Hz.  
-**Result:** D5 count at 10; monitoring traffic completely isolated from control domain.
+**Result:** D5 count at 11; monitoring traffic completely isolated from control domain.
 
 **Problem 3:** Separate CSV logger (`node_rover_monitoring`) consumed a D5 participant slot.  
 **Solution 3:** CSV logging merged into `mission_monitoring_node_rpi`; secondary Jetson logger added on D4.  
 **Result:** One fewer D5 participant; dual-tier logging with no STM32 overhead.
 
 **Cross-domain links:**
-- Vision to control: `rover_kinematic_control` (D6 sub → D5 pub)
-- Telemetry relay: `mission_monitoring_node_rpi` (D5 sub → D4 pub + CSV)
+- Vision to control: `rover_kinematic_control` (D6 sub → D5 pub, dual-context single process)
+- Telemetry relay: `mission_monitoring_node_rpi` (D5 sub → D4 pub + CSV logging)
 
-**Benefits:** 10 D5 participants; network bandwidth optimized; scalable vision/AI expansion without STM32 impact; Jetson logger ready for database migration.
+**Benefits:** 11 D5 participants; STM32 memory stable; scalable vision/AI expansion without STM32 firmware changes; Jetson logger ready for database migration.
 
 
 ## Domain Configuration
@@ -147,7 +142,7 @@ export ROS_DOMAIN_ID=5
 ros2 node list
 
 # Expected output (11 nodes visible to all D5 systems):
-/rover_kinematic_control        # ws_jetson (D6→D5 bridge)
+/rover_kinematic_control        # ws_jetson (dual-context D6 sub / D5 pub)
 /node_chassis_controller        # ws_rpi
 /node_gnss_mission_monitor      # ws_rpi
 /node_gnss_spresense            # ws_rpi
@@ -197,6 +192,72 @@ ros2 topic echo /tpc_rover_nav_lane
 export ROS_DOMAIN_ID=5
 ros2 topic echo /tpc_rover_ctrl_cmd
 ```
+
+---
+
+## Telemetry Relay Implementation
+
+### Domain 4 Subscribers
+
+Two nodes subscribe to `/tpc_telemetry_relay` on Domain 4:
+
+**`mission_monitoring_node_pc` (Base station):** real-time telemetry display. Runs entirely in D4 — no D5 participation, never counted in STM32 discovery.
+
+**`node_rover_local_monitoring` (Jetson):** secondary CSV logging at 5 Hz in `ws_jetson/runs/run_NNN_YYYYMMDD_HHMMSS/`. Future: replace CSV writer with SQLite/PostgreSQL. Runs entirely in D4.
+
+### Dual-Context Pattern (RPi)
+
+`mission_monitoring_node_rpi` creates two ROS2 contexts in one process:
+
+```cpp
+// Domain 5 context — for subscriptions (all sensor/command topics)
+auto d5_init = rclcpp::InitOptions();
+d5_init.set_domain_id(5);
+auto d5_ctx = std::make_shared<rclcpp::Context>();
+d5_ctx->init(argc, argv, d5_init);
+
+// Domain 4 context — for publishing telemetry relay
+auto d4_init = rclcpp::InitOptions();
+d4_init.set_domain_id(4);
+auto d4_ctx = std::make_shared<rclcpp::Context>();
+d4_ctx->init(argc, argv, d4_init);
+
+// MultiThreadedExecutor spins both nodes
+rclcpp::executors::MultiThreadedExecutor exec;
+exec.add_node(node);               // D5 subscriber node
+exec.add_node(node->d4_pub_node_); // D4 publisher node
+exec.spin();
+```
+
+### TelemetryRelay.msg
+
+Published at 5 Hz on `/tpc_telemetry_relay` (Domain 4, ~280 bytes/message):
+- Header (timestamp)
+- Mission: `mission_active`, `distance_remaining_km`
+- RTK GNSS: lat/lon/alt, fix quality, centimeter error, validity flag
+- Spresense GNSS: lat/lon/alt, validity flag
+- Chassis: encoders, voltage, current, power
+- IMU: accel xyz, gyro xyz
+- Commands: chassis cmd left/right speed & direction
+- Navigation: `steering_command`, `lane_theta`, `lane_b`, `lane_detected`
+- Destination: lat/lon
+
+See [`common_ifaces/msgs_ifaces/msg/TelemetryRelay.msg`](../common_ifaces/msgs_ifaces/msg/) for full definition.
+
+## Troubleshooting
+
+**Base station sees no telemetry:**
+1. `echo $ROS_DOMAIN_ID` on base — should be 4
+2. RPi node running: `ROS_DOMAIN_ID=5 ros2 node list | grep mission_monitoring_node_rpi`
+3. Network: `ping 192.168.1.1` from base
+
+**RPi monitoring node missing from D5:**
+1. Build: `colcon build --packages-select pkg_rover_monitoring`
+2. Check executor running both contexts (no crash in D4 context init)
+3. Verify ROS2 Humble+ (multi-domain context requires Humble or later)
+
+**High CPU on RPi:**
+Expected ~5–10% for 5 Hz D4 publishing. If higher, check for topic storms or QoS mismatches on D5 subscriptions.
 
 ---
 

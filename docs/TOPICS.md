@@ -429,41 +429,28 @@ See [msgs_ifaces/msg/TelemetryRelay.msg](../common_ifaces/msgs_ifaces/msg/) for 
 ## Topic Dependency Graph
 
 **Vision Processing (Domain 6 → Domain 5):**
-```
-camera_stream (D6)
-    └── tpc_rover_d415_rgb (D6)
-            └── lane_detection (D6)
-                    └── tpc_rover_nav_lane (D6)
-                            └── rover_kinematic_control (dual-ctx D6/D5)
-                                    └── tpc_rover_ctrl_cmd (D5)
+```mermaid
+flowchart LR
+    CS["camera_stream\n(D6)"] -->|tpc_rover_d415_rgb| LD["lane_detection\n(D6)"]
+    LD -->|tpc_rover_nav_lane| RKC["rover_kinematic_control\n(dual-ctx D6/D5)"]
+    RKC -->|tpc_rover_ctrl_cmd| CC["node_chassis_controller\n(D5)"]
 ```
 
 **Chassis Control (Domain 5):**
-```
-node_chassis_controller (RPi, D5)
-    └── tpc_chassis_cmd (D5)
-            └── chassis_controller (STM32 mROS2)
-                    └── tpc_chassis_imu (D5)
-```
-
-**Sensor Data Flow (Domain 5):**
-```
-sensors_node (STM32 mROS2)
-    └── tpc_chassis_sensors (D5)
-            └── mission_monitoring_node_rpi (RPi)
-
-node_gnss_spresense (RPi) → tpc_gnss_spresense (D5) → mission_monitoring_node_rpi
-node_gnss_ublox (RPi)     → tpc_gnss_ublox (D5)     → mission_monitoring_node_rpi
+```mermaid
+flowchart LR
+    CC["node_chassis_controller\n(RPi, D5)"] -->|tpc_chassis_cmd| STM32["chassis_controller\n(STM32)"]
+    STM32 -->|tpc_chassis_imu| CC
 ```
 
-**Telemetry Relay (Domain 5 → Domain 4):**
-```
-mission_monitoring_node_rpi (RPi)
-    ├── Subscribes: 10 D5 topics (sensors, GNSS, commands, navigation)
-    ├── CSV: 6 files in ws_rpi/runs/ (native rates: 4–50 Hz)
-    └── tpc_telemetry_relay (D4, 5 Hz)
-            ├── mission_monitoring_node_pc (Base, D4) — display
-            └── node_rover_local_monitoring (Jetson, D4) — CSV in ws_jetson/runs/
+**Sensor Data Flow (Domain 5 → D4 relay):**
+```mermaid
+flowchart LR
+    SNS["sensors_node (STM32)"] -->|tpc_chassis_sensors| MON["mission_monitoring_node_rpi\n(RPi)"]
+    SPRES["node_gnss_spresense (RPi)"] -->|tpc_gnss_spresense| MON
+    UBLOX["node_gnss_ublox (RPi)"] -->|tpc_gnss_ublox| MON
+    MON -->|tpc_telemetry_relay 5Hz D4| PC["mission_monitoring_node_pc\n(Base, D4)"]
+    MON -->|tpc_telemetry_relay 5Hz D4| JL["node_rover_local_monitoring\n(Jetson, D4)"]
 ```
 
 ---
