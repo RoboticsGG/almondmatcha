@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-domain_bridge_jetson.py
-Workspace:  ws_jetson  |  Package: vision_navigation_pkg  |  Domain: 6 (sub) → 5 (pub)
+domain_bridge_jetson.py  —  ** DEPRECATED **
+Workspace:  ws_jetson  |  Package: vision_navigation_pkg
 
-Jetson Domain Bridge: Domain 6 → Domain 5
-Relays the rover kinematic control command from the vision domain to the rover network domain.
+NOTICE: This node is no longer used and must NOT be run alongside rover_kinematic_control.
 
-Subscribes: /tpc_rover_ctrl_cmd (Domain 6) - from rover_kinematic_control
-Publishes:  /tpc_rover_ctrl_cmd (Domain 5) - to chassis_controller (RPi)
+The dual-context bridge functionality (D6 sub tpc_rover_nav_lane → D5 pub tpc_rover_ctrl_cmd)
+has been merged directly into RoverKinematicControlNode + D5InterfaceNode inside
+steering_control_domain5.py (entry point: rover_kinematic_control).
 
-Message format (Float32MultiArray): [steer_angle, speed_cmd, detected]
+Running this file would create duplicate publishers on Domain 5 and corrupt the
+chassis_controller command stream.
 
-This bridge runs with TWO ROS2 contexts (one per domain) in separate threads.
-Only relays the final control command to minimize Domain 5 traffic.
+This file is kept for reference only.
 """
 
 import os

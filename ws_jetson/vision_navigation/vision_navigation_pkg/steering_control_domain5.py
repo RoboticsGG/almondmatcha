@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
 """
 steering_control_domain5.py  (entry point: rover_kinematic_control)
-Workspace:  ws_jetson  |  Package: vision_navigation_pkg  |  Domain: 6 (sub) → 6 pub, relayed to D5
+Workspace:  ws_jetson  |  Package: vision_navigation_pkg
+Architecture: Dual-context single process (Domain 6 sub + Domain 5 pub/sub)
 
-Rover Kinematic Control Node - Domain 6 (Vision Processing Domain)
+Rover Kinematic Control Node
 
 Purpose:
-    Implements bicycle-model-inspired kinematic control. Receives lane detection
-    data and computes two coupled control outputs: steering angle and chassis speed.
-    The domain bridge relays the combined command to Domain 5 for the RPi chassis
-    controller.
+    Merged domain bridge + kinematic control in one process.
+    Runs TWO rclpy contexts so it can subscribe to the vision domain (D6) and
+    publish directly to the rover network (D5) without a separate relay process.
 
-Architecture:
-    Input:  Domain 6 → tpc_rover_nav_lane  (from lane_detection, same domain)
-    Output: Domain 6 → tpc_rover_ctrl_cmd  (relayed by domain_bridge to D5)
+        D6 context -- sub: tpc_rover_nav_lane  (from lane_detection)
+        D5 context -- pub: tpc_rover_ctrl_cmd   (to node_chassis_controller, RPi)
+        D5 context -- sub: tpc_chassis_sensors  (stub: future encoder speed loop)
+
+    Eliminates the former domain_bridge_jetson process:
+    - One fewer process, one fewer pub/sub hop
+    - D5 encoder data reachable with a single extra D5 subscription when needed
+    - Camera topics stay isolated on D6 (not visible on rover DDS network)
 
 Control Outputs (tpc_rover_ctrl_cmd):
     data[0]  steer_angle  Steering command in degrees (+right, -left)
@@ -29,30 +34,33 @@ Steering Control Parameters:
     steer_when_lost: Steering command when lane not detected (safety)
 
 Speed Control Parameters:
-    speed_ref: Desired forward speed when lane is detected (0–100% PWM duty cycle)
+    speed_ref: Desired forward speed when lane is detected (0-100% PWM duty cycle)
     speed_lost_ratio: Speed ratio applied when lane is temporarily lost (default 0.5)
     detection_timeout_sec: Seconds without detection before full safety stop (default 10.0)
 
-    NOTE: Encoder-based closed-loop speed feedback (bicycle kinematic model) is a
-    planned future feature. The domain bridge will relay tpc_chassis_sensors from
-    D5 → D6 to provide wheel encoder data to this node.
+    NOTE: Encoder-based closed-loop speed feedback is a planned future feature.
+    Activate by uncommenting the tpc_chassis_sensors subscription in D5InterfaceNode
+    and adding a speed PID callback.
 
 CSV Logging:
     Records to ~/almondmatcha/runs/logs/ws_jetson_kinematic_ctrl_TIMESTAMP.csv
 
-Author: Vision Navigation System
+Author: AlmondMatcha Rover Team
 Date: February 27, 2026
 """
 
+import os
 import time
 import csv
-import os
+import threading
 import numpy as np
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Float32MultiArray
+from rclpy.context import Context
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+from std_msgs.msg import Float32MultiArray
 
 from vision_navigation_pkg.control_filters import (
     ExponentialMovingAverageLPF,
@@ -61,17 +69,88 @@ from vision_navigation_pkg.control_filters import (
 )
 
 
+# =============================================================================
+# Domain 5 Interface Node
+# =============================================================================
+
+class D5InterfaceNode(Node):
+    """
+    Runs on Domain 5 (rover network).
+
+    Responsibilities:
+        - Publish tpc_rover_ctrl_cmd to node_chassis_controller (RPi)
+        - Subscribe to tpc_chassis_sensors [stub: future encoder feedback]
+
+    publish_ctrl_cmd() is called from the D6 thread -- rclpy Publisher.publish()
+    is thread-safe, so no lock is required.
+    """
+
+    def __init__(self, context: Context) -> None:
+        super().__init__('rover_kinematic_control_d5', context=context)
+
+        qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10
+        )
+
+        # Publisher: [steer_angle, speed_cmd, detected] -> chassis_controller (RPi)
+        self.pub_ctrl_cmd = self.create_publisher(
+            Float32MultiArray, 'tpc_rover_ctrl_cmd', qos
+        )
+
+        # -- Encoder feedback stub (future closed-loop speed control) -----------
+        # To activate:
+        #   1. Build/source msgs_ifaces in ws_jetson
+        #   2. Import:  from msgs_ifaces.msg import ChassisSensors
+        #   3. Uncomment the subscription below
+        #   4. Implement _on_chassis_sensors() with a speed PID using
+        #      msg.mt_lf_encode_msg and msg.mt_rt_encode_msg
+        #
+        # self.sub_chassis_sensors = self.create_subscription(
+        #     ChassisSensors, 'tpc_chassis_sensors',
+        #     self._on_chassis_sensors, qos
+        # )
+        # def _on_chassis_sensors(self, msg) -> None:
+        #     # TODO: speed PID with encoder deltas
+        #     pass
+        # -----------------------------------------------------------------------
+
+        self.relay_count = 0
+        self.create_timer(5.0, self._heartbeat)
+
+        self.get_logger().info(
+            "[D5] Interface node ready on Domain 5 -- publishing tpc_rover_ctrl_cmd"
+        )
+
+    def publish_ctrl_cmd(self, msg: Float32MultiArray) -> None:
+        """Publish a control command to Domain 5. Thread-safe."""
+        self.pub_ctrl_cmd.publish(msg)
+        self.relay_count += 1
+
+    def _heartbeat(self) -> None:
+        self.get_logger().info(
+            f"[D5] Published {self.relay_count} commands -> tpc_rover_ctrl_cmd (Domain 5)"
+        )
+
+
+# =============================================================================
+# Domain 6 Kinematic Control Node
+# =============================================================================
+
 class RoverKinematicControlNode(Node):
     """
-    Bicycle-model kinematic controller on Domain 6 (vision processing domain).
+    Runs on Domain 6 (Jetson localhost / vision domain).
 
-    Subscribes to lane detection data on Domain 6 (local).
-    Computes coupled steering angle + chassis speed commands.
-    Publishes tpc_rover_ctrl_cmd on Domain 6; the domain bridge relays it to D5.
+    Subscribes to lane detection data, runs the PID steering + speed control
+    loop, and pushes the result to Domain 5 by calling
+    d5_interface.publish_ctrl_cmd() directly (same process, cross-context).
     """
 
-    def __init__(self) -> None:
-        super().__init__('rover_kinematic_control')
+    def __init__(self, context: Context, d5_interface: D5InterfaceNode) -> None:
+        super().__init__('rover_kinematic_control', context=context)
+
+        self.d5_interface = d5_interface
 
         # ===================== Steering PID Gains =====================
         self.declare_parameter('k_e1', 1.0)    # Heading error weight
@@ -101,11 +180,10 @@ class RoverKinematicControlNode(Node):
         self.steer_when_lost: float = float(self.get_parameter('steer_when_lost').value)
 
         # ===================== Speed Control Parameters =====================
-        # Unit: 0–100 (% PWM duty cycle). The STM32 divides spd_msg by 100 for motor PWM.
-        # Values above 100 are meaningless (exceed 100% duty) and will be clamped in chassis_controller.
-        self.declare_parameter('speed_ref', 50)               # Target speed at startup (0–100%)
-        self.declare_parameter('speed_lost_ratio', 0.5)       # Speed multiplier when lane is lost
-        self.declare_parameter('detection_timeout_sec', 10.0) # Timeout before safety stop
+        # Unit: 0-100 (% PWM duty cycle). STM32 converts: motor_duty = speed_percent / 100.0
+        self.declare_parameter('speed_ref', 50)
+        self.declare_parameter('speed_lost_ratio', 0.5)
+        self.declare_parameter('detection_timeout_sec', 10.0)
 
         self.speed_ref: int              = int(self.get_parameter('speed_ref').value)
         self.speed_lost_ratio: float     = float(self.get_parameter('speed_lost_ratio').value)
@@ -121,23 +199,14 @@ class RoverKinematicControlNode(Node):
         self.detect_zero_start: float  = 0.0
 
         # ===================== QoS =====================
-        # BEST_EFFORT matches the Jetson domain bridge and chassis_controller QoS
         qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             history=HistoryPolicy.KEEP_LAST,
             depth=10
         )
 
-        # ===================== Publisher =====================
-        # Published on Domain 6; relayed to Domain 5 by domain_bridge_jetson
-        # Output format: [steer_angle, speed_cmd, detected]
-        self.pub_ctrl_cmd = self.create_publisher(
-            Float32MultiArray,
-            'tpc_rover_ctrl_cmd',
-            qos
-        )
-
         # ===================== Subscriber =====================
+        # No local publisher — output goes via d5_interface.publish_ctrl_cmd()
         self.sub_lane = self.create_subscription(
             Float32MultiArray,
             'tpc_rover_nav_lane',
@@ -154,11 +223,13 @@ class RoverKinematicControlNode(Node):
         self.heartbeat_timer = self.create_timer(5.0, self._heartbeat_callback)
 
         self.get_logger().info("Rover Kinematic Control node initialized on Domain 6")
-        self.get_logger().info(f"  Subscribe: tpc_rover_nav_lane (D6 local)")
-        self.get_logger().info(f"  Publish:   tpc_rover_ctrl_cmd (D6 → bridge → D5)")
+        self.get_logger().info(f"  Subscribe (D6): tpc_rover_nav_lane")
+        self.get_logger().info(f"  Publish  (D5):  tpc_rover_ctrl_cmd  [direct via D5InterfaceNode]")
         self.get_logger().info(f"  Steering PID  Kp={self.k_p} Ki={self.k_i} Kd={self.k_d}")
-        self.get_logger().info(f"  Speed ref={self.speed_ref}%  lost_ratio={self.speed_lost_ratio}"
-                               f"  timeout={self.detection_timeout_sec}s  (unit: 0–100% duty)")
+        self.get_logger().info(
+            f"  Speed ref={self.speed_ref}%  lost_ratio={self.speed_lost_ratio}"
+            f"  timeout={self.detection_timeout_sec}s  (unit: 0-100% duty)"
+        )
 
     # ===================== Initialization =====================
 
@@ -237,10 +308,10 @@ class RoverKinematicControlNode(Node):
         self._log_control_data(now, theta_ema, b_ema, u, error_sum, steer_angle, speed_cmd,
                                 detected_valid)
 
-        # ===== Publish combined control command =====
+        # ---- Publish to Domain 5 via D5InterfaceNode (same process, thread-safe) ----
         cmd_msg = Float32MultiArray()
         cmd_msg.data = [steer_angle, float(speed_cmd), float(detected_valid)]
-        self.pub_ctrl_cmd.publish(cmd_msg)
+        self.d5_interface.publish_ctrl_cmd(cmd_msg)
         self.pub_msg_count += 1
 
         # ===== Terminal output =====
@@ -254,29 +325,23 @@ class RoverKinematicControlNode(Node):
 
     def _compute_speed_cmd(self, detected_valid: bool) -> int:
         """
-        Compute chassis speed command (0–255) based on lane detection state.
+        Compute chassis speed command based on lane detection state.
 
-        Speed policy:
-            - Lane detected                  → full speed_ref
-            - Lane lost, within timeout      → speed_ref × speed_lost_ratio  (caution)
-            - Lane lost, timeout exceeded    → 0  (safety stop)
+        Policy:
+            detected              -> speed_ref (full speed)
+            lost, within timeout  -> speed_ref * speed_lost_ratio (caution)
+            lost, timeout expired -> 0 (safety stop)
 
-        NOTE: Encoder-based closed-loop feedback is a planned future enhancement.
-        When ready, this method will be extended with a speed PID using wheel encoder
-        data relayed from tpc_chassis_sensors (D5 → D6 via domain_bridge_jetson).
-
-        Args:
-            detected_valid: True if lane is currently visible and filter is warm.
+        NOTE: When encoder feedback is activated (tpc_chassis_sensors D5 sub),
+        this method will be replaced by a speed PID using wheel encoder deltas.
 
         Returns:
-            Integer speed command, unit 0–100 (% PWM duty cycle).
-            The STM32 motor_control.cpp converts: motor_duty = speed_percent / 100.0
+            Integer speed command (0-100% PWM duty cycle).
         """
         if detected_valid:
             self.detect_zero_active = False
             return self.speed_ref
 
-        # Lane not detected — start or continue the timeout counter
         if not self.detect_zero_active:
             self.detect_zero_start  = time.time()
             self.detect_zero_active = True
@@ -284,9 +349,8 @@ class RoverKinematicControlNode(Node):
         elapsed = time.time() - self.detect_zero_start
 
         if elapsed >= self.detection_timeout_sec:
-            return 0   # Safety stop: lane has been missing too long
+            return 0
 
-        # Caution mode: reduce speed while waiting for lane to reappear
         return int(self.speed_ref * self.speed_lost_ratio)
 
     # ===================== Heartbeat =====================
@@ -300,8 +364,7 @@ class RoverKinematicControlNode(Node):
             )
         else:
             self.get_logger().info(
-                f"[KIN] Alive — lane_rx={self.lane_msg_count} "
-                f"ctrl_tx={self.pub_msg_count} → tpc_rover_ctrl_cmd (D6→bridge→D5)"
+                f"[KIN] Alive -- lane_rx={self.lane_msg_count} ctrl_tx={self.pub_msg_count}"
             )
 
     # ===================== Logging =====================
@@ -340,21 +403,66 @@ class RoverKinematicControlNode(Node):
         super().destroy_node()
 
 
+# =============================================================================
+# Entry Point
+# =============================================================================
+
 def main() -> None:
-    rclpy.init()
+    """
+    Spin both contexts in separate threads.
+
+    Context layout:
+        ctx_d6 (Domain 6) -- RoverKinematicControlNode  [sub lane, compute]
+        ctx_d5 (Domain 5) -- D5InterfaceNode             [pub ctrl_cmd, sub encoders stub]
+    """
+
+    # -- Create Domain 6 context --
+    os.environ['ROS_DOMAIN_ID'] = '6'
+    rclpy.init()           # bootstrap rclpy (default context, not used directly)
+    ctx_d6 = Context()
+    ctx_d6.init()
+
+    # -- Create Domain 5 context --
+    os.environ['ROS_DOMAIN_ID'] = '5'
+    ctx_d5 = Context()
+    ctx_d5.init()
+
+    # -- Instantiate nodes --
+    d5_node = D5InterfaceNode(context=ctx_d5)
+    d6_node = RoverKinematicControlNode(context=ctx_d6, d5_interface=d5_node)
+
+    # -- Create executors --
+    exec_d6 = MultiThreadedExecutor(context=ctx_d6)
+    exec_d6.add_node(d6_node)
+
+    exec_d5 = MultiThreadedExecutor(context=ctx_d5)
+    exec_d5.add_node(d5_node)
+
+    # -- Spin in separate threads --
+    thread_d6 = threading.Thread(target=exec_d6.spin, daemon=True)
+    thread_d5 = threading.Thread(target=exec_d5.spin, daemon=True)
+
+    thread_d6.start()
+    thread_d5.start()
+
+    print("[rover_kinematic_control] Running "
+          "(D6 sub tpc_rover_nav_lane | D5 pub tpc_rover_ctrl_cmd)")
+    print("Press Ctrl+C to stop")
+
     try:
-        node = RoverKinematicControlNode()
-        rclpy.spin(node)
+        thread_d6.join()
+        thread_d5.join()
     except KeyboardInterrupt:
-        print("Shutting down rover kinematic control node...")
-    except Exception as e:
-        print(f"Error: {e}")
+        print("\n[rover_kinematic_control] Shutting down...")
     finally:
+        exec_d6.shutdown()
+        exec_d5.shutdown()
+        d6_node.destroy_node()
+        d5_node.destroy_node()
+        ctx_d6.try_shutdown()
+        ctx_d5.try_shutdown()
         if rclpy.ok():
-            try:
-                rclpy.shutdown()
-            except Exception:
-                pass
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':

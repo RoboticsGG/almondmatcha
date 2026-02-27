@@ -1,31 +1,21 @@
 """
-Vision Navigation System - Domain 5 (Control Output)
+Vision Navigation System — Kinematic Control (dual-context)
 
-Launches control interface node on ROS Domain 5 (rover control loop).
-This single lightweight node subscribes to vision results from Domain 6
-and publishes steering commands to Domain 5 for the rover control system.
+Launches rover_kinematic_control on the Jetson.
+This single process holds TWO rclpy contexts (one per domain), replacing
+the former domain_bridge_jetson separate node.
 
 Domain Architecture:
-    Domain 6: Vision processing (separate launch file)
-        - Camera streaming (high bandwidth RGB/depth)
-        - Lane detection (computationally intensive)
-        - Internal communication only
+    Domain 6 context: subscribes /tpc_rover_nav_lane (vision data)
+    Domain 5 context: publishes /tpc_rover_ctrl_cmd (chassis command)
 
-    Domain 5: Control interface (THIS LAUNCH FILE)
-        - Single node that reads Domain 6 results via shared memory
-        - Publishes /tpc_rover_ctrl_cmd to Domain 5 for rover control
-        - Minimal discovery burden on STM32 boards
-
-Multi-Domain Communication:
-    Since both Domain 6 and Domain 5 nodes run on the SAME MACHINE (Jetson),
-    they can communicate via:
-    1. Shared memory topics (ROS2 intra-process communication)
-    2. Localhost-only DDS discovery
+    Vision pipeline (separate launch file — vision_domain6.launch.py):
+        - camera_stream  →  lane_detection  →  tpc_rover_nav_lane (D6)
 
 Benefits:
-    - Only 1 ws_jetson node visible to STM32 boards on Domain 5
-    - Vision processing isolated from control loop
-    - Scalable: add more vision/AI nodes to Domain 6 without affecting Domain 5
+    - Only 1 ws_jetson node visible on Domain 5 (no discovery overhead)
+    - No IPC relay hop — contexts share the same Python process memory
+    - Encoder feedback from D5 is trivially added (D5 context already present)
     - Control loop remains time-critical and stable
 
 Usage:
@@ -82,10 +72,10 @@ def generate_launch_description():
     
     # ==================== Control Interface Node (Domain 5) ====================
     
-    # NOTE: This node internally creates TWO contexts:
-    # - Context for Domain 6: subscribes to tpc_rover_nav_lane
-    # - Context for Domain 5: publishes tpc_rover_ctrl_cmd
-    # Both contexts run in the same process (simple two-process approach)
+    # NOTE: This node internally creates TWO rclpy.Context objects:
+    # - ctx_d6 (Domain 6): subscribes to tpc_rover_nav_lane  [D5InterfaceNode]
+    # - ctx_d5 (Domain 5): publishes tpc_rover_ctrl_cmd       [RoverKinematicControlNode]
+    # Both contexts run in the same OS process — no IPC relay, no bridge node.
     
     steering_control_node = Node(
         package='vision_navigation',

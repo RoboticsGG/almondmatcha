@@ -30,7 +30,6 @@ setup(
             'lane_detection = vision_navigation_pkg.lane_detection_node:main',
             'steering_control = vision_navigation_pkg.steering_control_node:main',
             'rover_kinematic_control = vision_navigation_pkg.steering_control_domain5:main',
-            'domain_bridge_jetson = vision_navigation_pkg.domain_bridge_jetson:main',
             'demo_lane = vision_navigation_pkg.demo_lane:main',
         ],
     },

@@ -61,15 +61,16 @@ flowchart TB
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'fontSize': '15px', 'fontFamily': 'Segoe UI, Arial, sans-serif'}}}%%
 graph TB
-    subgraph D6["Domain 6 — Vision (Jetson)"]
+    subgraph D6["Domain 6 — Vision (Jetson localhost)"]
         direction TB
         CAM["camera_stream<br/>Jetson"]
         LANE["lane_detection<br/>Jetson"]
+        STR["rover_kinematic_control<br/>Jetson (D6 sub | D5 pub)"]
         CAM -- "tpc_rover_d415_rgb" --> LANE
+        LANE -- "tpc_rover_nav_lane" --> STR
     end
 
     subgraph D5["Domain 5 — Control Network"]
-        STR["rover_kinematic_control<br/>Jetson"]
         CC["node_chassis_controller<br/>RPi"]
         IMU_N["node_chassis_imu<br/>RPi"]
         SENS_N["node_chassis_sensors<br/>RPi"]
@@ -87,25 +88,46 @@ graph TB
         JMON["node_rover_local_monitoring<br/>Jetson"]
     end
 
-    LANE -- "tpc_rover_nav_lane" --> STR
+    %% Cross-domain relay (D6 → D5) via dual-context in rover_kinematic_control
     STR -- "tpc_rover_ctrl_cmd" --> CC
-    CC -- "tpc_chassis_cmd" --> CHD
+    STR -- "tpc_rover_ctrl_cmd" --> MON
+
+    %% STM32 sensor data
     CHD -- "tpc_chassis_imu" --> IMU_N
     CHD -- "tpc_chassis_imu" --> MON
     SND -- "tpc_chassis_sensors" --> SENS_N
     SND -- "tpc_chassis_sensors" --> MON
+
+    %% RPi chassis control flow
+    CC -- "tpc_chassis_cmd" --> CHD
     CC -- "tpc_chassis_cmd" --> MON
+
+    %% GNSS data flow
+    SPRES -- "tpc_gnss_spresense" --> NAV
     SPRES -- "tpc_gnss_spresense" --> MON
     RTK -- "tpc_gnss_ublox" --> MON
+
+    %% Mission monitor outputs
+    NAV -- "tpc_gnss_mission_active" --> CC
+    NAV -- "tpc_gnss_mission_active" --> MON
+    NAV -- "tpc_gnss_mission_remain_dist" --> MON
     NAV -- "tpc_rover_dest_coordinate" --> MON
-    BCMD -- "DesData action" --> NAV
+
+    %% Base station → rover (action + service)
+    BCMD == "DesData action" ==> NAV
+    BCMD -. "srv_spd_limit (service)" .-> CC
+
+    %% Telemetry relay D5 → D4
     MON -- "tpc_telemetry_relay" --> BMON
     MON -- "tpc_telemetry_relay" --> JMON
 
     style D6 fill:#fffbeb,stroke:#d97706
     style D5 fill:#ecfdf5,stroke:#059669
     style D4 fill:#eff6ff,stroke:#2563eb
+    style STR fill:#fef9c3,stroke:#ca8a04,stroke-dasharray:4
 ```
+
+> **Legend:** `───` ROS2 topic (pub/sub) · `═══` ROS2 action (goal/feedback/result) · `╌╌╌` ROS2 service call
 
 ## ROS2 Domain Architecture
 
