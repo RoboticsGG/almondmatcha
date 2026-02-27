@@ -181,7 +181,7 @@ flowchart LR
 **Publish-Subscribe:**
 - Vision stream: camera → lane_detection
 - Sensor data: STM32s → RPi logging nodes
-- Control commands: steering_control → chassis_controller
+- Control commands: rover_kinematic_control → chassis_controller
 
 **Request-Response (Services):**
 - Speed limit updates: base station → chassis controller

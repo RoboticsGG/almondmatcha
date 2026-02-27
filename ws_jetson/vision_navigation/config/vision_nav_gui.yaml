@@ -1,7 +1,7 @@
 # System Configuration - GUI Mode
 # Vision Navigation System - Debug/Testing Configuration
 # Camera and Lane Detection parameters only (GUI enabled)
-# Steering control parameters are in steering_control_params.yaml
+# Steering control parameters are in rover_kinematic_control_params.yaml
 # Date: November 4, 2025
 
 camera_stream:

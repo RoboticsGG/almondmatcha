@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-steering_control_domain5.py  (entry point: rover_kinematic_control)
+rover_kinematic_control_node.py  (entry point: rover_kinematic_control)
 Workspace:  ws_jetson  |  Package: vision_navigation_pkg
 Architecture: Dual-context single process (Domain 6 sub + Domain 5 pub/sub)
 

@@ -8,7 +8,7 @@ The rover implements a tri-domain architecture: Domain 4 (telemetry), Domain 5 (
 |--------|---------|---------------|--------------|---------------------|
 | **4** | Telemetry | Base + Jetson | **2 nodes:**<br>• mission_monitoring_node_pc (Base)<br>• rover_local_monitoring_node (Jetson) | • Subscribes to /tpc_telemetry_relay (5 Hz)<br>• No D5 participation (no STM32 RAM cost)<br>• Jetson logs CSV; future DB backend |
 | **5** | Control Network | All rover systems + base command | **11 nodes:**<br>• RPi: 7 nodes<br>• Base: 1 (mission_command_node)<br>• Jetson: 1 (rover_kinematic_control)<br>• STM32: 2 (chassis, sensors) | • Bidirectional command/control<br>• Action/service communication<br>• Real-time control loops (50 Hz)<br>• STM32 optimized (~60% free RAM) |
-| **6** | Vision Processing | Jetson localhost | **2 nodes:**<br>• camera_stream<br>• lane_detection | • RGB/Depth streams (30 FPS, 1280×720)<br>• Network isolated (not visible to other hosts)<br>• Lane params relayed to D5 via steering_control |
+| **6** | Vision Processing | Jetson localhost | **2 nodes:**<br>• camera_stream<br>• lane_detection | • RGB/Depth streams (30 FPS, 1280×720)<br>• Network isolated (not visible to other hosts)<br>• Lane params relayed to D5 via rover_kinematic_control |
 
 ## Architecture Overview
 

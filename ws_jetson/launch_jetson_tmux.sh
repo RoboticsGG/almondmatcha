@@ -57,7 +57,7 @@ tmux select-pane -t 2 -T "Kinematic_Ctrl_D6+D5"
 tmux send-keys -t $SESSION_NAME:0.2 "cd ~/almondmatcha/ws_jetson && source install/setup.bash" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "clear && echo -e '\\e[1;33m>>> [D6 sub + D5 pub] ROVER KINEMATIC CONTROL <<<\\e[0m'" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "echo 'Waiting for lane detection (4s)...' && sleep 4" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "ros2 run vision_navigation rover_kinematic_control --ros-args --params-file vision_navigation/config/steering_control_params.yaml" C-m
+tmux send-keys -t $SESSION_NAME:0.2 "ros2 run vision_navigation rover_kinematic_control --ros-args --params-file vision_navigation/config/rover_kinematic_control_params.yaml" C-m
 
 # Focus on camera pane and attach
 tmux select-pane -t 0

@@ -181,10 +181,10 @@ def generate_launch_description():
     )
     
     # Steering Control Node
-    steering_control_node = Node(
+    rover_kinematic_control_node = Node(
         package='vision_navigation',
-        executable='steering_control',
-        name='steering_control',
+        executable='rover_kinematic_control',
+        name='rover_kinematic_control',
         output='screen',
         emulate_tty=True,
         parameters=[{
@@ -249,7 +249,7 @@ def generate_launch_description():
         # Stage 3: Start steering control after 3.0 seconds (camera + lane detection ready)
         TimerAction(period=3.0, actions=[
             log_control_start,
-            steering_control_node,
+            rover_kinematic_control_node,
             log_system_ready,
         ]),
     ])

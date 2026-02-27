@@ -48,7 +48,7 @@ def generate_launch_description():
     steering_config = PathJoinSubstitution([
         FindPackageShare('vision_navigation'),
         'config',
-        'steering_control_params.yaml'
+        'rover_kinematic_control_params.yaml'
     ])
     
     # ==================== Launch Arguments ====================
@@ -77,7 +77,7 @@ def generate_launch_description():
     # - ctx_d5 (Domain 5): publishes tpc_rover_ctrl_cmd       [RoverKinematicControlNode]
     # Both contexts run in the same OS process — no IPC relay, no bridge node.
     
-    steering_control_node = Node(
+    rover_kinematic_control_node = Node(
         package='vision_navigation',
         executable='rover_kinematic_control',
         name='rover_kinematic_control',
@@ -107,7 +107,7 @@ def generate_launch_description():
         LogInfo(msg='========================================'),
         
         # Start dual-context control node
-        steering_control_node,
+        rover_kinematic_control_node,
         
         LogInfo(msg='[Domain 5] Control interface node started'),
         LogInfo(msg='[Domain 5] Subscribing to Domain 6 vision data (localhost)'),

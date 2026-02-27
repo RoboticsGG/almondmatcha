@@ -48,7 +48,7 @@ def generate_launch_description():
     steering_config = PathJoinSubstitution([
         FindPackageShare('vision_navigation'),
         'config',
-        'steering_control_params.yaml'
+        'rover_kinematic_control_params.yaml'
     ])
     
     # ==================== Launch Arguments ====================
@@ -126,10 +126,10 @@ def generate_launch_description():
         parameters=[system_config],
     )
     
-    steering_control_node = Node(
+    rover_kinematic_control_node = Node(
         package='vision_navigation',
-        executable='steering_control',
-        name='steering_control',
+        executable='rover_kinematic_control',
+        name='rover_kinematic_control',
         output='screen',
         emulate_tty=True,
         parameters=[steering_config],
@@ -162,7 +162,7 @@ def generate_launch_description():
         # Start steering control after 3s
         TimerAction(period=3.0, actions=[
             LogInfo(msg='[INFO] Lane detection ready, starting control node...'),
-            steering_control_node,
+            rover_kinematic_control_node,
             LogInfo(msg='[INFO] Vision Navigation System (HEADLESS MODE) fully initialized!'),
         ]),
     ])

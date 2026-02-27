@@ -45,7 +45,7 @@ Depth image from RealSense D415 (`16UC1`, mm units). Not currently subscribed.
 
 **Type:** `std_msgs/msg/Float32MultiArray`  
 **Publisher:** `lane_detection` (Domain 6)  
-**Subscribers:** `steering_control` (Domain 5)  
+**Subscribers:** `rover_kinematic_control` (Domain 5)  
 **Rate:** 25-30 FPS  
 **QoS:** Reliable, Depth 10  
 **Domain:** 5 (published to control network)  
