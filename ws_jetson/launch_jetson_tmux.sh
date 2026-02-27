@@ -3,10 +3,11 @@
 # Domain 6: Vision processing (camera_stream, lane_detection)
 # Domain 5: Control output — no separate bridge process
 #
-# This script launches all ws_jetson nodes in a tmux session with 3 panes:
+# This script launches all ws_jetson nodes in a tmux session with 4 panes:
 #   [0] Camera Stream (Domain 6)
 #   [1] Lane Detection (Domain 6)
 #   [2] Rover Kinematic Control — dual-context (D6 sub tpc_rover_nav_lane | D5 pub tpc_rover_ctrl_cmd)
+#   [3] Rover Local Monitoring — Domain 4 CSV logger (subscribes tpc_telemetry_relay)
 #
 # Architecture:
 #   Domain 6: camera_stream → lane_detection → tpc_rover_nav_lane
@@ -23,10 +24,12 @@ tmux kill-session -t $SESSION_NAME 2>/dev/null
 # Create new tmux session
 tmux new-session -d -s $SESSION_NAME
 
-# Create layout: 1 left pane (camera), 2 right panes stacked (detection, control)
+# Create layout: 1 left pane (camera), 3 right panes stacked (detection, control, monitoring)
 tmux split-window -h  # Split into left and right
 tmux select-pane -t 1
 tmux split-window -v  # Split right into top and bottom
+tmux select-pane -t 2
+tmux split-window -v  # Split right-bottom into middle and bottom
 
 # Wait for panes to be created
 sleep 0.5
@@ -58,6 +61,14 @@ tmux send-keys -t $SESSION_NAME:0.2 "cd ~/almondmatcha/ws_jetson && source insta
 tmux send-keys -t $SESSION_NAME:0.2 "clear && echo -e '\\e[1;33m>>> [D6 sub + D5 pub] ROVER KINEMATIC CONTROL <<<\\e[0m'" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "echo 'Waiting for lane detection (4s)...' && sleep 4" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "ros2 run vision_navigation rover_kinematic_control --ros-args --params-file src/vision_navigation/config/rover_kinematic_control_params.yaml" C-m
+
+# Pane 3 (bottom-right): Rover Local Monitoring — Domain 4 CSV logger
+tmux select-pane -t 3 -T "Local_Monitor_D4"
+tmux send-keys -t $SESSION_NAME:0.3 "cd ~/almondmatcha/ws_jetson && source install/setup.bash" C-m
+tmux send-keys -t $SESSION_NAME:0.3 "export ROS_DOMAIN_ID=4" C-m
+tmux send-keys -t $SESSION_NAME:0.3 "clear && echo -e '\\e[1;35m>>> [Domain 4] ROVER LOCAL MONITORING (CSV) <<<\\e[0m'" C-m
+tmux send-keys -t $SESSION_NAME:0.3 "echo 'Waiting for telemetry relay (5s)...' && sleep 5" C-m
+tmux send-keys -t $SESSION_NAME:0.3 "ros2 run rover_monitoring rover_local_monitoring_node" C-m
 
 # Focus on camera pane and attach
 tmux select-pane -t 0

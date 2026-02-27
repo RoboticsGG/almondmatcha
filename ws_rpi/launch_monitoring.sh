@@ -1,7 +1,7 @@
 #!/bin/bash
 # Launch Rover Monitoring with Telemetry Relay
 # - Domain 5: mission_monitoring_node_rpi + node_gnss_ublox (subscribe to rover topics, publish telemetry relay)
-# - Base station subscribes to /tpc_telemetry_relay on Domain 5
+# - Base station subscribes to /tpc_telemetry_relay on Domain 4
 
 SESSION_NAME="rover_monitoring"
 

@@ -13,7 +13,7 @@
 # 3. The script will:
 #    - Build interface packages first (action_ifaces, msgs_ifaces, services_ifaces)
 #    - Source the install/setup.bash
-#    - Build application packages (chassis_control, chassis_sensors, gnss_navigation, rover_bringup)
+#    - Build application packages (chassis_control, chassis_sensors, gnss_navigation, rover_monitoring, rover_bringup)
 # 4. After a successful build, source install/setup.bash before running nodes.
 # ------------------------------------------------------------------------------
 
@@ -53,6 +53,7 @@ colcon build --packages-select \
     chassis_control \
     chassis_sensors \
     gnss_navigation \
+    rover_monitoring \
     rover_bringup
 
 echo -e "\n${GREEN}========================================${NC}"
