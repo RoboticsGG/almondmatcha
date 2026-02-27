@@ -23,9 +23,9 @@
 
 using namespace std::chrono_literals;
 
-class UbloxGNSSNode : public rclcpp::Node {
+class GNSSUbloxNode : public rclcpp::Node {
 public:
-    UbloxGNSSNode() : Node("ublox_gnss_node") {
+    GNSSUbloxNode() : Node("gnss_ublox_node") {
         rclcpp::QoS qos_reliable(10);
         qos_reliable.reliable().transient_local();
         
@@ -41,10 +41,10 @@ public:
         
         configureSerialPort();
 
-        timer_ = this->create_wall_timer(100ms, std::bind(&UbloxGNSSNode::readSerialData, this));
+        timer_ = this->create_wall_timer(100ms, std::bind(&GNSSUbloxNode::readSerialData, this));
     }
 
-    ~UbloxGNSSNode() {
+    ~GNSSUbloxNode() {
         if (serial_port_ != -1) {
             close(serial_port_);
         }
@@ -313,7 +313,7 @@ private:
 
 int main(int argc, char **argv) {
     rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<UbloxGNSSNode>());
+    rclcpp::spin(std::make_shared<GNSSUbloxNode>());
     rclcpp::shutdown();
     return 0;
 }

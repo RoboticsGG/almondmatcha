@@ -28,7 +28,7 @@ graph LR
     subgraph JET ["Jetson Orin · 192.168.1.5"]
         J1["D6 · camera_stream + lane_detection\nlocalhost only · 30 FPS"]
         J2["D5 · rover_kinematic_control\ndual-context: D6 sub / D5 pub"]
-        J3["D4 · node_rover_local_monitoring\nCSV + future DB"]
+        J3["D4 · rover_local_monitoring_node\nCSV + future DB"]
     end
 
     subgraph BASE ["Base Station · 192.168.1.10"]
@@ -93,7 +93,7 @@ graph LR
 
 **Domain 4 (Telemetry):** Base + Jetson, 2 participants
 - `mission_monitoring_node_pc` (Base): displays aggregated telemetry relay, no D5 participation
-- `node_rover_local_monitoring` (Jetson): logs TelemetryRelay CSV at 5 Hz, future DB backend
+- `rover_local_monitoring_node` (Jetson): logs TelemetryRelay CSV at 5 Hz, future DB backend
 
 **Domain 6 (Vision Processing):** Jetson localhost only, 2 participants
 - camera_stream, lane_detection nodes
@@ -108,12 +108,12 @@ graph LR
 
 **Raspberry Pi 4 (192.168.1.1 — Domain 5):**
 ```
-├── node_chassis_controller     - Motor command coordination (D5 sub/pub)
-├── node_chassis_imu            - IMU data relay (D5 sub)
-├── node_chassis_sensors        - Encoder/power relay (D5 sub)
-├── node_gnss_spresense         - Standard GPS position processing (D5 pub)
-├── node_gnss_ublox             - RTK GNSS centimeter-level processing (D5 pub)
-├── node_gnss_mission_monitor   - Waypoint navigation state machine (D5)
+├── chassis_controller_node     - Motor command coordination (D5 sub/pub)
+├── chassis_imu_node            - IMU data relay (D5 sub)
+├── chassis_sensors_node        - Encoder/power relay (D5 sub)
+├── gnss_spresense_node         - Standard GPS position processing (D5 pub)
+├── gnss_ublox_node             - RTK GNSS centimeter-level processing (D5 pub)
+├── gnss_mission_monitor_node   - Waypoint navigation state machine (D5)
 └── mission_monitoring_node_rpi - Aggregates 10 D5 topics:
                                     Sub: D5 (all sensor/command topics)
                                     Pub: D4 /tpc_telemetry_relay (5 Hz)
@@ -132,7 +132,7 @@ Domain 5 (Control Network):
     └── Pub: tpc_rover_ctrl_cmd [steer_angle, speed_cmd, detected] (Domain 5)
 
 Domain 4 (Telemetry):
-└── node_rover_local_monitoring  - Telemetry CSV logger
+└── rover_local_monitoring_node  - Telemetry CSV logger
     ├── Sub: /tpc_telemetry_relay (Domain 4, 5 Hz)
     └── CSV: telemetry_unified + categorical files in ws_jetson/runs/
     (Future: DB backend replacing CSV)
@@ -164,7 +164,7 @@ Domain 5 (mROS2):
 flowchart LR
     CAM["camera_stream\nD6 · 30 FPS"] -->|tpc_rover_d415_rgb| LANE["lane_detection\nD6 · 30 FPS"]
     LANE -->|tpc_rover_nav_lane| CTRL["rover_kinematic_control\nD6 sub / D5 pub · 50 Hz"]
-    CTRL -->|tpc_rover_ctrl_cmd| CC["node_chassis_controller\nD5 · 50 Hz"]
+    CTRL -->|tpc_rover_ctrl_cmd| CC["chassis_controller_node\nD5 · 50 Hz"]
     CC -->|tpc_chassis_cmd| MTR["STM32 chassis_controller\nD5 · 20 Hz"]
 ```
 
@@ -217,7 +217,7 @@ flowchart LR
 - `chassis_cmd.csv` — Motor commands, ~50 Hz
 - `mission_state.csv` — Event-driven mission status
 
-**Secondary — Jetson** (`node_rover_local_monitoring`, ws_jetson/runs/run_NNN_YYYYMMDD_HHMMSS/):
+**Secondary — Jetson** (`rover_local_monitoring_node`, ws_jetson/runs/run_NNN_YYYYMMDD_HHMMSS/):
 - `telemetry_unified.csv` — All fields, 5 Hz
 - `rtk_gnss.csv`, `spresense_gnss.csv`, `chassis_data.csv`, `mission_state.csv` — 5 Hz
 - Future: replaces CSV with SQLite/PostgreSQL backend

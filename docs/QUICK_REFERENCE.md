@@ -86,7 +86,7 @@ cd ~/almondmatcha/ws_base
 | System | Nodes |
 |--------|-------|
 | ws_base | 1 (mission_monitoring_node_pc) |
-| ws_jetson | 1 (node_rover_local_monitoring) |
+| ws_jetson | 1 (rover_local_monitoring_node) |
 
 ---
 
@@ -114,7 +114,7 @@ ros2 node list | wc -l  # Should be 11
 
 # Check D4 telemetry nodes
 export ROS_DOMAIN_ID=4
-ros2 node list  # mission_monitoring_node_pc, node_rover_local_monitoring
+ros2 node list  # mission_monitoring_node_pc, rover_local_monitoring_node
 
 # Check STM32 config
 grep "MAX_NUM_PARTICIPANTS" ~/almondmatcha/mros2-mbed-*/platform/rtps/config.h

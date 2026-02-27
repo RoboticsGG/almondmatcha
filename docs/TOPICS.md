@@ -83,7 +83,7 @@ data: [theta, b, detected]
 
 **Type:** `std_msgs/msg/Float32MultiArray`  
 **Publisher:** `rover_kinematic_control` (Jetson, dual-context D6→D5)  
-**Subscribers:** `node_chassis_controller` (RPi)  
+**Subscribers:** `chassis_controller_node` (RPi)  
 **Rate:** 50 Hz  
 **QoS:** Best Effort, Depth 10  
 **Domain:** 5  
@@ -113,7 +113,7 @@ data: [steer_angle, speed_cmd, detected]
 ### `tpc_chassis_cmd`
 
 **Type:** `msgs_ifaces/msg/ChassisCtrl`  
-**Publisher:** `node_chassis_controller`  
+**Publisher:** `chassis_controller_node`  
 **Subscribers:** `chassis_controller` (STM32)  
 **Rate:** 50 Hz  
 **QoS:** Reliable, Depth 10  
@@ -143,7 +143,7 @@ spd_msg: 50             # 50% speed
 
 **Type:** `msgs_ifaces/msg/ChassisIMU`  
 **Publisher:** `chassis_controller` (STM32)  
-**Subscribers:** `node_chassis_imu`, `node_ekf_fusion` (future)  
+**Subscribers:** `chassis_imu_node`, `node_ekf_fusion` (future)  
 **Rate:** 10 Hz  
 **QoS:** Reliable, Depth 10  
 **Domain:** 5  
@@ -170,7 +170,7 @@ int32 gyro_z           # Angular rate Z-axis
 
 **Type:** `msgs_ifaces/msg/ChassisSensors`  
 **Publisher:** `sensors_node` (STM32)  
-**Subscribers:** `node_chassis_sensors`, `node_ekf_fusion` (future)  
+**Subscribers:** `chassis_sensors_node`, `node_ekf_fusion` (future)  
 **Rate:** 4 Hz (aggregated from 3 tasks)  
 **QoS:** Reliable, Depth 10  
 **Domain:** 5  
@@ -200,8 +200,8 @@ sys_current_msg: 2.3       # 2.3A draw
 ### `tpc_gnss_spresense`
 
 **Type:** `msgs_ifaces/msg/SpresenseGNSS`  
-**Publisher:** `node_gnss_spresense`  
-**Subscribers:** `node_gnss_mission_monitor`, `node_ekf_fusion` (future)  
+**Publisher:** `gnss_spresense_node`  
+**Subscribers:** `gnss_mission_monitor_node`, `node_ekf_fusion` (future)  
 **Rate:** 10 Hz  
 **QoS:** Reliable, Depth 10  
 **Domain:** 5  
@@ -233,7 +233,7 @@ num_satellites: 8
 ### `tpc_gnss_ublox`
 
 **Type:** `msgs_ifaces/msg/UbloxGNSS`  
-**Publisher:** `node_gnss_ublox`  
+**Publisher:** `gnss_ublox_node`  
 **Subscribers:** `mission_monitoring_node`  
 **Rate:** 10 Hz  
 **QoS:** Reliable, Depth 10  
@@ -274,8 +274,8 @@ centimeter_error: 2.3      # ±2.3cm accuracy
 ### `tpc_gnss_mission_active`
 
 **Type:** `std_msgs/msg/Bool`  
-**Publisher:** `node_gnss_mission_monitor`  
-**Subscribers:** `node_chassis_controller`  
+**Publisher:** `gnss_mission_monitor_node`  
+**Subscribers:** `chassis_controller_node`  
 **Rate:** 10 Hz  
 **QoS:** Reliable, Depth 10  
 **Domain:** 5  
@@ -293,7 +293,7 @@ data: false   # Mission inactive or completed
 ### `tpc_gnss_mission_remain_dist`
 
 **Type:** `std_msgs/msg/Float64`  
-**Publisher:** `node_gnss_mission_monitor`  
+**Publisher:** `gnss_mission_monitor_node`  
 **Subscribers:** Base station monitoring  
 **Rate:** 10 Hz  
 **QoS:** Reliable, Depth 10  
@@ -312,7 +312,7 @@ data: 0.0      # Arrived at waypoint
 ### `tpc_rover_dest_coordinate`
 
 **Type:** `std_msgs/msg/Float64MultiArray`  
-**Publisher:** Service response from `node_gnss_mission_monitor`  
+**Publisher:** Service response from `gnss_mission_monitor_node`  
 **Subscribers:** Internal mission monitor use  
 **Rate:** Event-driven  
 **QoS:** Reliable, Depth 10  
@@ -338,7 +338,7 @@ data: [7.007286, 100.502030]    # Target waypoint in Thailand
 
 **Type:** `action_ifaces/DesData`  
 **Client:** `mission_command_node` (ws_base)  
-**Server:** `node_gnss_mission_monitor` (ws_rpi)  
+**Server:** `gnss_mission_monitor_node` (ws_rpi)  
 **Domain:** 5  
 
 Navigation goal action for waypoint missions.
@@ -363,7 +363,7 @@ uint8 result_fser   # Result code
 
 **Type:** `services_ifaces/SpdLimit`  
 **Client:** `mission_command_node` (ws_base)  
-**Server:** `node_chassis_controller` (ws_rpi)  
+**Server:** `chassis_controller_node` (ws_rpi)  
 **Domain:** 5  
 
 Speed limit command service.
@@ -403,7 +403,7 @@ Commands from base station are sent directly via actions/services on Domain 5:
 
 **Type:** `msgs_ifaces/msg/TelemetryRelay`  
 **Publisher:** `mission_monitoring_node_rpi` (RPi, internal D4 context)  
-**Subscribers:** `mission_monitoring_node_pc` (Base, display), `node_rover_local_monitoring` (Jetson, CSV)  
+**Subscribers:** `mission_monitoring_node_pc` (Base, display), `rover_local_monitoring_node` (Jetson, CSV)  
 **Rate:** 5 Hz  
 **QoS:** Reliable, Depth 10  
 **Domain:** 4 (not visible from D5 or D6)
@@ -433,13 +433,13 @@ See [msgs_ifaces/msg/TelemetryRelay.msg](../common_ifaces/msgs_ifaces/msg/) for 
 flowchart LR
     CS["camera_stream\n(D6)"] -->|tpc_rover_d415_rgb| LD["lane_detection\n(D6)"]
     LD -->|tpc_rover_nav_lane| RKC["rover_kinematic_control\n(dual-ctx D6/D5)"]
-    RKC -->|tpc_rover_ctrl_cmd| CC["node_chassis_controller\n(D5)"]
+    RKC -->|tpc_rover_ctrl_cmd| CC["chassis_controller_node\n(D5)"]
 ```
 
 **Chassis Control (Domain 5):**
 ```mermaid
 flowchart LR
-    CC["node_chassis_controller\n(RPi, D5)"] -->|tpc_chassis_cmd| STM32["chassis_controller\n(STM32)"]
+    CC["chassis_controller_node\n(RPi, D5)"] -->|tpc_chassis_cmd| STM32["chassis_controller\n(STM32)"]
     STM32 -->|tpc_chassis_imu| CC
 ```
 
@@ -447,10 +447,10 @@ flowchart LR
 ```mermaid
 flowchart LR
     SNS["sensors_node (STM32)"] -->|tpc_chassis_sensors| MON["mission_monitoring_node_rpi\n(RPi)"]
-    SPRES["node_gnss_spresense (RPi)"] -->|tpc_gnss_spresense| MON
-    UBLOX["node_gnss_ublox (RPi)"] -->|tpc_gnss_ublox| MON
+    SPRES["gnss_spresense_node (RPi)"] -->|tpc_gnss_spresense| MON
+    UBLOX["gnss_ublox_node (RPi)"] -->|tpc_gnss_ublox| MON
     MON -->|tpc_telemetry_relay 5Hz D4| PC["mission_monitoring_node_pc\n(Base, D4)"]
-    MON -->|tpc_telemetry_relay 5Hz D4| JL["node_rover_local_monitoring\n(Jetson, D4)"]
+    MON -->|tpc_telemetry_relay 5Hz D4| JL["rover_local_monitoring_node\n(Jetson, D4)"]
 ```
 
 ---

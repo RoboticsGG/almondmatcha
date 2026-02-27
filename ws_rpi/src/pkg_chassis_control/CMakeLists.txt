@@ -19,17 +19,17 @@ find_package(services_ifaces REQUIRED)
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
 
-#-------------------chassis_controller-------------------
+#-------------------chassis_controller_node-------------------
 
-add_executable(node_chassis_controller src/node_chassis_controller.cpp)
-ament_target_dependencies(node_chassis_controller rclcpp geometry_msgs std_msgs msgs_ifaces services_ifaces)
+add_executable(chassis_controller_node src/chassis_controller_node.cpp)
+ament_target_dependencies(chassis_controller_node rclcpp geometry_msgs std_msgs msgs_ifaces services_ifaces)
 
-target_include_directories(node_chassis_controller PUBLIC
+target_include_directories(chassis_controller_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
-target_compile_features(node_chassis_controller PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
+target_compile_features(chassis_controller_node PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
 
-install(TARGETS node_chassis_controller
+install(TARGETS chassis_controller_node
   DESTINATION lib/${PROJECT_NAME})
   
 #------------------------------------------------------------------------------------#

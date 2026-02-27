@@ -28,9 +28,9 @@ from pathlib import Path
 import glob
 
 
-class NodeRoverLocalMonitoring(Node):
+class RoverLocalMonitoringNode(Node):
     def __init__(self):
-        super().__init__('node_rover_local_monitoring')
+        super().__init__('rover_local_monitoring_node')
         
         # Initialize CSV logging
         self.init_csv_logging()
@@ -224,7 +224,7 @@ class NodeRoverLocalMonitoring(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    node = NodeRoverLocalMonitoring()
+    node = RoverLocalMonitoringNode()
     
     try:
         rclpy.spin(node)

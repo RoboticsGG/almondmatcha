@@ -11,15 +11,15 @@ find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(msgs_ifaces REQUIRED)
 
-add_executable(node_rover_monitoring src/node_rover_monitoring.cpp)
-ament_target_dependencies(node_rover_monitoring rclcpp std_msgs msgs_ifaces)
+add_executable(rover_monitoring_node src/rover_monitoring_node.cpp)
+ament_target_dependencies(rover_monitoring_node rclcpp std_msgs msgs_ifaces)
 
-add_executable(mission_monitoring_node_rpi src/node_mission_monitoring_rpi.cpp)
+add_executable(mission_monitoring_node_rpi src/mission_monitoring_node_rpi.cpp)
 ament_target_dependencies(mission_monitoring_node_rpi rclcpp std_msgs msgs_ifaces)
 
 # Install executables
 install(TARGETS
-  node_rover_monitoring
+  rover_monitoring_node
   mission_monitoring_node_rpi
   DESTINATION lib/${PROJECT_NAME})
 

@@ -14,26 +14,26 @@ find_package(std_msgs REQUIRED)
 find_package(std_srvs)
 find_package(msgs_ifaces REQUIRED)
 
-add_executable(node_chassis_sensors src/node_chassis_sensors.cpp)
-ament_target_dependencies(node_chassis_sensors rclcpp geometry_msgs std_msgs msgs_ifaces)
+add_executable(chassis_sensors_node src/chassis_sensors_node.cpp)
+ament_target_dependencies(chassis_sensors_node rclcpp geometry_msgs std_msgs msgs_ifaces)
 
-target_include_directories(node_chassis_sensors PUBLIC
+target_include_directories(chassis_sensors_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
-target_compile_features(node_chassis_sensors PUBLIC c_std_99 cxx_std_17)
+target_compile_features(chassis_sensors_node PUBLIC c_std_99 cxx_std_17)
 
-install(TARGETS node_chassis_sensors
+install(TARGETS chassis_sensors_node
   DESTINATION lib/${PROJECT_NAME})
 
-add_executable(node_chassis_imu src/node_chassis_imu.cpp)
-ament_target_dependencies(node_chassis_imu rclcpp geometry_msgs std_msgs msgs_ifaces)
+add_executable(chassis_imu_node src/chassis_imu_node.cpp)
+ament_target_dependencies(chassis_imu_node rclcpp geometry_msgs std_msgs msgs_ifaces)
 
-target_include_directories(node_chassis_imu PUBLIC
+target_include_directories(chassis_imu_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
-target_compile_features(node_chassis_imu PUBLIC c_std_99 cxx_std_17)
+target_compile_features(chassis_imu_node PUBLIC c_std_99 cxx_std_17)
 
-install(TARGETS node_chassis_imu
+install(TARGETS chassis_imu_node
   DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)

@@ -22,7 +22,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'node_rover_local_monitoring = rover_monitor_pkg.node_rover_local_monitoring:main',
+            'rover_local_monitoring_node = rover_monitor_pkg.rover_local_monitoring_node:main',
         ],
     },
 )

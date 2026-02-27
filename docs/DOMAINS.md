@@ -6,7 +6,7 @@ The rover implements a tri-domain architecture: Domain 4 (telemetry), Domain 5 (
 
 | Domain | Purpose | Network Scope | Participants | Key Characteristics |
 |--------|---------|---------------|--------------|---------------------|
-| **4** | Telemetry | Base + Jetson | **2 nodes:**<br>• mission_monitoring_node_pc (Base)<br>• node_rover_local_monitoring (Jetson) | • Subscribes to /tpc_telemetry_relay (5 Hz)<br>• No D5 participation (no STM32 RAM cost)<br>• Jetson logs CSV; future DB backend |
+| **4** | Telemetry | Base + Jetson | **2 nodes:**<br>• mission_monitoring_node_pc (Base)<br>• rover_local_monitoring_node (Jetson) | • Subscribes to /tpc_telemetry_relay (5 Hz)<br>• No D5 participation (no STM32 RAM cost)<br>• Jetson logs CSV; future DB backend |
 | **5** | Control Network | All rover systems + base command | **11 nodes:**<br>• RPi: 7 nodes<br>• Base: 1 (mission_command_node)<br>• Jetson: 1 (rover_kinematic_control)<br>• STM32: 2 (chassis, sensors) | • Bidirectional command/control<br>• Action/service communication<br>• Real-time control loops (50 Hz)<br>• STM32 optimized (~60% free RAM) |
 | **6** | Vision Processing | Jetson localhost | **2 nodes:**<br>• camera_stream<br>• lane_detection | • RGB/Depth streams (30 FPS, 1280×720)<br>• Network isolated (not visible to other hosts)<br>• Lane params relayed to D5 via steering_control |
 
@@ -20,7 +20,7 @@ flowchart TB
 
     subgraph D5["Domain 5 — Control Network (all systems via Ethernet)"]
         CTRL["rover_kinematic_control (Jetson)\ndual-context: D6 sub / D5 pub\n→ tpc_rover_ctrl_cmd @ 50 Hz"]
-        CC["node_chassis_controller (RPi)"]
+        CC["chassis_controller_node (RPi)"]
         STM32C["chassis_controller (STM32)"]
         STM32S["sensors_node (STM32)"]
         GNSS["GNSS nodes (RPi)"]
@@ -30,7 +30,7 @@ flowchart TB
 
     subgraph D4["Domain 4 — Telemetry (Base + Jetson, invisible to STM32)"]
         PC["mission_monitoring_node_pc (Base)\ntelemetry display"]
-        JLOG["node_rover_local_monitoring (Jetson)\nCSV @ 5 Hz · future DB"]
+        JLOG["rover_local_monitoring_node (Jetson)\nCSV @ 5 Hz · future DB"]
     end
 
     LANE -->|tpc_rover_nav_lane| CTRL
@@ -53,7 +53,7 @@ flowchart TB
 **Solution 2:** Cross-domain relay — `mission_monitoring_node_rpi` aggregates D5 topics and publishes to D4 at 5 Hz.  
 **Result:** D5 count at 11; monitoring traffic completely isolated from control domain.
 
-**Problem 3:** Separate CSV logger (`node_rover_monitoring`) consumed a D5 participant slot.  
+**Problem 3:** Separate CSV logger (`rover_monitoring_node`) consumed a D5 participant slot.  
 **Solution 3:** CSV logging merged into `mission_monitoring_node_rpi`; secondary Jetson logger added on D4.  
 **Result:** One fewer D5 participant; dual-tier logging with no STM32 overhead.
 
@@ -143,12 +143,12 @@ ros2 node list
 
 # Expected output (11 nodes visible to all D5 systems):
 /rover_kinematic_control        # ws_jetson (dual-context D6 sub / D5 pub)
-/node_chassis_controller        # ws_rpi
-/node_gnss_mission_monitor      # ws_rpi
-/node_gnss_spresense            # ws_rpi
-/node_gnss_ublox                # ws_rpi
-/node_chassis_imu               # ws_rpi
-/node_chassis_sensors           # ws_rpi
+/chassis_controller_node        # ws_rpi
+/gnss_mission_monitor_node      # ws_rpi
+/gnss_spresense_node            # ws_rpi
+/gnss_ublox_node                # ws_rpi
+/chassis_imu_node               # ws_rpi
+/chassis_sensors_node           # ws_rpi
 /mission_monitoring_node_rpi    # ws_rpi (D5 sub → D4 pub + CSV logging)
 /chassis_controller             # STM32 chassis-dynamics
 /sensors_node                   # STM32 sensors-gnss
@@ -165,7 +165,7 @@ ros2 node list
 
 # Expected output:
 /mission_monitoring_node_pc      # ws_base (telemetry display, D4 subscriber)
-/node_rover_local_monitoring     # ws_jetson (telemetry CSV logger, D4 subscriber)
+/rover_local_monitoring_node     # ws_jetson (telemetry CSV logger, D4 subscriber)
 /mission_monitoring_domain4_pub  # internal publisher from mission_monitoring_node_rpi (RPi)
 ```
 
@@ -203,7 +203,7 @@ Two nodes subscribe to `/tpc_telemetry_relay` on Domain 4:
 
 **`mission_monitoring_node_pc` (Base station):** real-time telemetry display. Runs entirely in D4 — no D5 participation, never counted in STM32 discovery.
 
-**`node_rover_local_monitoring` (Jetson):** secondary CSV logging at 5 Hz in `ws_jetson/runs/run_NNN_YYYYMMDD_HHMMSS/`. Future: replace CSV writer with SQLite/PostgreSQL. Runs entirely in D4.
+**`rover_local_monitoring_node` (Jetson):** secondary CSV logging at 5 Hz in `ws_jetson/runs/run_NNN_YYYYMMDD_HHMMSS/`. Future: replace CSV writer with SQLite/PostgreSQL. Runs entirely in D4.
 
 ### Dual-Context Pattern (RPi)
 

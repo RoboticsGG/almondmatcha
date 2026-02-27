@@ -59,7 +59,7 @@
  */
 class ChassisController : public rclcpp::Node {
 public:
-    ChassisController() : Node("chassis_controller") {
+    ChassisController() : Node("chassis_controller_node") {
         RCLCPP_INFO(this->get_logger(), "Initializing Chassis Controller (Domain 5 - Rover Internal)");
 
         // --- Speed limit safety-cap service ---

@@ -26,45 +26,45 @@ include_directories(/usr/include/jsoncpp)
 
 # Build mission monitor only if action_ifaces is available
 if(action_ifaces_FOUND AND rclcpp_action_FOUND AND rclcpp_components_FOUND)
-  add_executable(node_gnss_mission_monitor src/node_gnss_mission_monitor.cpp)
-  ament_target_dependencies(node_gnss_mission_monitor rclcpp rclcpp_action rclcpp_components std_msgs action_ifaces msgs_ifaces)
-  target_include_directories(node_gnss_mission_monitor PUBLIC
+  add_executable(gnss_mission_monitor_node src/gnss_mission_monitor_node.cpp)
+  ament_target_dependencies(gnss_mission_monitor_node rclcpp rclcpp_action rclcpp_components std_msgs action_ifaces msgs_ifaces)
+  target_include_directories(gnss_mission_monitor_node PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
-  target_compile_features(node_gnss_mission_monitor PUBLIC c_std_99 cxx_std_17)
+  target_compile_features(gnss_mission_monitor_node PUBLIC c_std_99 cxx_std_17)
 
-  install(TARGETS node_gnss_mission_monitor
+  install(TARGETS gnss_mission_monitor_node
     DESTINATION lib/${PROJECT_NAME})
   
-  message(STATUS "Building node_gnss_mission_monitor")
+  message(STATUS "Building gnss_mission_monitor_node")
 else()
-  message(STATUS "Skipping node_gnss_mission_monitor (action_ifaces not found)")
+  message(STATUS "Skipping gnss_mission_monitor_node (action_ifaces not found)")
 endif()
 
 #------------------------------------------------------------------------------------#
 
-add_executable(node_gnss_spresense src/node_gnss_spresense.cpp)
-ament_target_dependencies(node_gnss_spresense rclcpp std_msgs jsoncpp msgs_ifaces)
+add_executable(gnss_spresense_node src/gnss_spresense_node.cpp)
+ament_target_dependencies(gnss_spresense_node rclcpp std_msgs jsoncpp msgs_ifaces)
 
-target_link_libraries(node_gnss_spresense jsoncpp)
+target_link_libraries(gnss_spresense_node jsoncpp)
 
-target_include_directories(node_gnss_spresense PUBLIC
+target_include_directories(gnss_spresense_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 
-install(TARGETS node_gnss_spresense
+install(TARGETS gnss_spresense_node
   DESTINATION lib/${PROJECT_NAME})
 
 #------------------------------------------------------------------------------------#
 
-add_executable(node_gnss_ublox src/node_gnss_ublox.cpp)
-ament_target_dependencies(node_gnss_ublox rclcpp std_msgs msgs_ifaces)
+add_executable(gnss_ublox_node src/gnss_ublox_node.cpp)
+ament_target_dependencies(gnss_ublox_node rclcpp std_msgs msgs_ifaces)
 
-target_include_directories(node_gnss_ublox PUBLIC
+target_include_directories(gnss_ublox_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 
-install(TARGETS node_gnss_ublox
+install(TARGETS gnss_ublox_node
   DESTINATION lib/${PROJECT_NAME})
 
 #------------------------------------------------------------------------------------#

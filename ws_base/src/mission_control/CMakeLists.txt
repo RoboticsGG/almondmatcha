@@ -17,7 +17,7 @@ find_package(action_ifaces REQUIRED)
 find_package(msgs_ifaces REQUIRED)
 
 # Mission Control Command Node
-add_executable(mission_command_node src/node_mission_command.cpp)
+add_executable(mission_command_node src/mission_command_node.cpp)
 ament_target_dependencies(mission_command_node 
   rclcpp 
   rclcpp_action 
@@ -38,7 +38,7 @@ install(TARGETS mission_command_node
 )
 
 # Mission Monitoring Node (PC) - Telemetry Relay Subscriber
-add_executable(mission_monitoring_node_pc src/node_mission_monitoring_pc.cpp)
+add_executable(mission_monitoring_node_pc src/mission_monitoring_node_pc.cpp)
 ament_target_dependencies(mission_monitoring_node_pc 
   rclcpp 
   msgs_ifaces

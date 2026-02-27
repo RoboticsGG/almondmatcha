@@ -31,9 +31,9 @@
 #include <filesystem>
 #include <glob.h>
 
-class NodeRoverMonitoring : public rclcpp::Node {
+class RoverMonitoringNode : public rclcpp::Node {
 public:
-    NodeRoverMonitoring() : Node("node_rover_monitoring") {
+    RoverMonitoringNode() : Node("rover_monitoring_node") {
         init_csv_logging();
         
         // QoS profiles to match publishers
@@ -47,47 +47,47 @@ public:
         // Subscribe to chassis sensors (EXACT QoS from node_chassis_sensors)
         sub_chassis_sensors_ = this->create_subscription<msgs_ifaces::msg::ChassisSensors>(
             "/tpc_chassis_sensors", qos_stm32,
-            std::bind(&NodeRoverMonitoring::chassis_sensors_callback, this, std::placeholders::_1)
+            std::bind(&RoverMonitoringNode::chassis_sensors_callback, this, std::placeholders::_1)
         );
         
         // Subscribe to chassis IMU (EXACT QoS from node_chassis_sensors)
         sub_chassis_imu_ = this->create_subscription<msgs_ifaces::msg::ChassisIMU>(
             "/tpc_chassis_imu", qos_stm32,
-            std::bind(&NodeRoverMonitoring::chassis_imu_callback, this, std::placeholders::_1)
+            std::bind(&RoverMonitoringNode::chassis_imu_callback, this, std::placeholders::_1)
         );
         
         // Subscribe to mission control
         sub_cc_rcon_ = this->create_subscription<std_msgs::msg::Bool>(
             "/tpc_gnss_mission_active", 10, 
-            std::bind(&NodeRoverMonitoring::cc_rcon_callback, this, std::placeholders::_1)
+            std::bind(&RoverMonitoringNode::cc_rcon_callback, this, std::placeholders::_1)
         );
         
         sub_dis_remain_ = this->create_subscription<std_msgs::msg::Float64>(
             "/tpc_gnss_mission_remain_dist", 10, 
-            std::bind(&NodeRoverMonitoring::dis_remain_callback, this, std::placeholders::_1)
+            std::bind(&RoverMonitoringNode::dis_remain_callback, this, std::placeholders::_1)
         );
         
         // Subscribe to GNSS data
         sub_gnss_data_ = this->create_subscription<msgs_ifaces::msg::SpresenseGNSS>(
             "/tpc_gnss_spresense", 10, 
-            std::bind(&NodeRoverMonitoring::gnss_data_callback, this, std::placeholders::_1)
+            std::bind(&RoverMonitoringNode::gnss_data_callback, this, std::placeholders::_1)
         );
         
         sub_rtk_position_ = this->create_subscription<msgs_ifaces::msg::UbloxGNSS>(
             "/tpc_gnss_ublox", 10,
-            std::bind(&NodeRoverMonitoring::rtk_gnss_callback, this, std::placeholders::_1)
+            std::bind(&RoverMonitoringNode::rtk_gnss_callback, this, std::placeholders::_1)
         );
         
         // Subscribe to destination coordinate
         sub_pub_despose_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
             "/tpc_rover_dest_coordinate", 10, 
-            std::bind(&NodeRoverMonitoring::pub_despose_callback, this, std::placeholders::_1)
+            std::bind(&RoverMonitoringNode::pub_despose_callback, this, std::placeholders::_1)
         );
         
         // Subscribe to rover control commands
         sub_pub_rovercontrol_d2_ = this->create_subscription<msgs_ifaces::msg::ChassisCtrl>(
             "/tpc_chassis_cmd", 10, 
-            std::bind(&NodeRoverMonitoring::pub_rovercontrol_callback, this, std::placeholders::_1)
+            std::bind(&RoverMonitoringNode::pub_rovercontrol_callback, this, std::placeholders::_1)
         );
 
         RCLCPP_INFO(this->get_logger(), "=== CSV Data Logger Node Initialized ===");
@@ -102,7 +102,7 @@ public:
         RCLCPP_INFO(this->get_logger(), "========================================");
     }
 
-    ~NodeRoverMonitoring() {
+    ~RoverMonitoringNode() {
         if (csv_rtk_gnss_.is_open()) csv_rtk_gnss_.close();
         if (csv_spresense_gnss_.is_open()) csv_spresense_gnss_.close();
         if (csv_chassis_imu_.is_open()) csv_chassis_imu_.close();
@@ -476,7 +476,7 @@ private:
 
 int main(int argc, char ** argv) {
     rclcpp::init(argc, argv);
-    auto node = std::make_shared<NodeRoverMonitoring>();
+    auto node = std::make_shared<RoverMonitoringNode>();
     rclcpp::spin(node);
     rclcpp::shutdown();
     return 0;

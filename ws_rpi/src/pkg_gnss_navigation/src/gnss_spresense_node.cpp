@@ -23,9 +23,9 @@
 
 using namespace std::chrono_literals;
 
-class SpresenseGNSSNode : public rclcpp::Node {
+class GNSSSpresenseNode : public rclcpp::Node {
 public:
-    SpresenseGNSSNode() : Node("spresense_gnss_node") {
+    GNSSSpresenseNode() : Node("gnss_spresense_node") {
         // Use reliable + transient_local for GNSS data
         rclcpp::QoS qos_reliable(10);
         qos_reliable.reliable().transient_local();
@@ -42,10 +42,10 @@ public:
         
         configureSerialPort();
 
-        timer_ = this->create_wall_timer(1s, std::bind(&SpresenseGNSSNode::readSerialData, this));
+        timer_ = this->create_wall_timer(1s, std::bind(&GNSSSpresenseNode::readSerialData, this));
     }
 
-    ~SpresenseGNSSNode() {
+    ~GNSSSpresenseNode() {
         if (serial_port_ != -1) {
             close(serial_port_);
         }
@@ -124,7 +124,7 @@ private:
 
 int main(int argc, char **argv) {
     rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<SpresenseGNSSNode>());
+    rclcpp::spin(std::make_shared<GNSSSpresenseNode>());
     rclcpp::shutdown();
     return 0;
 }

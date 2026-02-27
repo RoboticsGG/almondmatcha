@@ -40,7 +40,7 @@ public:
     using GoalHandleDesData = rclcpp_action::ServerGoalHandle<DesData>;
 
     // Constructor: Initializes node, QoS, action server, subscriptions, and publishers.
-    GNSSMissionMonitor() : Node("gnss_mission_monitor"), des_lat_(0.0), des_long_(0.0) {
+    GNSSMissionMonitor() : Node("gnss_mission_monitor_node"), des_lat_(0.0), des_long_(0.0) {
         // Reliable and transient_local QoS for all topics to ensure delivery and history.
         rclcpp::QoS qos_reliable(10);
         qos_reliable.reliable().transient_local();

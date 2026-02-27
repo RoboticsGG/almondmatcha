@@ -23,7 +23,7 @@ Complete guide to launching the Almondmatcha rover system across all platforms.
 
 Total: 11 nodes
 
-- ws_rpi: 7 nodes (node_gnss_spresense, node_gnss_ublox, node_gnss_mission_monitor, node_chassis_controller, node_chassis_imu, node_chassis_sensors, mission_monitoring_node_rpi)
+- ws_rpi: 7 nodes (gnss_spresense_node, gnss_ublox_node, gnss_mission_monitor_node, chassis_controller_node, chassis_imu_node, chassis_sensors_node, mission_monitoring_node_rpi)
 - ws_base: 1 node (mission_command_node)
 - ws_jetson: 1 node (rover_kinematic_control)
 - STM32: 2 nodes (chassis_controller, sensors_node)
@@ -31,7 +31,7 @@ Total: 11 nodes
 ### Domain 4 Participants (Telemetry, NOT visible to STM32)
 
 - ws_base: mission_monitoring_node_pc (telemetry display)
-- ws_jetson: node_rover_local_monitoring (CSV logging, future DB)
+- ws_jetson: rover_local_monitoring_node (CSV logging, future DB)
 
 ### Domain 6 Participants (Jetson Localhost Only)
 
@@ -137,7 +137,7 @@ export ROS_DOMAIN_ID=5
 This launches 7 nodes in a tmux session (`rover`):
 - GNSS Spresense, GNSS mission monitor, Chassis controller
 - Chassis IMU, Chassis sensors, Mission monitoring node
-- node_gnss_ublox
+- gnss_ublox_node
 
 **Tmux:** `Ctrl+b`+arrows / `z` zoom / `d` detach / `tmux attach -t rover`
 
@@ -178,12 +178,12 @@ export ROS_DOMAIN_ID=5
 ros2 node list
 # Expected: 11 nodes total (9 without ws_base, 11 with ws_base)
 # /rover_kinematic_control        (Jetson — dual-context D6 sub / D5 pub)
-# /node_chassis_controller        (ws_rpi)
-# /node_gnss_mission_monitor      (ws_rpi)
-# /node_gnss_spresense            (ws_rpi)
-# /node_gnss_ublox                (ws_rpi)
-# /node_chassis_imu               (ws_rpi)
-# /node_chassis_sensors           (ws_rpi)
+# /chassis_controller_node        (ws_rpi)
+# /gnss_mission_monitor_node      (ws_rpi)
+# /gnss_spresense_node            (ws_rpi)
+# /gnss_ublox_node                (ws_rpi)
+# /chassis_imu_node               (ws_rpi)
+# /chassis_sensors_node           (ws_rpi)
 # /mission_monitoring_node_rpi    (ws_rpi — D5 sub / D4 pub + CSV)
 # /chassis_controller             (STM32 chassis)
 # /sensors_node                   (STM32 sensors)
