@@ -62,8 +62,8 @@ flowchart TB
 %%{init: {'theme': 'base', 'themeVariables': {'fontSize': '15px', 'fontFamily': 'Segoe UI, Arial, sans-serif'}}}%%
 graph LR
     subgraph D6["Domain 6 — Vision (Jetson)"]
-        CAM["camera_stream<br/>Jetson"]
-        LANE["lane_detection<br/>Jetson"]
+        CAM["camera_stream_node<br/>Jetson"]
+        LANE["lane_detection_node<br/>Jetson"]
         STR["rover_kinematic_control<br/>Jetson (D6 sub | D5 pub)"]
         CAM -- "tpc_rover_d415_rgb" --> LANE
         LANE -- "tpc_rover_nav_lane" --> STR
@@ -140,7 +140,7 @@ graph LR
 |--------|---------|---------------|--------------|---------------------|
 | **4** | Telemetry | Base + Jetson | **2 nodes:**<br>• mission_monitoring_node_pc (Base)<br>• rover_local_monitoring_node (Jetson) | • Read-only telemetry from /tpc_telemetry_relay<br>• No D5 participation (no STM32 memory cost)<br>• Jetson logs CSV at 5 Hz for future DB migration |
 | **5** | Control Network | All rover systems + base command | **11 nodes:**<br>• RPi: 7 nodes<br>• Base: 1 node (mission_command_node)<br>• Jetson: 1 node (rover_kinematic_control)<br>• STM32: 2 nodes | • Bidirectional command/control<br>• Action/service communication<br>• Real-time control loops (50 Hz)<br>• STM32 memory optimized (~60% free RAM) |
-| **6** | Vision Processing | Jetson localhost | **2 nodes:**<br>• camera_stream<br>• lane_detection | • RGB/Depth streams (30 FPS, 1280×720)<br>• Network isolated (not visible from network)<br>• Lane params relayed to D5 via rover_kinematic_control |
+| **6** | Vision Processing | Jetson localhost | **2 nodes:**<br>• camera_stream_node<br>• lane_detection_node | • RGB/Depth streams (30 FPS, 1280×720)<br>• Network isolated (not visible from network)<br>• Lane params relayed to D5 via rover_kinematic_control |
 
 **Base station dual-domain:**
 - `mission_command_node` (D5): sends mission goals, calls RPi action/service servers
@@ -357,7 +357,7 @@ To gracefully stop all running nodes and close the tmux session:
 | `tpc_chassis_sensors` | 4 Hz | STM32 (sensors_node) | Encoders, voltage, current |
 | `tpc_gnss_spresense` | 10 Hz | RPi (gnss_spresense_node) | Standard GPS position |
 | `tpc_gnss_ublox` | 10 Hz | RPi (gnss_ublox_node) | RTK GNSS with cm-level accuracy |
-| `tpc_rover_nav_lane` | 30 Hz | Jetson (lane_detection) | Lane parameters [theta, b, detected] |
+| `tpc_rover_nav_lane` | 30 Hz | Jetson (lane_detection_node) | Lane parameters [theta, b, detected] |
 | `tpc_rover_dest_coordinate` | Event | RPi (gnss_mission_monitor_node) | Mission destination waypoint |
 
 **Domain 4 (Base Telemetry) - Base Station Only:**
@@ -372,8 +372,8 @@ To gracefully stop all running nodes and close the tmux session:
 
 | Topic | Rate | Publisher | Description |
 |-------|------|-----------|-------------|
-| `tpc_rover_d415_rgb` | 30 Hz | Jetson (camera_stream) | RGB image stream (1280×720) |
-| `tpc_rover_d415_depth` | 30 Hz | Jetson (camera_stream) | Depth image stream |
+| `tpc_rover_d415_rgb` | 30 Hz | Jetson (camera_stream_node) | RGB image stream (1280×720) |
+| `tpc_rover_d415_depth` | 30 Hz | Jetson (camera_stream_node) | Depth image stream |
 
 **Note:** Domain 6 topics are NOT visible from RPi, Base Station, or STM32 boards. Only the processed lane parameters (`tpc_rover_nav_lane`) are published to Domain 5.
 

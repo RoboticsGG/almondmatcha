@@ -219,9 +219,9 @@ class SystemConfig:
     ROS_DOMAIN_ID = 5               # Domain for inter-robot communication
     
     # ===== Node Names =====
-    CAMERA_NODE_NAME = "node_cam1_d415_stream"
-    LANE_NODE_NAME = "node_cam1_nav_process"
-    CONTROL_NODE_NAME = "node_rover_ctl"
+    CAMERA_NODE_NAME = "camera_stream_node"
+    LANE_NODE_NAME = "lane_detection_node"
+    CONTROL_NODE_NAME = "rover_kinematic_control"
     
     # ===== Initialization Timing =====
     CAMERA_INIT_DELAY = 2.0         # Seconds: wait for camera to initialize

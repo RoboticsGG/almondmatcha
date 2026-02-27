@@ -292,7 +292,7 @@ ros2 topic info /tpc_gnss_spresense -v
 ### Monitor QoS Warnings
 ```bash
 # Watch for incompatibility warnings
-ros2 run pkg_chassis_sensors node_chassis_imu 2>&1 | grep -i "incompatible"
+ros2 run pkg_chassis_sensors chassis_imu_node 2>&1 | grep -i "incompatible"
 ```
 
 ---
@@ -416,7 +416,7 @@ ros2 topic info -v /tpc_chassis_imu
 ### Monitor QoS Warnings
 ```bash
 # Run node and watch for QoS warnings in logs
-ros2 run pkg_chassis_sensors node_chassis_imu
+ros2 run pkg_chassis_sensors chassis_imu_node
 
 # Look for warnings like:
 # [WARN] ... incompatible QoS ... DURABILITY_QOS_POLICY

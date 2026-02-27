@@ -180,23 +180,23 @@ ros2 launch rover_launch_system rover_startup.launch.py
 export ROS_DOMAIN_ID=5
 cd ~/almondmatcha/ws_rpi
 source install/setup.bash
-ros2 run pkg_chassis_control node_chassis_controller
+ros2 run pkg_chassis_control chassis_controller_node
 
 # Terminal 2: GNSS Spresense (Domain 5)
 export ROS_DOMAIN_ID=5
-ros2 run pkg_gnss_navigation node_gnss_spresense
+ros2 run pkg_gnss_navigation gnss_spresense_node
 
 # Terminal 3: GNSS Mission Monitor (Domain 5)
 export ROS_DOMAIN_ID=5
-ros2 run pkg_gnss_navigation node_gnss_mission_monitor
+ros2 run pkg_gnss_navigation gnss_mission_monitor_node
 
 # Terminal 4: Chassis IMU Logger (Domain 5)
 export ROS_DOMAIN_ID=5
-ros2 run pkg_chassis_sensors node_chassis_imu
+ros2 run pkg_chassis_sensors chassis_imu_node
 
 # Terminal 5: Chassis Sensors Logger (Domain 5)
 export ROS_DOMAIN_ID=5
-ros2 run pkg_chassis_sensors node_chassis_sensors
+ros2 run pkg_chassis_sensors chassis_sensors_node
 ```
 
 ## Configuration

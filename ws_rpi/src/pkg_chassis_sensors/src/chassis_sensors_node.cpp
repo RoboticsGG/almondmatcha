@@ -1,11 +1,11 @@
 /**
- * node_chassis_sensors.cpp
+ * chassis_sensors_node.cpp
  * Workspace:  ws_rpi  |  Package: pkg_chassis_sensors  |  Domain: 5
  *
  * Purpose:
  *   Subscriber-only monitoring node for STM32 chassis sensor data.
  *   Heartbeat-logs that the topic is alive. CSV logging is delegated
- *   to node_mission_monitoring_rpi to preserve single-writer discipline.
+ *   to mission_monitoring_node_rpi to preserve single-writer discipline.
  *
  * Subscribed Topics:
  *   /tpc_chassis_sensors (msgs_ifaces/ChassisSensors) - encoders, voltage, current from STM32 at 4 Hz
@@ -29,7 +29,7 @@ public:
         heartbeat_timer_ = this->create_wall_timer(5s, std::bind(&ChassisSensorsNode::heartbeat, this));
         
         RCLCPP_INFO(this->get_logger(), "Chassis Sensors Node initialized. Waiting for STM32 data on /tpc_chassis_sensors...");
-        RCLCPP_INFO(this->get_logger(), "CSV logging handled by node_rover_monitoring");
+        RCLCPP_INFO(this->get_logger(), "CSV logging handled by rover_monitoring_node");
     }
 
 private:

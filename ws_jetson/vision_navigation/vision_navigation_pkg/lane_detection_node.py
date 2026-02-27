@@ -57,7 +57,7 @@ from cv_bridge import CvBridge
 from vision_navigation_pkg.lane_detector import process_frame
 
 
-class NavProcessNode(Node):
+class LaneDetectionNode(Node):
     """
     Navigation image processing node using lane detection.
     
@@ -66,7 +66,7 @@ class NavProcessNode(Node):
     """
 
     def __init__(self) -> None:
-        super().__init__('node_cam1_nav_process')
+        super().__init__('lane_detection_node')
 
         # ===================== QoS Configuration =====================
         # Sensor data: low latency, best effort delivery
@@ -280,7 +280,7 @@ class NavProcessNode(Node):
 def main() -> None:
     rclpy.init()
     try:
-        node = NavProcessNode()
+        node = LaneDetectionNode()
         rclpy.spin(node)
     except KeyboardInterrupt:
         print("Shutting down...")

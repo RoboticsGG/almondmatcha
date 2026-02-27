@@ -1,5 +1,5 @@
 /**
- * node_mission_monitoring_pc.cpp
+ * mission_monitoring_node_pc.cpp
  * Workspace:  ws_base  |  Package: mission_control  |  Domain: 4
  *
  * Purpose:

@@ -18,8 +18,8 @@ Complete topic reference for Almondmatcha rover system.
 ### `tpc_rover_d415_rgb`
 
 **Type:** `sensor_msgs/msg/Image`  
-**Publisher:** `camera_stream`  
-**Subscribers:** `lane_detection`  
+**Publisher:** `camera_stream_node`  
+**Subscribers:** `lane_detection_node`  
 **Rate:** 30 FPS  
 **QoS:** Best Effort, Depth 1  
 **Domain:** 6 (Jetson localhost only)  
@@ -31,7 +31,7 @@ RGB image stream from Intel RealSense D415 camera (`rgb8`, 1280×720).
 ### `tpc_rover_d415_depth`
 
 **Type:** `sensor_msgs/msg/Image`  
-**Publisher:** `camera_stream`  
+**Publisher:** `camera_stream_node`  
 **Subscribers:** (reserved for obstacle avoidance)  
 **Rate:** 30 FPS  
 **QoS:** Best Effort, Depth 1  
@@ -44,7 +44,7 @@ Depth image from RealSense D415 (`16UC1`, mm units). Not currently subscribed.
 ### `tpc_rover_nav_lane`
 
 **Type:** `std_msgs/msg/Float32MultiArray`  
-**Publisher:** `lane_detection` (Domain 6)  
+**Publisher:** `lane_detection_node` (Domain 6)  
 **Subscribers:** `rover_kinematic_control` (Domain 5)  
 **Rate:** 25-30 FPS  
 **QoS:** Reliable, Depth 10  
@@ -431,7 +431,7 @@ See [msgs_ifaces/msg/TelemetryRelay.msg](../common_ifaces/msgs_ifaces/msg/) for 
 **Vision Processing (Domain 6 → Domain 5):**
 ```mermaid
 flowchart LR
-    CS["camera_stream\n(D6)"] -->|tpc_rover_d415_rgb| LD["lane_detection\n(D6)"]
+    CS["camera_stream_node\n(D6)"] -->|tpc_rover_d415_rgb| LD["lane_detection_node\n(D6)"]
     LD -->|tpc_rover_nav_lane| RKC["rover_kinematic_control\n(dual-ctx D6/D5)"]
     RKC -->|tpc_rover_ctrl_cmd| CC["chassis_controller_node\n(D5)"]
 ```

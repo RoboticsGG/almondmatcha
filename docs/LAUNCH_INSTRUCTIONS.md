@@ -35,8 +35,8 @@ Total: 11 nodes
 
 ### Domain 6 Participants (Jetson Localhost Only)
 
-- camera_stream
-- lane_detection
+- camera_stream_node
+- lane_detection_node
 
 Domain 6 nodes are invisible to STM32 boards and other systems.
 
@@ -116,8 +116,8 @@ ros2 launch vision_navigation control_domain5.launch.py
 
 **Expected output:**
 ```
-[camera_stream]: Starting camera stream at 30 FPS
-[lane_detection]: Lane detection pipeline initialized
+[camera_stream_node]: Starting camera stream at 30 FPS
+[lane_detection_node]: Lane detection pipeline initialized
 [rover_kinematic_control]: Waiting for lane detection data...
 [rover_kinematic_control]: Rover Kinematic Control node initialized on Domain 6
 ```
@@ -162,7 +162,7 @@ This enables mission planning on Domain 5 and telemetry monitoring on Domain 4 f
 ```bash
 export ROS_DOMAIN_ID=6
 ros2 node list
-# Expected: /camera_stream, /lane_detection
+# Expected: /camera_stream_node, /lane_detection_node
 
 ros2 topic list
 # Expected: /tpc_rover_d415_rgb, /tpc_rover_d415_depth, /tpc_rover_nav_lane

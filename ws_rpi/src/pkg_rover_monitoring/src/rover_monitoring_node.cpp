@@ -1,11 +1,11 @@
 /**
- * node_rover_monitoring.cpp
+ * rover_monitoring_node.cpp
  * Workspace:  ws_rpi  |  Package: pkg_rover_monitoring  |  Domain: 5
  *
  * Purpose:
  *   Lightweight local monitoring node on RPi.
  *   Subscribes to rover sensor/state topics and logs them to CSV files.
- *   Does NOT relay to Domain 4 (that is done by node_mission_monitoring_rpi).
+ *   Does NOT relay to Domain 4 (that is done by mission_monitoring_node_rpi).
  *
  * Subscribed Topics (Domain 5):
  *   /tpc_gnss_spresense, /tpc_gnss_ublox, /tpc_chassis_ctrl,
@@ -37,20 +37,20 @@ public:
         init_csv_logging();
         
         // QoS profiles to match publishers
-        // STM32 mros2: EXACT copy from working node_chassis_sensors
+        // STM32 mros2: EXACT copy from working chassis_sensors_node
         rclcpp::QoS qos_stm32(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_sensor_data));
         qos_stm32.best_effort();
         
         rclcpp::QoS qos_reliable_gnss(10);
         qos_reliable_gnss.reliable().transient_local();  // Match GNSS publishers
         
-        // Subscribe to chassis sensors (EXACT QoS from node_chassis_sensors)
+        // Subscribe to chassis sensors (EXACT QoS from chassis_sensors_node)
         sub_chassis_sensors_ = this->create_subscription<msgs_ifaces::msg::ChassisSensors>(
             "/tpc_chassis_sensors", qos_stm32,
             std::bind(&RoverMonitoringNode::chassis_sensors_callback, this, std::placeholders::_1)
         );
         
-        // Subscribe to chassis IMU (EXACT QoS from node_chassis_sensors)
+        // Subscribe to chassis IMU (EXACT QoS from chassis_sensors_node)
         sub_chassis_imu_ = this->create_subscription<msgs_ifaces::msg::ChassisIMU>(
             "/tpc_chassis_imu", qos_stm32,
             std::bind(&RoverMonitoringNode::chassis_imu_callback, this, std::placeholders::_1)

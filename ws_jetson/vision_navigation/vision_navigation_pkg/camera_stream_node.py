@@ -67,7 +67,7 @@ except ImportError:
     rs = None
 
 
-class D415StreamNode(Node):
+class CameraStreamNode(Node):
     """
     Intel RealSense D415 Camera/Video Stream Node
     
@@ -77,7 +77,7 @@ class D415StreamNode(Node):
     """
 
     def __init__(self) -> None:
-        super().__init__('node_cam1_d415_stream')
+        super().__init__('camera_stream_node')
 
         # ===================== QoS Configuration =====================
         # Sensor data: low latency, best effort delivery
@@ -347,7 +347,7 @@ class D415StreamNode(Node):
 def main() -> None:
     rclpy.init()
     try:
-        node = D415StreamNode()
+        node = CameraStreamNode()
         rclpy.spin(node)
     except KeyboardInterrupt:
         print("Shutting down...")

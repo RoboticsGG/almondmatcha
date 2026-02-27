@@ -1,5 +1,5 @@
 /*
- * node_mission_command.cpp
+ * mission_command_node.cpp
  * Workspace:  ws_base  |  Package: mission_control  |  Domain: 5
  *
  * Purpose:

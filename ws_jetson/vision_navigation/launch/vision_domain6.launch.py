@@ -102,8 +102,8 @@ def generate_launch_description():
     
     camera_stream_node = Node(
         package='vision_navigation',
-        executable='camera_stream',
-        name='camera_stream',
+        executable='camera_stream_node',
+        name='camera_stream_node',
         output='screen',
         emulate_tty=True,
         parameters=[system_config],
@@ -111,8 +111,8 @@ def generate_launch_description():
     
     lane_detection_node = Node(
         package='vision_navigation',
-        executable='lane_detection',
-        name='lane_detection',
+        executable='lane_detection_node',
+        name='lane_detection_node',
         output='screen',
         emulate_tty=True,
         parameters=[system_config],

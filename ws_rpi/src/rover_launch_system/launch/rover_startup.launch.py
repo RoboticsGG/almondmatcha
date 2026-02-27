@@ -5,99 +5,106 @@ import datetime
 
 # Rover Startup Launch File
 # ==========================
-# Launches all ws_rpi nodes on unified Domain 5 architecture.
-# All systems (rover, base station, vision, STM32) communicate directly on Domain 5.
+# Launches all ws_rpi nodes on the tri-domain architecture (D5 + D4).
 #
 # Usage:
 #   cd ~/almondmatcha/ws_rpi/
 #   source install/setup.bash
 #   ros2 launch rover_launch_system rover_startup.launch.py
 #
-# Domain 5 Unified Architecture:
-#   ws_rpi (Raspberry Pi):
-#     - node_gnss_spresense: GNSS positioning
-#     - node_gnss_mission_monitor: Mission waypoint tracking
-#     - node_chassis_controller: Motor command coordination
-#     - node_chassis_imu: IMU data logging
-#     - node_chassis_sensors: Encoder/power logging
+# Domain 5 nodes (ws_rpi — rover control):
+#   - gnss_spresense_node:        Standard GPS positioning
+#   - gnss_ublox_node:            RTK GNSS centimeter-level positioning
+#   - gnss_mission_monitor_node:  Waypoint navigation state machine
+#   - chassis_controller_node:    Motor command coordination
+#   - chassis_imu_node:           IMU data relay
+#   - chassis_sensors_node:       Encoder/power relay
+#   - rover_monitoring_node:      Lightweight local RPi CSV logger (D5 only)
+#   - mission_monitoring_node_rpi: D5→D4 relay + primary high-res CSV logging
 #
-#   ws_base (Ground Station - Domain 5):
-#     - mission_command_node: Send navigation goals and speed limits
-#     - mission_monitoring_node: Display rover telemetry
-#
-#   ws_jetson (Vision System - Domain 5):
-#     - camera_stream_node, lane_detection_node, steering_control_node
-#
-#   STM32 Boards (mROS2 - Domain 5):
-#     - chassis_dynamics: Motor + IMU (192.168.1.2)
-#     - sensors_gnss: Encoders + GNSS (192.168.1.6)
+# Other domains (separate workspaces):
+#   ws_base (D5 + D4):  mission_command_node, mission_monitoring_node_pc
+#   ws_jetson (D6+D5+D4): camera_stream_node, lane_detection_node,
+#                          rover_kinematic_control, rover_local_monitoring_node
+#   STM32 (D5 mROS2):   chassis_controller (chassis), sensors_node (sensors)
 
 set_custom_log_dir = SetEnvironmentVariable(
-    name='ROS_LOG_DIR', 
-    value=f'/home/curry/almondmatcha/runs/ros_logs/{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}'
+    name='ROS_LOG_DIR',
+    value=f'/home/yupi/almondmatcha/runs/ros_logs/{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}'
 )
 
 def generate_launch_description():
 
-    # Domain 5: All rover nodes (sensors, control, navigation)
-    # All systems communicate directly on Domain 5 - no bridge needed
     domain_5_group = GroupAction(
         actions=[
-            # Manual Command Equivalent: export ROS_DOMAIN_ID=5
             SetEnvironmentVariable(name='ROS_DOMAIN_ID', value='5'),
 
             # GNSS Navigation Nodes
-            # Command: ros2 run pkg_gnss_navigation node_gnss_spresense
             Node(
-                package='pkg_gnss_navigation', 
-                executable='node_gnss_spresense',
-                name='spresense_gnss_node',
+                package='pkg_gnss_navigation',
+                executable='gnss_spresense_node',
+                name='gnss_spresense_node',
                 output='log',
                 emulate_tty=True
             ),
-
-            # Command: ros2 run pkg_gnss_navigation node_gnss_mission_monitor
             Node(
                 package='pkg_gnss_navigation',
-                executable='node_gnss_mission_monitor',
+                executable='gnss_ublox_node',
+                name='gnss_ublox_node',
+                output='log',
+                emulate_tty=True
+            ),
+            Node(
+                package='pkg_gnss_navigation',
+                executable='gnss_mission_monitor_node',
                 name='gnss_mission_monitor_node',
                 output='log',
                 emulate_tty=True
             ),
 
             # Chassis Control Node
-            # Command: ros2 run pkg_chassis_control node_chassis_controller
             Node(
                 package='pkg_chassis_control',
-                executable='node_chassis_controller',
+                executable='chassis_controller_node',
                 name='chassis_controller_node',
                 output='log',
                 emulate_tty=True
             ),
 
-            # Chassis Sensor Nodes (logging and monitoring)
-            # Command: ros2 run pkg_chassis_sensors node_chassis_imu
+            # Chassis Sensor Nodes
             Node(
                 package='pkg_chassis_sensors',
-                executable='node_chassis_imu',
+                executable='chassis_imu_node',
                 name='chassis_imu_node',
                 output='log',
                 emulate_tty=True
             ),
-
-            # Command: ros2 run pkg_chassis_sensors node_chassis_sensors
             Node(
                 package='pkg_chassis_sensors',
-                executable='node_chassis_sensors',
+                executable='chassis_sensors_node',
                 name='chassis_sensors_node',
+                output='log',
+                emulate_tty=True
+            ),
+
+            # Monitoring / Logging Nodes
+            Node(
+                package='pkg_rover_monitoring',
+                executable='rover_monitoring_node',
+                name='rover_monitoring_node',
+                output='log',
+                emulate_tty=True
+            ),
+            Node(
+                package='pkg_rover_monitoring',
+                executable='mission_monitoring_node_rpi',
+                name='mission_monitoring_node_rpi',
                 output='log',
                 emulate_tty=True
             ),
         ]
     )
 
-    # Return the launch description with Domain 5 unified architecture
-    # Note: Bridge node removed - ws_base now operates on Domain 5 for direct communication
     return LaunchDescription([
         set_custom_log_dir,
         domain_5_group,

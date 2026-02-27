@@ -12,7 +12,7 @@ Purpose:
     publish directly to the rover network (D5) without a separate relay process.
 
         D6 context -- sub: tpc_rover_nav_lane  (from lane_detection)
-        D5 context -- pub: tpc_rover_ctrl_cmd   (to node_chassis_controller, RPi)
+        D5 context -- pub: tpc_rover_ctrl_cmd   (to chassis_controller_node, RPi)
         D5 context -- sub: tpc_chassis_sensors  (stub: future encoder speed loop)
 
     Eliminates the former domain_bridge_jetson process:
@@ -78,7 +78,7 @@ class D5InterfaceNode(Node):
     Runs on Domain 5 (rover network).
 
     Responsibilities:
-        - Publish tpc_rover_ctrl_cmd to node_chassis_controller (RPi)
+        - Publish tpc_rover_ctrl_cmd to chassis_controller_node (RPi)
         - Subscribe to tpc_chassis_sensors [stub: future encoder feedback]
 
     publish_ctrl_cmd() is called from the D6 thread -- rclpy Publisher.publish()

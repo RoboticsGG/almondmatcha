@@ -42,7 +42,7 @@ tmux select-pane -t 0 -T "Camera_D6"
 tmux send-keys -t $SESSION_NAME:0.0 "cd ~/almondmatcha/ws_jetson && source install/setup.bash" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "export ROS_DOMAIN_ID=6" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "clear && echo -e '\\e[1;36m>>> [Domain 6] CAMERA STREAM <<<\\e[0m' && sleep 1" C-m
-tmux send-keys -t $SESSION_NAME:0.0 "ros2 run vision_navigation camera_stream --ros-args --params-file vision_navigation/config/vision_nav_headless.yaml" C-m
+tmux send-keys -t $SESSION_NAME:0.0 "ros2 run vision_navigation camera_stream_node --ros-args --params-file vision_navigation/config/vision_nav_headless.yaml" C-m
 
 # Pane 1 (top-right): Lane Detection - Domain 6
 tmux select-pane -t 1 -T "Lane_Detect_D6"
@@ -50,7 +50,7 @@ tmux send-keys -t $SESSION_NAME:0.1 "cd ~/almondmatcha/ws_jetson && source insta
 tmux send-keys -t $SESSION_NAME:0.1 "export ROS_DOMAIN_ID=6" C-m
 tmux send-keys -t $SESSION_NAME:0.1 "clear && echo -e '\\e[1;32m>>> [Domain 6] LANE DETECTION <<<\\e[0m'" C-m
 tmux send-keys -t $SESSION_NAME:0.1 "echo 'Waiting for camera initialization (3s)...' && sleep 3" C-m
-tmux send-keys -t $SESSION_NAME:0.1 "ros2 run vision_navigation lane_detection --ros-args --params-file vision_navigation/config/vision_nav_headless.yaml" C-m
+tmux send-keys -t $SESSION_NAME:0.1 "ros2 run vision_navigation lane_detection_node --ros-args --params-file vision_navigation/config/vision_nav_headless.yaml" C-m
 
 # Pane 2 (bottom-right): Rover Kinematic Control — dual-context (D6 sub | D5 pub)
 tmux select-pane -t 2 -T "Kinematic_Ctrl_D6+D5"

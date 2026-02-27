@@ -26,7 +26,7 @@ graph LR
     end
 
     subgraph JET ["Jetson Orin · 192.168.1.5"]
-        J1["D6 · camera_stream + lane_detection\nlocalhost only · 30 FPS"]
+        J1["D6 · camera_stream_node + lane_detection_node\nlocalhost only · 30 FPS"]
         J2["D5 · rover_kinematic_control\ndual-context: D6 sub / D5 pub"]
         J3["D4 · rover_local_monitoring_node\nCSV + future DB"]
     end
@@ -96,7 +96,7 @@ graph LR
 - `rover_local_monitoring_node` (Jetson): logs TelemetryRelay CSV at 5 Hz, future DB backend
 
 **Domain 6 (Vision Processing):** Jetson localhost only, 2 participants
-- camera_stream, lane_detection nodes
+- camera_stream_node, lane_detection_node nodes
 - High-bandwidth RGB/Depth streams (30 FPS, 1280×720) isolated from network
 - Invisible to STM32 boards
 
@@ -123,8 +123,8 @@ graph LR
 **Jetson Orin Nano (192.168.1.5 — Multi-Domain):**
 ```
 Domain 6 (Vision Processing — localhost):
-├── camera_stream       - D415 RGB/depth streaming @ 30 FPS
-└── lane_detection      - Lane feature extraction @ 30 FPS
+├── camera_stream_node       - D415 RGB/depth streaming @ 30 FPS
+└── lane_detection_node      - Lane feature extraction @ 30 FPS
 
 Domain 5 (Control Network):
 └── rover_kinematic_control - Bicycle-model PID: steering + speed @ 50 Hz
@@ -162,7 +162,7 @@ Domain 5 (mROS2):
 
 ```mermaid
 flowchart LR
-    CAM["camera_stream\nD6 · 30 FPS"] -->|tpc_rover_d415_rgb| LANE["lane_detection\nD6 · 30 FPS"]
+    CAM["camera_stream_node\nD6 · 30 FPS"] -->|tpc_rover_d415_rgb| LANE["lane_detection_node\nD6 · 30 FPS"]
     LANE -->|tpc_rover_nav_lane| CTRL["rover_kinematic_control\nD6 sub / D5 pub · 50 Hz"]
     CTRL -->|tpc_rover_ctrl_cmd| CC["chassis_controller_node\nD5 · 50 Hz"]
     CC -->|tpc_chassis_cmd| MTR["STM32 chassis_controller\nD5 · 20 Hz"]
@@ -179,7 +179,7 @@ flowchart LR
 ### Message Flow Patterns
 
 **Publish-Subscribe:**
-- Vision stream: camera → lane_detection
+- Vision stream: camera → lane_detection_node
 - Sensor data: STM32s → RPi logging nodes
 - Control commands: rover_kinematic_control → chassis_controller
 

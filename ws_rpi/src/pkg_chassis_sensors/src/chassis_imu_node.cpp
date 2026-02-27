@@ -1,11 +1,11 @@
 /**
- * node_chassis_imu.cpp
+ * chassis_imu_node.cpp
  * Workspace:  ws_rpi  |  Package: pkg_chassis_sensors  |  Domain: 5
  *
  * Purpose:
  *   Subscriber-only monitoring node for STM32 IMU data.
  *   Heartbeat-logs that the topic is alive. CSV logging is delegated
- *   to node_mission_monitoring_rpi to preserve single-writer discipline.
+ *   to mission_monitoring_node_rpi to preserve single-writer discipline.
  *
  * Subscribed Topics:
  *   /tpc_chassis_imu (msgs_ifaces/ChassisIMU) - IMU accel/gyro from STM32 at 10 Hz
@@ -29,7 +29,7 @@ public:
         heartbeat_timer_ = this->create_wall_timer(5s, std::bind(&ChassisIMUNode::heartbeat, this));
         
         RCLCPP_INFO(this->get_logger(), "Chassis IMU Node initialized. Waiting for STM32 data on /tpc_chassis_imu...");
-        RCLCPP_INFO(this->get_logger(), "CSV logging handled by node_rover_monitoring");
+        RCLCPP_INFO(this->get_logger(), "CSV logging handled by rover_monitoring_node");
     }
 
 private:

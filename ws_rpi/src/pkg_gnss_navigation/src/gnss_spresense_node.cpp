@@ -1,5 +1,5 @@
 /**
- * node_gnss_spresense.cpp
+ * gnss_spresense_node.cpp
  * Workspace:  ws_rpi  |  Package: pkg_gnss_navigation  |  Domain: 5
  *
  * Purpose:
@@ -32,7 +32,7 @@ public:
         
         pub_gnss_spresense_ = this->create_publisher<msgs_ifaces::msg::SpresenseGNSS>("tpc_gnss_spresense", qos_reliable);
 
-        RCLCPP_INFO(this->get_logger(), "CSV logging handled by node_rover_monitoring");
+        RCLCPP_INFO(this->get_logger(), "CSV logging handled by rover_monitoring_node");
 
         serial_port_ = open("/dev/ttyUSB0", O_RDWR | O_NOCTTY | O_NDELAY);
         if (serial_port_ == -1) {

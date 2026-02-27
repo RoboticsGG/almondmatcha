@@ -1,5 +1,5 @@
 /**
- * node_gnss_mission_monitor.cpp
+ * gnss_mission_monitor_node.cpp
  * Workspace:  ws_rpi  |  Package: pkg_gnss_navigation  |  Domain: 5
  *
  * Purpose:

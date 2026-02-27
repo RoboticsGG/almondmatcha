@@ -30,8 +30,8 @@ def generate_launch_description():
     # CSV data logger (optional) - for local data recording
     csv_logger_node = Node(
         package='pkg_rover_monitoring',
-        executable='node_rover_monitoring',
-        name='node_rover_monitoring',
+        executable='rover_monitoring_node',
+        name='rover_monitoring_node',
         output='screen',
         parameters=[],
         environment={'ROS_DOMAIN_ID': '5'}
