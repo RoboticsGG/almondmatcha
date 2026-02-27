@@ -103,6 +103,7 @@ mission_command_node:
     rover_spd: 15              # Speed limit (0-100%)
     des_lat: 8.007286          # Target latitude (decimal degrees)
     des_long: 101.50203        # Target longitude (decimal degrees)
+    action_watchdog_timeout_sec: 10.0  # Cancel goal if no feedback for this many seconds
 ```
 
 **Apply Changes:**

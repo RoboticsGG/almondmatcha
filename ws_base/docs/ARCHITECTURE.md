@@ -44,7 +44,7 @@ Displays rover telemetry @ 1 Hz.
 App:  mission_command | mission_monitoring
 ROS2: rclcpp | actions | services | topics
 DDS:  Cyclone DDS (RTPS)
-Net:  Ethernet | WiFi
+Net:  Gigabit Ethernet (switch, 192.168.1.0/24)
 ```
 
 ## Domain Architecture

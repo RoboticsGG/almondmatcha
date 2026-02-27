@@ -21,7 +21,7 @@
  *   A periodic timer (2 s) monitors feedback heartbeat from the action server.
  *   If no feedback is received for `action_watchdog_timeout_sec` seconds after
  *   goal acceptance, the goal is automatically cancelled to prevent indefinite
- *   hang on mid-mission Wi-Fi loss.
+ *   hang on mid-mission network link loss.
  *
  * Author: AlmondMatcha Rover Team
  * Date:   February 27, 2026
@@ -279,7 +279,7 @@ private:
      * Watchdog check — fires every 2 s while a goal is active.
      * Cancels the goal if no feedback has been received within
      * action_watchdog_timeout_sec_ (default 10 s), which indicates a
-     * mid-mission Wi-Fi drop or action server crash.
+     * mid-mission network link drop or action server crash.
      */
     void watchdog_check() {
         if (!goal_accepted_ || !goal_handle_) {
@@ -290,7 +290,7 @@ private:
         if (elapsed > action_watchdog_timeout_sec_) {
             RCLCPP_WARN(this->get_logger(),
                 "[Watchdog] No feedback for %.1f s (limit=%.1f s). "
-                "Cancelling mission goal — possible Wi-Fi loss.",
+                "Cancelling mission goal — possible network link loss.",
                 elapsed, action_watchdog_timeout_sec_);
             goal_accepted_ = false;
             watchdog_timer_->cancel();
