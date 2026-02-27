@@ -8,7 +8,7 @@ The Vision Navigation system consists of three coordinated ROS2 nodes:
 
 1. **Camera Stream Node** - Acquires and publishes RGB/depth frames
 2. **Lane Detection Node** - Detects lane markers and computes steering parameters
-3. **Steering Control Node** - Implements PID-based steering control
+3. **Rover Kinematic Control Node** - Implements PID-based steering + speed control
 
 Initialization Sequence: Camera (0s) → Lane Detection (2s) → Steering Control (3s)
 
@@ -213,45 +213,45 @@ ros2 pkg executables vision_navigation
 
 Camera stream from D415:
 ```bash
-ros2 run vision_navigation camera_stream
+ros2 run vision_navigation camera_stream_node
 ```
 
 Camera stream with preview:
 ```bash
-ros2 run vision_navigation camera_stream --ros-args -p open_cam:=True
+ros2 run vision_navigation camera_stream_node --ros-args -p open_cam:=True
 ```
 
 From video file:
 ```bash
-ros2 run vision_navigation camera_stream --ros-args \
+ros2 run vision_navigation camera_stream_node --ros-args \
   -p video_path:="/path/to/video.mp4"
 ```
 
 Lane detection with visualization:
 ```bash
-ros2 run vision_navigation lane_detection --ros-args -p show_window:=True
+ros2 run vision_navigation lane_detection_node --ros-args -p show_window:=True
 ```
 
 Steering control:
 ```bash
-ros2 run vision_navigation steering_control
+ros2 run vision_navigation rover_kinematic_control
 ```
 
 ### Complete System Startup
 
 Terminal 1 - Camera:
 ```bash
-ros2 run vision_navigation camera_stream --ros-args -p open_cam:=True
+ros2 run vision_navigation camera_stream_node --ros-args -p open_cam:=True
 ```
 
 Terminal 2 - Lane detection:
 ```bash
-ros2 run vision_navigation lane_detection --ros-args -p show_window:=True
+ros2 run vision_navigation lane_detection_node --ros-args -p show_window:=True
 ```
 
-Terminal 3 - Steering control:
+Terminal 3 - Rover kinematic control:
 ```bash
-ros2 run vision_navigation steering_control
+ros2 run vision_navigation rover_kinematic_control
 ```
 
 Terminal 4 - Monitor control output:

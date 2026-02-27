@@ -30,8 +30,7 @@ tmux kill-session -t rover
 |---------|---------|
 | `chassis_control` | Motor coordination, cruise control |
 | `chassis_sensors` | Sensor data logging (IMU, encoders, power) |
-| `gnss_navigation` | GPS waypoint navigation, mission monitoring |
-| `rover_bringup` | System-wide launch configuration |
+| `gnss_navigation` | GPS waypoint navigation, mission monitoring || `rover_monitoring` | Telemetry relay publisher (D4), CSV data logger || `rover_bringup` | System-wide launch configuration |
 
 ## Building
 
@@ -47,7 +46,7 @@ source install/setup.bash
 **What the build script does:**
 - Builds interface packages first (action_ifaces, msgs_ifaces, services_ifaces)
 - Sources environment automatically
-- Builds application packages (chassis_control, chassis_sensors, gnss_navigation, rover_bringup)
+- Builds application packages (chassis_control, chassis_sensors, gnss_navigation, rover_monitoring, rover_bringup)
 - Handles proper dependency ordering
 - Creates install/ directory with all executables
 
@@ -64,7 +63,7 @@ source install/setup.bash
 
 # Step 2: Build application packages
 colcon build --packages-select chassis_control chassis_sensors \
-    gnss_navigation rover_bringup
+    gnss_navigation rover_monitoring rover_bringup
 source install/setup.bash
 ```
 
@@ -85,6 +84,9 @@ colcon build --packages-select chassis_sensors
 # GNSS navigation (Spresense, Ublox, mission monitor)
 colcon build --packages-select gnss_navigation
 
+# Rover monitoring (telemetry relay + CSV logger)
+colcon build --packages-select rover_monitoring
+
 # Launch system (ROS2 launch files)
 colcon build --packages-select rover_bringup
 ```
@@ -96,7 +98,7 @@ The build order matters due to dependencies:
 ```
 action_ifaces, msgs_ifaces, services_ifaces (must build first)
     ↓
-chassis_control, chassis_sensors, gnss_navigation, rover_bringup
+chassis_control, chassis_sensors, gnss_navigation, rover_monitoring, rover_bringup
 ```
 
 **Important:** Always source `install/setup.bash` after building interface packages before building application packages.
@@ -248,11 +250,13 @@ export ROS_DOMAIN_ID=5
 ros2 node list
 
 # Expected:
-# /node_chassis_controller
-# /node_chassis_imu
-# /node_chassis_sensors
-# /node_gnss_spresense
-# /node_gnss_mission_monitor
+# /chassis_controller_node
+# /chassis_imu_node
+# /chassis_sensors_node
+# /gnss_spresense_node
+# /gnss_ublox_node
+# /gnss_mission_monitor_node
+# /mission_monitoring_node_rpi
 ```
 
 ### Monitor Topics
@@ -276,14 +280,18 @@ ros2 topic echo tpc_gnss_mission_active
 
 ### Check Data Logging
 
-Logs are written to:
+Logs are written to run directories:
 
 ```bash
-ls -lh ~/almondmatcha/runs/logs/
-# Expected files:
-# chassis_imu_YYYYMMDD_HHMMSS.csv
-# chassis_sensors_YYYYMMDD_HHMMSS.csv
-# gnss_spresense_YYYYMMDD_HHMMSS.csv
+ls ~/almondmatcha/ws_rpi/runs/
+# Expected directories:
+# run_001_YYYYMMDD_HHMMSS/
+# run_002_YYYYMMDD_HHMMSS/
+# ...
+
+ls ~/almondmatcha/ws_rpi/runs/run_001_*/
+# Expected files: rtk_gnss.csv, spresense_gnss.csv, chassis_imu.csv,
+#                 chassis_sensors.csv, chassis_cmd.csv, mission_state.csv
 ```
 
 ## Troubleshooting
@@ -376,27 +384,20 @@ ros2 topic echo tpc_chassis_imu
 
 ## Data Logging
 
-All sensor data logged to CSV files in `~/almondmatcha/runs/logs/`:
+All sensor data is logged to time-stamped run directories by `mission_monitoring_node_rpi`
+(rover_monitoring package) in `~/almondmatcha/ws_rpi/runs/run_NNN_YYYYMMDD_HHMMSS/`:
 
-| Node | Log File | Rate | Content |
-|------|----------|------|---------|
-| `node_chassis_imu` | `chassis_imu_*.csv` | 1 Hz | Accelerometer, gyroscope |
-| `node_chassis_sensors` | `chassis_sensors_*.csv` | 1 Hz | Encoders, voltage, current |
-| `node_gnss_spresense` | `gnss_spresense_*.csv` | 1 Hz | Latitude, longitude, altitude |
+| File | Rate | Content |
+|------|------|---------|
+| `rtk_gnss.csv` | ~10 Hz | RTK GNSS position (u-blox) |
+| `spresense_gnss.csv` | ~10 Hz | GPS position (Spresense) |
+| `chassis_imu.csv` | ~10 Hz | Accelerometer, gyroscope |
+| `chassis_sensors.csv` | ~4 Hz | Encoders, voltage, current |
+| `chassis_cmd.csv` | ~50 Hz | Motor commands |
+| `mission_state.csv` | event | Mission status, steering, lane detection |
 
-**CSV Format Examples:**
-
-`chassis_imu_*.csv`:
-```
-timestamp,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z
-2025-11-07T10:30:00.123,100,-50,1000,5,-3,2
-```
-
-`chassis_sensors_*.csv`:
-```
-timestamp,encoder_left,encoder_right,voltage,current
-2025-11-07T10:30:00.123,12345,12340,12.5,2.3
-```
+Logging starts automatically when `mission_monitoring_node_rpi` launches.
+See [docs/CSV_LOGGING.md](../docs/CSV_LOGGING.md) for complete schema.
 
 ## Directory Structure
 
@@ -409,21 +410,29 @@ ws_rpi/
 └── src/
     ├── chassis_control/     # Motor coordination
     │   ├── src/
-    │   │   └── node_chassis_controller.cpp
+    │   │   └── chassis_controller_node.cpp
     │   ├── CMakeLists.txt
     │   └── package.xml
     │
     ├── chassis_sensors/     # Sensor logging
     │   ├── src/
-    │   │   ├── node_chassis_imu.cpp
-    │   │   └── node_chassis_sensors.cpp
+    │   │   ├── chassis_imu_node.cpp
+    │   │   └── chassis_sensors_node.cpp
     │   ├── CMakeLists.txt
     │   └── package.xml
     │
     ├── gnss_navigation/     # GPS navigation
     │   ├── src/
-    │   │   ├── node_gnss_spresense.cpp
-    │   │   └── node_gnss_mission_monitor.cpp
+    │   │   ├── gnss_spresense_node.cpp
+    │   │   ├── gnss_ublox_node.cpp
+    │   │   └── gnss_mission_monitor_node.cpp
+    │   ├── CMakeLists.txt
+    │   └── package.xml
+    │
+    ├── rover_monitoring/    # Telemetry relay + CSV logger
+    │   ├── src/
+    │   │   ├── mission_monitoring_node_rpi.cpp
+    │   │   └── rover_monitoring_node.cpp
     │   ├── CMakeLists.txt
     │   └── package.xml
     │
@@ -449,4 +458,4 @@ ws_rpi/
 
 **Platform:** Raspberry Pi 4B  
 **ROS2:** Humble  
-**Domain:** 5 (rover-internal)
+**Domain:** 5 (7 control nodes) + 4 (mission_monitoring_node_rpi relay context)

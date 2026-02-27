@@ -51,8 +51,8 @@ This architecture reduces STM32 discovery overhead and enables scalable vision/A
 
 | Node | Domain | Function | Rate |
 |------|--------|----------|------|
-| `camera_stream` | 6 | D415 RGB/depth streaming | 30 FPS |
-| `lane_detection` | 6 | Lane parameter extraction | 25-30 FPS |
+| `camera_stream_node` | 6 | D415 RGB/depth streaming | 30 FPS |
+| `lane_detection_node` | 6 | Lane parameter extraction | 25-30 FPS |
 | `rover_kinematic_control` | 5 | Kinematic control (steering + speed) | 50 Hz |
 
 The kinematic control node bridges domains: subscribes to Domain 6 vision data, publishes Domain 5 control commands.
@@ -193,7 +193,7 @@ tmux attach -t jetson_vision  # Reconnect to existing session
 **Check Domain 6 (vision):**
 ```bash
 export ROS_DOMAIN_ID=6
-ros2 node list  # Should show: /camera_stream, /lane_detection
+ros2 node list  # Should show: /camera_stream_node, /lane_detection_node
 ros2 topic hz /tpc_rover_nav_lane  # Should be ~30 Hz
 ```
 
@@ -269,7 +269,7 @@ ros2 daemon stop && ros2 daemon start
 **Domain 5 (network-wide):**
 - `tpc_rover_ctrl_cmd` - Kinematic control commands [steer_angle, speed_cmd, detected] (50 Hz)
 
-Steering commands are consumed by `node_chassis_controller` (ws_rpi) and converted to motor commands for STM32.
+Steering commands are consumed by `chassis_controller_node` (ws_rpi) and converted to motor commands for STM32.
 
 ## See Also
 

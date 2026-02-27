@@ -1,7 +1,7 @@
 # Quick Reference: System Launch & Configuration
 
 **Date:** February 26, 2026  
-**Status:** Optimized for 11 D5 participants + 1 headroom  
+**Status:** Optimized for 11 D5 participants + 4 headroom  
 **Network:** All systems connected via Gigabit Ethernet switch (192.168.1.0/24)
 
 ---
@@ -11,16 +11,15 @@
 ### Memory Pool Settings (Both Boards)
 
 ```cpp
-MAX_NUM_PARTICIPANTS = 12        // 11 active D5 + headroom 1
+MAX_NUM_PARTICIPANTS = 15        // 11 active D5 + 4 margin
 SPDP_WRITER_STACKSIZE = 4096     // Halved from 8192 (critical savings)
-NUM_WRITERS_PER_PARTICIPANT = 6  // Reduced from 10
-NUM_READERS_PER_PARTICIPANT = 6  // Reduced from 10
+NUM_WRITERS_PER_PARTICIPANT = 20 // Per node (ws_base/Jetson are heavy)
+NUM_READERS_PER_PARTICIPANT = 20 // Per node
 ```
 
 **Memory Impact:**
-- SPDP heap: ~50 KB (reduced from 131 KB)
-- **Available: ~112 KB free** for application use
-- **Headroom: 2 spare participant slots** for development
+- SPDP heap: ~61 KB (15 × 4096)
+- **Headroom: 4 spare participant slots** for development
 
 ---
 

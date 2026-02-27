@@ -17,9 +17,9 @@
 
 Memory exhaustion in embeddedRTPS layer due to over-provisioned pools:
 
-- **Actual participants:** 12 (5 RPi nodes + 3 Jetson nodes + 2 Base nodes + 2 STM32 boards)
+- **Actual participants:** 11 (7 RPi nodes + 1 Jetson + 1 Base + 2 STM32 boards)
 - **Old config:** `MAX_NUM_PARTICIPANTS = 16`, `SPDP_WRITER_STACKSIZE = 8192`
-- **SPDP heap:** 16 × 8KB = 131 KB (excessive for STM32F767ZI)
+- **SPDP heap:** 16 × 8 KB = 131 KB (excessive for STM32F767ZI)
 - **Race condition:** Simultaneous discovery caused allocation failures
 
 ---
@@ -34,13 +34,13 @@ Memory exhaustion in embeddedRTPS layer due to over-provisioned pools:
 
 **Changes:**
 ```cpp
-// Reduced participant limits (12 active + 2 headroom)
-const uint8_t MAX_NUM_PARTICIPANTS = 14;           // Was 16
-const uint8_t NUM_WRITERS_PER_PARTICIPANT = 6;     // Was 10
-const uint8_t NUM_READERS_PER_PARTICIPANT = 6;     // Was 10
+// 11 actual + 4 margin
+const uint8_t MAX_NUM_PARTICIPANTS = 15;              // Was 16
+const uint8_t NUM_WRITERS_PER_PARTICIPANT = 20;       // Raised from 6 (supports heavy ws_base node)
+const uint8_t NUM_READERS_PER_PARTICIPANT = 20;       // Raised from 6
 
 // Halved stack sizes
-const uint16_t SPDP_WRITER_STACKSIZE = 4096;       // Was 8192
+const uint16_t SPDP_WRITER_STACKSIZE = 4096;          // Was 8192
 const int HEARTBEAT_STACKSIZE = 4096;              // Was 8192
 const int THREAD_POOL_WRITER_STACKSIZE = 4096;     // Was 8192
 const int THREAD_POOL_READER_STACKSIZE = 4096;     // Was 8192
@@ -51,7 +51,7 @@ const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 14; // Was 20
 const uint8_t HISTORY_SIZE_STATEFUL = 5;           // Was 10
 ```
 
-**Memory savings:** ~106 KB (131 KB → 57 KB SPDP heap)
+**Memory savings:** ~74 KB (131 KB → ~57 KB SPDP heap)
 
 #### 3. **Extended Discovery Wait Time** (`app.cpp`)
 
@@ -59,13 +59,13 @@ const uint8_t HISTORY_SIZE_STATEFUL = 5;           // Was 10
 
 ```cpp
 // Increased from 6 seconds to 8 seconds
-MROS2_INFO("Waiting 8 seconds for DDS participant discovery (12 participants)...");
+MROS2_INFO("Waiting 8 seconds for DDS participant discovery (11 participants)...");
 osDelay(8000);  // 8 seconds = 16 SPDP cycles @ 500ms
 ```
 
 **Rationale:**
 - SPDP announcements sent every 500ms (SPDP_RESEND_PERIOD_MS)
-- 12 participants need ~10-12 cycles to fully propagate
+- 11 participants need ~10-12 cycles to fully propagate
 - 8 seconds = 16 cycles → robust margin for discovery completion
 - Ensures all participants matched BEFORE data starts flowing
 - Prevents race conditions during discovery
@@ -122,7 +122,7 @@ See [LAUNCH_INSTRUCTIONS.md](LAUNCH_INSTRUCTIONS.md) for details.
 **✅ Expected (clean discovery):**
 ```
 [MROS2_INFO] Network connected successfully
-[MROS2_INFO] Waiting 8 seconds for DDS participant discovery (12 participants)...
+[MROS2_INFO] Waiting 8 seconds for DDS participant discovery (11 participants)...
 [MROS2_INFO] Discovery wait complete - initializing sensors
 [imu_reader_task] Accel: X=12 Y=-45 Z=1023 | Gyro: X=1 Y=-2 Z=0
 ```
@@ -159,9 +159,9 @@ ping 192.168.1.2 && ping 192.168.1.6  # Both STM32 boards
 
 | Metric | Before | After | Change |
 |--------|--------|-------|--------|
-| SPDP heap | ~131 KB | ~57 KB | -74 KB |
-| Total savings | - | - | ~106 KB |
-| Participant capacity | 16 | 14 | -2 slots |
+| SPDP heap | ~131 KB | ~61 KB | -70 KB |
+| Total savings | - | - | ~70 KB |
+| Participant capacity | 16 | 15 | -1 slot |
 | Discovery time | 6s | 8s | +2s |
 | Reliability | Intermittent | Stable | ✅ Fixed |
 
@@ -173,7 +173,7 @@ ping 192.168.1.2 && ping 192.168.1.6  # Both STM32 boards
 
 ```bash
 # Verify config.h changes applied
-grep MAX_NUM_PARTICIPANTS platform/rtps/config.h  # Should show 14
+grep MAX_NUM_PARTICIPANTS platform/rtps/config.h  # Should show 15
 grep SPDP_WRITER_STACKSIZE platform/rtps/config.h # Should show 4096
 
 # Rebuild clean
@@ -196,21 +196,21 @@ arp -a  # Should show all 5 systems
 **Check participant count:**
 ```bash
 export ROS_DOMAIN_ID=5
-ros2 node list | wc -l  # Should be ≤12
+ros2 node list | wc -l  # Should be ≤15
 ```
 
 ---
 
 ## Scalability
 
-**Current capacity:** 14 participants (12 active + 2 headroom)
+**Current capacity:** 15 participants (11 active + 4 headroom)
 
-**Adding 1-2 nodes:** No changes needed (spare slots available)
+**Adding 1-4 nodes:** No changes needed (spare slots available)
 
-**Adding 3+ nodes (exceeding 14):**
+**Adding 5+ nodes (exceeding 15):**
 ```cpp
 // Increase MAX_NUM_PARTICIPANTS in config.h
-const uint8_t MAX_NUM_PARTICIPANTS = 16;  // +2 participants = +8 KB heap
+const uint8_t MAX_NUM_PARTICIPANTS = 17;  // +2 participants = +8 KB heap
 
 // Monitor serial log for heap warnings
 // Consider domain separation if exceeding 16 participants

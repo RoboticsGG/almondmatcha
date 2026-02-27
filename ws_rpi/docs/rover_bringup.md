@@ -1,45 +1,41 @@
-# Rover Launch System
+# Rover Bringup
 
 ## Overview
 
-Centralized launch system for the Almondmatcha rover, managing all ROS2 nodes on unified Domain 5 for seamless communication across all systems (rover, base station, vision).
+Centralized launch system for the Almondmatcha rover, managing all 7 ROS2 nodes
+on Raspberry Pi across Domain 5 (control network) and Domain 4 (telemetry relay).
 
 ## Architecture
 
-### Domain 5 - Unified Architecture
-All systems operate on Domain 5 for direct, low-latency communication without bridges:
-
 ```
-┌─────────────────────────────────────────────────────────┐
-│              Domain 5 (Unified System)                  │
-├─────────────────────────────────────────────────────────┤
-│ ws_rpi (Raspberry Pi):                                  │
-│   ├─ node_gnss_spresense         (GNSS positioning)    │
-│   ├─ node_gnss_mission_monitor   (Mission tracking)    │
-│   ├─ node_chassis_controller     (Motor coordination)  │
-│   ├─ node_chassis_imu            (IMU logging)         │
-│   └─ node_chassis_sensors        (Encoder logging)     │
-│                                                          │
-│ ws_jetson (Jetson Orin):                                │
-│   ├─ camera_stream_node          (D415 RGB/Depth)      │
-│   ├─ lane_detection_node         (Vision processing)   │
-│   └─ steering_control_node       (PID control)         │
-│                                                          │
-│ ws_base (Ground Station):                               │
-│   ├─ mission_command_node        (Send goals/speed)    │
-│   └─ mission_monitoring_node     (Telemetry display)   │
-│                                                          │
-│ STM32 Boards (mROS2):                                   │
-│   ├─ chassis_dynamics            (Motor+IMU)           │
-│   └─ sensors_gnss                (Encoders+GNSS)       │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                Domain 5 — Control Network                    │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │ ws_rpi (Raspberry Pi 192.168.1.1):                   │   │
+│  │   ├─ gnss_spresense_node        (Standard GPS)       │   │
+│  │   ├─ gnss_ublox_node            (RTK GNSS)           │   │
+│  │   ├─ gnss_mission_monitor_node  (Waypoint tracking)  │   │
+│  │   ├─ chassis_controller_node    (Motor coordination) │   │
+│  │   ├─ chassis_imu_node           (IMU data logger)    │   │
+│  │   ├─ chassis_sensors_node       (Encoder/power log)  │   │
+│  │   └─ mission_monitoring_node_rpi (D5 sub + CSV log)  │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                              │
+│  ws_jetson: rover_kinematic_control (dual-context D6/D5)    │
+│  ws_base:   mission_command_node (actions/services to RPi)  │
+│  STM32:     chassis_controller + sensors_node (mROS2)       │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│                Domain 4 — Telemetry Relay                    │
+│  mission_monitoring_node_rpi (RPi) → /tpc_telemetry_relay   │
+│  Subscribers: mission_monitoring_node_pc (Base)              │
+│               rover_local_monitoring_node (Jetson)           │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-**Key Benefits:**
-- Direct DDS/RTPS discovery - no bridge needed
-- Native action/service support (ws_base ↔ ws_rpi)
-- Lower latency (no relay overhead)
-- Simplified architecture
+`mission_monitoring_node_rpi` runs dual-context: subscribes 10 D5 topics, publishes
+aggregated telemetry to D4 at 5 Hz, and logs 6 per-topic CSV files.
 
 ## Usage
 
@@ -56,21 +52,23 @@ source install/setup.bash
 ros2 launch rover_bringup rover_startup.launch.py
 ```
 
-This launches 5 rover nodes on Domain 5:
-- GNSS Spresense (positioning)
-- GNSS Mission Monitor (waypoint tracking)
-- Chassis Controller (motor coordination)
-- Chassis IMU (logging)
-- Chassis Sensors (logging)
+This launches 7 rover nodes on Domain 5 (+ D4 relay context):
+- gnss_spresense_node, gnss_ublox_node, gnss_mission_monitor_node
+- chassis_controller_node, chassis_imu_node, chassis_sensors_node
+- mission_monitoring_node_rpi
 
-### Launch with ws_jetson (Vision System)
+### Launch ws_jetson (Vision System)
 
 On Jetson Orin Nano:
 ```bash
 cd ~/almondmatcha/ws_jetson
 source install/setup.bash
-export ROS_DOMAIN_ID=5
-ros2 launch jetson_launch_system jetson_startup.launch.py
+# Domain 6 (vision) — localhost only
+ros2 launch vision_navigation vision_domain6.launch.py
+# Domain 5 (control)
+ros2 launch vision_navigation control_domain5.launch.py
+# Or single-command tmux launch:
+./launch_jetson_tmux.sh
 ```
 
 ### Launch ws_base (Ground Station)
@@ -78,18 +76,11 @@ ros2 launch jetson_launch_system jetson_startup.launch.py
 On base station computer:
 ```bash
 cd ~/almondmatcha/ws_base
-
-# Using screen
-./launch_base_screen.sh
-
-# Or using tmux
-./launch_base_tmux.sh
-
-# Or manual
 source install/setup.bash
-export ROS_DOMAIN_ID=5
-ros2 run mission_control mission_command_node
-ros2 run mission_control mission_monitoring_node
+# Script launches both domains automatically:
+# - mission_command_node: Domain 5 (actions/services to RPi)
+# - mission_monitoring_node_pc: Domain 4 (telemetry display)
+./launch_base_tmux.sh
 ```
 
 ## Node Details
@@ -98,142 +89,107 @@ ros2 run mission_control mission_monitoring_node
 
 | Node | Package | Purpose | Topics |
 |------|---------|---------|--------|
-| **node_gnss_spresense** | gnss_navigation | Sony Spresense GNSS reader | Publishes: `tpc_gnss_spresense` |
-| **node_gnss_ublox** | gnss_navigation | u-blox RTK GNSS reader | Publishes: `tpc_gnss_ublox` |
-| **node_gnss_mission_monitor** | gnss_navigation | Waypoint tracking | Subscribes: `tpc_gnss_spresense`<br>Publishes: `tpc_gnss_mission_active`, `tpc_gnss_mission_remain_dist` |
-| **node_chassis_controller** | chassis_control | Motor command coordination | Subscribes: `tpc_rover_ctrl_cmd`, `tpc_gnss_mission_active`<br>Publishes: `tpc_chassis_cmd` |
-| **node_chassis_imu** | chassis_sensors | IMU data logger | Subscribes: `tpc_chassis_imu` |
-| **node_chassis_sensors** | chassis_sensors | Encoder/power logger | Subscribes: `tpc_chassis_sensors` |
+| `gnss_spresense_node` | gnss_navigation | Sony Spresense GPS reader | Pub: `tpc_gnss_spresense` |
+| `gnss_ublox_node` | gnss_navigation | u-blox RTK GNSS reader | Pub: `tpc_gnss_ublox` |
+| `gnss_mission_monitor_node` | gnss_navigation | Waypoint tracking | Sub: `tpc_gnss_spresense`<br>Pub: `tpc_gnss_mission_active`, `tpc_gnss_mission_remain_dist` |
+| `chassis_controller_node` | chassis_control | Motor command coordination | Sub: `tpc_rover_ctrl_cmd`, `tpc_gnss_mission_active`<br>Pub: `tpc_chassis_cmd` |
+| `chassis_imu_node` | chassis_sensors | IMU data logger | Sub: `tpc_chassis_imu` |
+| `chassis_sensors_node` | chassis_sensors | Encoder/power logger | Sub: `tpc_chassis_sensors` |
+| `mission_monitoring_node_rpi` | rover_monitoring | D5 aggregator → D4 relay + CSV | Sub: 10 D5 topics<br>Pub: D4 `/tpc_telemetry_relay` @ 5 Hz<br>CSV: 6 files in ws_rpi/runs/ |
 
 ### Domain 5 Nodes (ws_base)
 
-| Node | Package | Purpose | Topics |
-|------|---------|---------|--------|
-| **mission_command_node** | mission_control | Send navigation goals and speed limits | Action: `/des_data`<br>Service: `/srv_spd_limit` |
-| **mission_monitoring_node** | mission_control | Display telemetry & log RTK data | Subscribes: All rover telemetry topics<br>Logs: `rtk_monitoring_YYYYMMDD_HHMMSS.csv` |
+| Node | Package | Purpose |
+|------|---------|---------|
+| `mission_command_node` | mission_control | Send navigation goals (action `/des_data`) and speed limits (service `/srv_spd_limit`) |
 
-## Communication (Domain 5 - Direct)
+### Domain 4 Nodes (ws_base, ws_jetson)
 
-All communication happens directly on Domain 5 without bridges:
+| Node | Package | Purpose |
+|------|---------|---------|
+| `mission_monitoring_node_pc` | mission_control | Subscribe `/tpc_telemetry_relay` — telemetry display |
+| `rover_local_monitoring_node` | rover_monitoring | Subscribe `/tpc_telemetry_relay` — CSV logging in ws_jetson/runs/ |
+
+## Communication (Domain 5)
 
 **Actions (ws_base → ws_rpi):**
-- `/des_data` - Navigation goals (latitude/longitude)
+- `/des_data` — Navigation goals (latitude/longitude) → `gnss_mission_monitor_node`
 
 **Services (ws_base → ws_rpi):**
-- `/srv_spd_limit` - Speed limit commands (0-100%)
+- `/srv_spd_limit` — Speed limit commands (0-100%) → `chassis_controller_node`
 
-**Topics (ws_rpi → all):**
-- `tpc_chassis_imu` - IMU sensor data (10 Hz)
-- `tpc_chassis_sensors` - Encoder/power data (10 Hz)
-- `tpc_gnss_spresense` - GNSS position (10 Hz)
-- `tpc_chassis_cmd` - Motor commands (50 Hz)
-- `tpc_gnss_mission_active` - Mission status (10 Hz)
-- `tpc_gnss_mission_remain_dist` - Distance to waypoint (10 Hz)
+**Topics (ws_rpi → rest of D5):**
+- `tpc_chassis_imu` — IMU data (10 Hz)
+- `tpc_chassis_sensors` — Encoder/power (4 Hz)
+- `tpc_gnss_spresense` — GPS position (10 Hz)
+- `tpc_gnss_ublox` — RTK GNSS position (10 Hz)
+- `tpc_chassis_cmd` — Motor commands (50 Hz)
+- `tpc_gnss_mission_active` — Mission status (10 Hz)
+- `tpc_gnss_mission_remain_dist` — Distance to waypoint (10 Hz)
 
-**Topics (ws_base → ws_rpi):**
-- `tpc_rover_dest_coordinate` - Target waypoint coordinates
+**Topics (Domain 4):**
+- `tpc_telemetry_relay` — Aggregated state from RPi → Base + Jetson (5 Hz)
 
 ## Verification
 
 ### Check Domain 5 (All Systems)
 ```bash
 export ROS_DOMAIN_ID=5
-ros2 node list          # Should show all rover + base + vision nodes
-ros2 topic list         # Should show all topics
-ros2 topic hz tpc_chassis_imu
-ros2 topic hz tpc_gnss_spresense
-ros2 action list        # Should show /des_data
-ros2 service list       # Should show /srv_spd_limit
+ros2 node list
+# Expected (RPi running):
+#   /gnss_spresense_node
+#   /gnss_ublox_node
+#   /gnss_mission_monitor_node
+#   /chassis_controller_node
+#   /chassis_imu_node
+#   /chassis_sensors_node
+#   /mission_monitoring_node_rpi
+ros2 topic hz /tpc_chassis_imu      # ~10 Hz
+ros2 topic hz /tpc_gnss_spresense   # ~10 Hz
+ros2 action list                     # Should show /des_data
+ros2 service list                    # Should show /srv_spd_limit
 ```
 
-### Monitor Specific Topics
+### Check Domain 4 (Telemetry)
 ```bash
-export ROS_DOMAIN_ID=5
-ros2 topic echo tpc_chassis_imu
-ros2 topic echo tpc_gnss_spresense
+export ROS_DOMAIN_ID=4
+ros2 node list
+# Expected: /mission_monitoring_node_pc, /rover_local_monitoring_node
+ros2 topic hz /tpc_telemetry_relay  # ~5 Hz
 ```
-
-## Network Configuration
-
-### Local Testing (Same Network)
-All systems on Domain 5 communicate via DDS discovery. Ensure all devices on same subnet.
-
-### Remote Base Station
-For remote ws_base communication:
-
-1. **Network**: Ensure rover (192.168.1.x) and base station are on same subnet or routable
-2. **Firewall**: Allow UDP ports 7400-7500 for DDS discovery
-3. **DDS Config**: Configure CycloneDDS multicast (optional):
-
-```bash
-export CYCLONEDDS_URI='<CycloneDDS><Domain><General><NetworkInterfaceAddress>auto</NetworkInterfaceAddress></General></Domain></CycloneDDS>'
-```
-
-### STM32 Boards
-- **Chassis**: 192.168.1.2 (Domain 5, GUID ...10,13)
-- **GNSS**: 192.168.1.6 (Domain 5, GUID ...10,12)
-- Both boards configured for 16 participants max
 
 ## Troubleshooting
 
 ### Nodes not appearing
 ```bash
-# Check if nodes are running
-ps aux | grep ros2
 export ROS_DOMAIN_ID=5
 ros2 node list
+ps aux | grep ros2
 ```
 
-### No topics visible
-- Verify all systems set to Domain 5: `echo $ROS_DOMAIN_ID`
-- Check network connectivity between devices
-- Verify firewall allows DDS ports (UDP 7400-7500)
-
 ### STM32 topics missing
-- Ensure ws_rpi is running (STM32 needs subscribers to appear)
-- Ping STM32 boards: `ping 192.168.1.2` and `ping 192.168.1.6`
-- Check serial console for memory errors
+```bash
+ping 192.168.1.2  # STM32 chassis
+ping 192.168.1.6  # STM32 sensors
+ros2 topic list | grep chassis
+```
+
+### D4 telemetry not reaching base
+```bash
+# On RPi: verify mission_monitoring_node_rpi running on D5
+ROS_DOMAIN_ID=5 ros2 node list | grep mission_monitoring
+# On base: verify domain
+echo $ROS_DOMAIN_ID  # Should be 4
+```
 
 ### Action/Service not working
 ```bash
 export ROS_DOMAIN_ID=5
 ros2 action list        # Should show /des_data
-ros2 action info /des_data
 ros2 service list       # Should show /srv_spd_limit
-ros2 service type /srv_spd_limit
 ```
-
-### High CPU usage
-- Check log output: `tail -f ~/.ros/log/latest/*/stdout.log`
-- Reduce topic rates if necessary
-- Monitor with: `htop` or `top`
-
-## Log Files
-
-Logs are automatically organized by timestamp:
-```
-~/almondmatcha/runs/ros_logs/YYYYMMDD_HHMMSS/
-├─ spresense_gnss_node/
-├─ gnss_mission_monitor_node/
-├─ chassis_controller_node/
-├─ chassis_imu_node/
-└─ chassis_sensors_node/
-```
-
-View logs:
-```bash
-tail -f ~/almondmatcha/runs/ros_logs/latest/*/stdout.log
-```
-
-## Future Enhancements
-
-- [ ] Add node_ekf_fusion for Extended Kalman Filter sensor fusion
-- [ ] Health monitoring and auto-restart for critical nodes
-- [ ] Dynamic topic rate adjustment based on bandwidth
-- [ ] Aggregated telemetry message (reduced bandwidth)
-- [ ] Launch file parameters for conditional node startup
 
 ## Author
 
 Almondmatcha Development Team  
-Date: November 7, 2025
+Last updated: February 26, 2026

@@ -16,15 +16,15 @@ source install/setup.bash
 - **Purpose:** Monitor rover telemetry and send commands from base station
 - **Platform:** Linux PC (Ubuntu 20.04/22.04)
 - **Network:** Connect to rover Ethernet switch (192.168.1.10 recommended)
-- **Domain:** ROS2 Domain 5 (unified with all rover systems)
+- **Domain:** ROS2 **Dual-domain**: 5 (mission_command_node — commands/actions) + 4 (mission_monitoring_node_pc — telemetry display)
 - **Communication:** Gigabit Ethernet via switch - all systems on same LAN
 
 ## Nodes
 
 | Node | Function |
 |------|----------|
-| `mission_command_node` | Send navigation goals, speed limits |
-| `mission_monitoring_node` | Display real-time telemetry |
+| `mission_command_node` | Send navigation goals (action `/des_data`), speed limits (service `/srv_spd_limit`) — **Domain 5** |
+| `mission_monitoring_node_pc` | Subscribe `/tpc_telemetry_relay` on **Domain 4** — real-time telemetry display |
 
 ## Building
 
@@ -87,8 +87,8 @@ ros2 run mission_control mission_command_node --ros-args \
   -p des_lat:=8.007286 \
   -p des_long:=101.50203
 
-# Terminal 2: Monitoring node
-ros2 run mission_control mission_monitoring_node
+# Terminal 2: Monitoring node (Domain 4)
+ros2 run mission_control mission_monitoring_node_pc
 ```
 
 ## Configuration
@@ -171,22 +171,29 @@ All systems on Domain 5 via Ethernet switch - direct DDS discovery:
 
 | Topic | Type | Content |
 |-------|------|---------|
-| `tpc_gnss_spresense` | SpresenseGNSS | GPS position (RPi) |
-| `tpc_gnss_mission_active` | Bool | Mission status (RPi) |
-| `tpc_gnss_mission_remain_dist` | Float64 | Distance to waypoint (RPi) |
-| `tpc_chassis_cmd` | ChassisCtrl | Motor commands (RPi → STM32) |
-| `tpc_chassis_imu` | ChassisIMU | IMU sensor data (STM32 → RPi) |
-| `tpc_chassis_sensors` | ChassisSensors | GNSS/encoders/power (STM32 → RPi) |
-| `tpc_rover_d415_rgb` | Image | Camera stream (Jetson) |
-| `tpc_rover_nav_lane` | NavLane | Lane parameters (Jetson) |
-| `tpc_rover_ctrl_cmd` | Float32MultiArray | Kinematic control commands (Jetson) |
+| `tpc_gnss_spresense` | SpresenseGNSS | GPS position (RPi, D5) |
+| `tpc_gnss_mission_active` | Bool | Mission status (RPi, D5) |
+| `tpc_gnss_mission_remain_dist` | Float64 | Distance to waypoint (RPi, D5) |
+| `tpc_chassis_cmd` | ChassisCtrl | Motor commands (RPi → STM32, D5) |
+| `tpc_chassis_imu` | ChassisIMU | IMU sensor data (STM32 → RPi, D5) |
+| `tpc_chassis_sensors` | ChassisSensors | Encoders/power (STM32 → RPi, D5) |
+| `tpc_rover_nav_lane` | Float32MultiArray | Lane parameters (Jetson, D5) |
+| `tpc_rover_ctrl_cmd` | Float32MultiArray | Kinematic control commands (Jetson, D5) |
+
+**Note:** Camera topics (`tpc_rover_d415_rgb`, `tpc_rover_d415_depth`) run on Domain 6 (Jetson localhost only) and are NOT visible from the base station.
+
+**Domain 4 telemetry relay** (lower bandwidth, aggregated):
+
+| Topic | Type | Content |
+|-------|------|------|
+| `tpc_telemetry_relay` | TelemetryRelay | All rover state at 5 Hz (mission_monitoring_node_pc subscribes here) |
 
 ### Commands to Rover (Domain 5)
 
 | Interface | Type | Purpose |
 |-----------|------|---------|
 | `/des_data` | Action | Navigation goal (lat/lon) to RPi |
-| `/spd_limit` | Service | Speed limit (0-100%) to RPi |
+| `/srv_spd_limit` | Service | Speed limit (0-100%) to RPi |
 
 ## Testing
 
@@ -197,12 +204,12 @@ export ROS_DOMAIN_ID=5
 ros2 node list
 
 # Expected (when rover is running):
-# /mission_command_node
-# /mission_monitoring_node
-# /chassis_controller
-# /gnss_mission_monitor
-# /spresense_gnss_node
-# ... and other rover nodes
+# /mission_command_node           (D5)
+# /mission_monitoring_node_pc     (D4 — only visible if ROS_DOMAIN_ID=4)
+# /chassis_controller_node        (ws_rpi, D5)
+# /gnss_mission_monitor_node      (ws_rpi, D5)
+# /gnss_spresense_node            (ws_rpi, D5)
+# ... and other rover nodes on D5
 ```
 
 ### Monitor Rover Telemetry
@@ -236,8 +243,8 @@ ros2 action send_goal /des_data action_ifaces/action/DesData \
 
 **Set Speed Limit:**
 ```bash
-ros2 service call /spd_limit services_ifaces/srv/SpdLimit \
-    "{spd_limit: 20}"
+ros2 service call /srv_spd_limit services_ifaces/srv/SpdLimit \
+    "{rover_spd: 20}"
 ```
 
 ## Troubleshooting
@@ -307,12 +314,12 @@ ros2 action list
 # Should show: /des_data
 
 # Verify service available
-ros2 service list | grep spd
+ros2 service list | grep srv_spd
 # Should show: /srv_spd_limit
 
 # Check rover nodes are running
 ros2 node list
-# Should show: /gnss_mission_monitor, /chassis_controller, etc.
+# Should show: /gnss_mission_monitor_node, /chassis_controller_node, etc. (D5)
 ```
 
 ## Directory Structure
@@ -322,7 +329,7 @@ ws_base/
 ├── README.md                       # This file
 ├── launch_base_screen.sh           # GNU Screen launcher
 ├── launch_base_tmux.sh             # Tmux launcher
-├── DOMAIN_CONFIG_SUMMARY.md        # Domain architecture notes
+- [DOMAIN_CONFIG_SUMMARY.md](DOMAIN_CONFIG_SUMMARY.md) - Domain architecture notes
 ├── docs/                           # Detailed documentation
 │   ├── QUICK_START.md
 │   ├── ARCHITECTURE.md
@@ -338,33 +345,30 @@ ws_base/
         ├── config/
         │   └── params.yaml         # Configuration parameters
         ├── launch/
-        │   └── node_comlaunch.py
+        │   └── mission_control.launch.py
         └── src/
-            ├── node_commands.cpp   # Command dispatcher
-            └── node_monitoring.cpp # Telemetry display
+            ├── mission_command_node.cpp      # D5 command dispatcher
+            └── mission_monitoring_node_pc.cpp # D4 telemetry display
 ```
 
 ## System Integration
 
-**Base Station Role:**
-- Unified with rover network on Domain 5
-- Direct access to all rover telemetry and control interfaces
-- Sends high-level commands (waypoints, speed limits)
-- Can monitor all topics including STM32 sensor data
+**Base Station Dual-Domain Role:**
+- `mission_command_node` (D5): sends mission goals/speed limits, calls RPi action/service servers
+- `mission_monitoring_node_pc` (D4): subscribes to `/tpc_telemetry_relay` — telemetry display only (NOT a D5 participant)
 
-**Unified Architecture:**
+**Architecture:**
 ```
-Domain 5: ws_base ←→ ws_rpi ←→ ws_jetson
-                      ↕
-                 STM32 Boards (Chassis + GNSS)
+Domain 5: mission_command_node (Base) ←→ ws_rpi ←→ ws_jetson(rover_kinematic_control)
+                                              ↕
+                                         STM32 Boards
+
+Domain 4: mission_monitoring_node_pc (Base) + rover_local_monitoring_node (Jetson)
+                                        ↑
+                             tpc_telemetry_relay (5 Hz relay from RPi)
 ```
 
-All systems communicate directly on Domain 5:
-- ws_base: Mission command and monitoring
-- ws_rpi: Rover control, GNSS navigation, action/service servers
-- ws_jetson: Vision processing, lane detection
-- STM32 Chassis: Motor control, IMU data (mROS2)
-- STM32 GNSS: GPS, encoders, power monitor (mROS2)
+Domain 4 nodes are invisible to STM32 boards — no additional STM32 memory cost.
 
 ## Detailed Documentation
 
@@ -379,5 +383,5 @@ See `docs/` subdirectory for:
 
 **Platform:** Linux PC (Ubuntu 20.04+)  
 **ROS2:** Humble or Iron  
-**Domain:** 5 (unified with rover)  
+**Domains:** 5 (command) + 4 (monitoring)  
 **Network:** 192.168.1.0/24 (rover network)

@@ -5,10 +5,10 @@
 This document explains the QoS policies used across the rover system to ensure reliable communication between:
 - **STM32 Nucleo boards** (mbed mros2) - Hardware sensors
 - **ws_rpi nodes** (ROS2 Humble) - Raspberry Pi application nodes  
-- **ws_base nodes** (ROS2 Humble) - Base station monitoring (Domain 5 unified)
-- **ws_jetson nodes** (ROS2 Humble) - Vision navigation (Domain 5 unified)
+- **ws_base nodes** (ROS2 Humble) - Domain 5 (command) + Domain 4 (telemetry display)
+- **ws_jetson nodes** (ROS2 Humble) - Domain 6 (vision) + Domain 5 (control) + Domain 4 (logging)
 
-All systems operate on **Domain 5** for direct communication without bridges.
+Domain 5 is the control network; Domain 4 is the telemetry relay (not visible to STM32); Domain 6 is Jetson localhost vision.
 
 ## QoS Policy Summary
 
@@ -21,24 +21,24 @@ For successful communication, subscribers must use **compatible** QoS policies w
 ## System Architecture
 
 ```
-Domain 5 (Unified System - All Components)
+Domain 5 (Control Network)
 ┌─────────────────────────────────────────────────────────────┐
-│ STM32 Nucleo Boards            ws_rpi Nodes                 │
-│ (mbed mros2 publishers)        (ROS2 subscribers/pubs)      │
-│  - chassis_imu                  - node_chassis_imu          │
-│  - chassis_sensors              - node_chassis_sensors      │
-│  QoS: best_effort +             - node_gnss_spresense       │
-│       volatile (default)        - node_mission_monitor      │
-│                                 - node_chassis_controller   │
-│  Direct DDS ◄──────────►       QoS: Various (see below)    │
+│ STM32 Nucleo Boards             ws_rpi Nodes                │
+│ (mbed mros2 publishers)         (ROS2 subscribers/pubs)     │
+│  - chassis_controller            - chassis_imu_node         │
+│  - sensors_node                  - chassis_sensors_node     │
+│  QoS: best_effort +              - gnss_spresense_node      │
+│       volatile (default)         - gnss_ublox_node          │
+│                                  - chassis_controller_node  │
+│  Direct DDS ◄───────────►       QoS: Various (see below)   │
 │                                                              │
-│ ws_base (Ground Station)       ws_jetson (Vision)           │
-│  - mission_command_node         - camera_stream_node        │
-│  - mission_monitoring_node      - lane_detection_node       │
-│  QoS: reliable +                - steering_control_node     │
-│       transient_local           QoS: reliable +             │
-│                                      transient_local         │
-│  All nodes communicate directly on Domain 5                 │
+│ ws_base (D5 command only)       ws_jetson D5                │
+│  - mission_command_node (D5)     - rover_kinematic_control  │
+│  QoS: reliable +                 QoS: best_effort/reliable  │
+│       transient_local                                        │
+│ ws_base (D4 telemetry only)     ws_jetson D4                │
+│  - mission_monitoring_node_pc    - rover_local_monitoring_  │
+│                                    node                      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -54,7 +54,7 @@ node.create_publisher<msgs_ifaces::msg::ChassisIMU>("tpc_chassis_imu", 10);
 // → best_effort + volatile (mbed default)
 ```
 
-**Subscriber**: ws_rpi `node_chassis_imu`
+**Subscriber**: ws_rpi `chassis_imu_node`
 ```cpp
 rclcpp::QoS qos(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_sensor_data));
 qos.best_effort();  // Match STM32 mbed
@@ -75,7 +75,7 @@ node.create_publisher<msgs_ifaces::msg::ChassisSensors>("tpc_chassis_sensors", 1
 // → best_effort + volatile
 ```
 
-**Subscriber**: ws_rpi `node_chassis_sensors`
+**Subscriber**: ws_rpi `chassis_sensors_node`
 ```cpp
 rclcpp::QoS qos(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_sensor_data));
 qos.best_effort();  // Match STM32
@@ -88,15 +88,15 @@ qos.best_effort();  // Match STM32
 ### 2. ws_rpi Application Topics (Domain 5)
 
 #### `tpc_gnss_spresense` - GNSS Position
-**Publisher**: ws_rpi `node_gnss_spresense`
+**Publisher**: ws_rpi `gnss_spresense_node`
 ```cpp
 rclcpp::QoS qos(10);
 qos.reliable().transient_local();
 ```
 
 **Subscribers**: 
-- ws_rpi `node_gnss_mission_monitor`
-- ws_base `mission_monitoring_node` (direct on Domain 5)
+- ws_rpi `gnss_mission_monitor_node`
+- ws_rpi `mission_monitoring_node_rpi` (aggregates for D4 relay)
 ```cpp
 rclcpp::QoS qos(10);
 qos.reliable().transient_local();
@@ -110,7 +110,7 @@ qos.reliable().transient_local();
 ---
 
 #### `tpc_chassis_cmd` - Motor Commands
-**Publisher**: ws_rpi `node_chassis_controller`
+**Publisher**: ws_rpi `chassis_controller_node`
 ```cpp
 rclcpp::QoS qos(10);
 qos.reliable().transient_local();
@@ -130,15 +130,15 @@ node.create_subscription<msgs_ifaces::msg::ChassisCtrl>("tpc_chassis_cmd", 10, c
 ---
 
 #### `tpc_gnss_mission_active` - Mission Status
-**Publisher**: ws_rpi `node_gnss_mission_monitor`
+**Publisher**: ws_rpi `gnss_mission_monitor_node`
 ```cpp
 rclcpp::QoS qos(10);
 qos.reliable().transient_local();
 ```
 
 **Subscribers**: 
-- ws_rpi `node_chassis_controller`
-- ws_base `mission_monitoring_node` (direct on Domain 5)
+- ws_rpi `chassis_controller_node`
+- ws_rpi `mission_monitoring_node_rpi` (aggregates for D4 relay)
 
 **Rationale**:
 - Critical state flag requires reliable delivery
@@ -147,15 +147,15 @@ qos.reliable().transient_local();
 ---
 
 #### `tpc_gnss_mission_remain_dist` - Distance to Waypoint
-**Publisher**: ws_rpi `node_gnss_mission_monitor`
+**Publisher**: ws_rpi `gnss_mission_monitor_node`
 ```cpp
 rclcpp::QoS qos(10);
 qos.reliable().transient_local();
 ```
 
-**Subscriber**: ws_base `mission_monitoring_node` (direct on Domain 5)
+**Subscriber**: ws_rpi `mission_monitoring_node_rpi` (aggregated into D4 relay)
 
-**Rationale**: Reliable navigation metric for base station monitoring
+**Rationale**: Reliable navigation metric, included in telemetry relay at 5 Hz
 
 ---
 
@@ -163,7 +163,7 @@ qos.reliable().transient_local();
 
 #### `/des_data` - Navigation Goal (Action)
 **Action Client**: ws_base `mission_command_node`
-**Action Server**: ws_rpi `node_gnss_mission_monitor`
+**Action Server**: ws_rpi `gnss_mission_monitor_node`
 
 **QoS**: Actions use default ROS 2 reliable QoS
 
@@ -171,7 +171,7 @@ qos.reliable().transient_local();
 
 #### `/srv_spd_limit` - Speed Limit (Service)
 **Service Client**: ws_base `mission_command_node`
-**Service Server**: ws_rpi `node_chassis_controller`
+**Service Server**: ws_rpi `chassis_controller_node`
 
 **QoS**: Services use default ROS 2 reliable QoS
 
@@ -184,7 +184,7 @@ rclcpp::QoS qos(10);
 qos.reliable().transient_local();
 ```
 
-**Subscriber**: ws_rpi `node_gnss_mission_monitor` (Domain 5)
+**Subscriber**: ws_rpi `gnss_mission_monitor_node` (Domain 5)
 ```cpp
 rclcpp::QoS qos(10);
 qos.reliable().transient_local();
@@ -293,6 +293,7 @@ ros2 topic info /tpc_gnss_spresense -v
 ```bash
 # Watch for incompatibility warnings
 ros2 run chassis_sensors chassis_imu_node 2>&1 | grep -i "incompatible"
+# Note: node_name in executable is chassis_imu_node (correct suffix form)
 ```
 
 ---
@@ -311,25 +312,27 @@ Last Updated: November 7, 2025
 
 | Topic | Publisher | Publisher QoS | Subscriber | Subscriber QoS | Notes |
 |-------|-----------|---------------|------------|----------------|-------|
-| `tpc_chassis_imu` | STM32 Chassis | sensor_data + best_effort + volatile | node_chassis_imu, ws_base | Same | High frequency IMU |
-| `tpc_chassis_sensors` | STM32 GNSS | sensor_data + best_effort + volatile | node_chassis_sensors, ws_base | Same | Encoder/power data |
-| `tpc_gnss_spresense` | node_gnss_spresense | reliable + transient_local | node_gnss_mission_monitor, ws_base | Same | GNSS position |
-| `tpc_chassis_cmd` | node_chassis_controller | reliable + transient_local | STM32 Chassis | best_effort (compatible) | Motor commands |
-| `tpc_gnss_mission_active` | node_gnss_mission_monitor | reliable + transient_local | node_chassis_controller, ws_base | Same | Mission status |
-| `tpc_gnss_mission_remain_dist` | node_gnss_mission_monitor | reliable + transient_local | ws_base | Same | Distance remaining |
-| `tpc_rover_dest_coordinate` | ws_base mission_command | reliable + transient_local | node_gnss_mission_monitor | Same | Waypoint coords |
-| `tpc_rover_ctrl_cmd` | ws_jetson/ws_base | reliable + transient_local | node_chassis_controller | Same | Kinematic control cmd |
-| `/des_data` (action) | ws_base mission_command | reliable (default) | node_gnss_mission_monitor | reliable | Navigation goals |
-| `/srv_spd_limit` (service) | ws_base mission_command | reliable (default) | node_chassis_controller | reliable | Speed limits |
+| `tpc_chassis_imu` | STM32 chassis_controller | sensor_data + best_effort + volatile | chassis_imu_node, mission_monitoring_node_rpi | Same | High frequency IMU |
+| `tpc_chassis_sensors` | STM32 sensors_node | sensor_data + best_effort + volatile | chassis_sensors_node, mission_monitoring_node_rpi | Same | Encoder/power data |
+| `tpc_gnss_spresense` | gnss_spresense_node | reliable + transient_local | gnss_mission_monitor_node, mission_monitoring_node_rpi | Same | GNSS position |
+| `tpc_chassis_cmd` | chassis_controller_node | reliable + transient_local | STM32 chassis_controller | best_effort (compatible) | Motor commands |
+| `tpc_gnss_mission_active` | gnss_mission_monitor_node | reliable + transient_local | chassis_controller_node, mission_monitoring_node_rpi | Same | Mission status |
+| `tpc_gnss_mission_remain_dist` | gnss_mission_monitor_node | reliable + transient_local | mission_monitoring_node_rpi | Same | Distance remaining |
+| `tpc_rover_dest_coordinate` | mission_command_node (Base, D5) | reliable + transient_local | gnss_mission_monitor_node | Same | Waypoint coords |
+| `tpc_rover_ctrl_cmd` | rover_kinematic_control (Jetson, D5) | best_effort + volatile | chassis_controller_node | Same | Kinematic control cmd |
+| `/des_data` (action) | mission_command_node (Base, D5) | reliable (default) | gnss_mission_monitor_node | reliable | Navigation goals |
+| `/srv_spd_limit` (service) | mission_command_node (Base, D5) | reliable (default) | chassis_controller_node | reliable | Speed limits |
 
 ## Domain-Specific Considerations
 
-### Domain 5 (Unified System)
-- **All rover nodes** operate in Domain 5 (ws_rpi, ws_base, ws_jetson)
-- **STM32 mbed boards** also publish to Domain 5
-- **Direct communication** - no bridge needed
-- QoS must match between mbed publishers and ROS2 subscribers
-- Actions and services work natively without relay
+### Domain 5 (Control Network)
+- **ws_rpi**: 7 nodes (gnss, chassis, mission_monitoring_node_rpi D5 sub context)
+- **ws_jetson**: rover_kinematic_control (dual-context D6 sub / D5 pub)
+- **ws_base**: mission_command_node only (D5 actions/services)
+- **STM32 mbed boards**: chassis_controller + sensors_node (publish/subscribe D5)
+- Total D5 participants: **11** — QoS must match between mbed publishers and ROS2 subscribers
+
+**Domain 4** (not D5): mission_monitoring_node_rpi pub context, mission_monitoring_node_pc (Base), rover_local_monitoring_node (Jetson) — invisible to STM32
 
 ## Troubleshooting QoS Warnings
 
@@ -365,7 +368,7 @@ pub_imu_ = this->create_publisher<msgs_ifaces::msg::ChassisIMU>(
 
 ### Example 2: ROS2 Sensor Subscriber
 ```cpp
-// In node_chassis_imu.cpp
+// In chassis_imu_node.cpp
 rclcpp::QoS qos_profile(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_sensor_data));
 qos_profile.best_effort().transient_local();
 
@@ -377,7 +380,7 @@ sub_chassis_imu_ = this->create_subscription<msgs_ifaces::msg::ChassisIMU>(
 
 ### Example 3: Application Topic with Reliable QoS
 ```cpp
-// In node_gnss_spresense.cpp
+// In gnss_spresense_node.cpp
 rclcpp::QoS qos_reliable(10);
 qos_reliable.reliable().transient_local();
 
@@ -388,7 +391,7 @@ pub_gnss_spresense_ = this->create_publisher<msgs_ifaces::msg::SpresenseGNSS>(
 
 ### Example 4: Base Station Subscriber (Domain 5)
 ```cpp
-// In mission_monitoring_node.cpp (ws_base)
+// In mission_monitoring_node_rpi.cpp (ws_rpi, Domain 5 context)
 
 // Subscribe to rover topics on Domain 5
 rclcpp::QoS qos_reliable(10);

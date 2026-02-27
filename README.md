@@ -12,7 +12,7 @@ Distributed ROS2 outdoor autonomous rover with vision-based lane following, cent
 - Cross-domain telemetry relay: RPi aggregates D5 topics, publishes to D4 at 5 Hz
 - Dual CSV logging: RPi per-topic at native rates, Jetson aggregated from D4
 - Base station dual-domain: command/action on D5, monitoring on D4
-- STM32 memory optimized: 10 D5 participants, ~60% free RAM
+- STM32 memory optimized: 11 D5 participants, ~60% free RAM
 
 ## System Architecture
 

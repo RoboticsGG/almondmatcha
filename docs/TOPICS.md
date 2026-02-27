@@ -234,7 +234,7 @@ num_satellites: 8
 
 **Type:** `msgs_ifaces/msg/UbloxGNSS`  
 **Publisher:** `gnss_ublox_node`  
-**Subscribers:** `mission_monitoring_node`  
+**Subscribers:** `mission_monitoring_node_rpi`  
 **Rate:** 10 Hz  
 **QoS:** Reliable, Depth 10  
 **Domain:** 5  

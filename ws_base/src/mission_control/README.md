@@ -30,23 +30,19 @@ Handles mission planning and rover command transmission.
 
 **Interfaces:**
 - Action Client: `/des_data` (DesData action) - Navigation goal
-- Service Client: `/spd_limit` (SpdLimit service) - Speed limit command
+- Service Client: `/srv_spd_limit` (SpdLimit service) - Speed limit command
 
-#### MissionMonitoringNode (mission_monitoring_node)
-Continuous telemetry monitoring and status reporting.
+#### MissionMonitoringNode (mission_monitoring_node_pc)
+Continuous telemetry monitoring via Domain 4 relay.
 
 **Responsibilities:**
-- Subscribe to rover sensor data (GNSS, control state)
-- Track mission progress and remaining distance
-- Display formatted status updates every 1 second
-- Monitor mission active/inactive state
+- Subscribe to `/tpc_telemetry_relay` on Domain 4 (aggregated from RPi)
+- Display formatted telemetry status every 1 second
+- Monitor mission progress and rover state from the relay stream
+- **Does NOT participate in Domain 5** (no STM32 memory cost)
 
 **Subscriptions:**
-- `/tpc_gnss_mission_active` (Bool) - Mission active flag
-- `/tpc_gnss_mission_remain_dist` (Float64) - Remaining distance (km)
-- `/tpc_gnss_spresense` (SpresenseGNSS) - Current GPS position
-- `/tpc_rover_dest_coordinate` (Float64MultiArray) - Target [lat, long]
-- `/tpc_chassis_cmd` (ChassisCtrl) - Rover control state (relayed from Domain 5)
+- `/tpc_telemetry_relay` (TelemetryRelay, Domain 4) — all rover state at 5 Hz
 
 ### Message Interfaces
 
@@ -104,8 +100,8 @@ The package uses custom message types defined in `msgs_ifaces`:
 
 ### Build Verification
 Successful build produces two executable nodes:
-- `mission_command_node` - Command transmission and monitoring
-- `mission_monitoring_node` - Telemetry display
+- `mission_command_node` - D5 command and action client
+- `mission_monitoring_node_pc` - D4 telemetry display
 
 ## Usage
 
@@ -119,7 +115,7 @@ ros2 run mission_control mission_command_node --ros-args \
 
 ### Running Monitoring Node
 ```bash
-ros2 run mission_control mission_monitoring_node
+ros2 run mission_control mission_monitoring_node_pc
 ```
 
 ### Launch Together
@@ -144,7 +140,7 @@ mission_command_node:
     des_lat: 35.6892
     des_long: 139.6917
 
-mission_monitoring_node:
+mission_monitoring_node_pc:
   ros__parameters: {}
 ```
 
@@ -153,23 +149,23 @@ mission_monitoring_node:
 The monitoring node displays comprehensive status every 1 second:
 
 ```
-[INFO] [mission_monitoring_node]: ============ MISSION STATUS ============
-[INFO] [mission_monitoring_node]: Status: ACTIVE
-[INFO] [mission_monitoring_node]: 
-[INFO] [mission_monitoring_node]: --- Navigation ---
-[INFO] [mission_monitoring_node]: Target: Lat: 35.689200, Long: 139.691700
-[INFO] [mission_monitoring_node]: Current: Lat: 35.689120, Long: 139.691810
-[INFO] [mission_monitoring_node]: Distance Remaining: 0.12 km
-[INFO] [mission_monitoring_node]: 
-[INFO] [mission_monitoring_node]: --- Rover Control ---
-[INFO] [mission_monitoring_node]: Steering: Maintain Course
-[INFO] [mission_monitoring_node]: Movement: Forward at 75%
-[INFO] [mission_monitoring_node]: ========================================
+[INFO] [mission_monitoring_node_pc]: ============ MISSION STATUS ============
+[INFO] [mission_monitoring_node_pc]: Status: ACTIVE
+[INFO] [mission_monitoring_node_pc]: 
+[INFO] [mission_monitoring_node_pc]: --- Navigation ---
+[INFO] [mission_monitoring_node_pc]: Target: Lat: 35.689200, Long: 139.691700
+[INFO] [mission_monitoring_node_pc]: Current: Lat: 35.689120, Long: 139.691810
+[INFO] [mission_monitoring_node_pc]: Distance Remaining: 0.12 km
+[INFO] [mission_monitoring_node_pc]: 
+[INFO] [mission_monitoring_node_pc]: --- Rover Control ---
+[INFO] [mission_monitoring_node_pc]: Steering: Maintain Course
+[INFO] [mission_monitoring_node_pc]: Movement: Forward at 75%
+[INFO] [mission_monitoring_node_pc]: ========================================
 ```
 
 ## Code Structure
 
-### node_commands.cpp
+### mission_command_node.cpp
 - **MissionCommandNode**: Main class
   - `init_parameters()`: Load mission parameters
   - `init_clients()`: Initialize ROS2 clients
@@ -178,13 +174,11 @@ The monitoring node displays comprehensive status every 1 second:
   - `send_destination_goal()`: Send navigation goal via action
   - `cancel_mission()`: Cancel active mission on shutdown
 
-### node_monitoring.cpp
-- **MissionMonitoringNode**: Main class
-  - `init_subscriptions()`: Create topic subscriptions
+### node_monitoring.cpp (mission_monitoring_node_pc)
+- **MissionMonitoringNodePc**: Main class
+  - `init_subscriptions()`: Subscribe to `/tpc_telemetry_relay` on Domain 4
   - `init_timer()`: Setup status update timer
-  - Topic callbacks: `on_mission_active()`, `on_distance_remaining()`, etc.
-  - `format_steering_command()`: Display-ready steering string
-  - `format_movement_command()`: Display-ready movement string
+  - `on_telemetry_relay()`: Unpack and cache TelemetryRelay fields
   - `publish_status_update()`: Print periodic status
 
 ## Data Flow
@@ -193,8 +187,8 @@ The monitoring node displays comprehensive status every 1 second:
 Command Node:
   Load Parameters -> Send Speed Limit -> Send Destination Goal -> Monitor Feedback
 
-Monitoring Node:
-  Subscribe Topics -> Update Internal State -> Display Status (1 Hz)
+Monitoring Node (D4):
+  Subscribe /tpc_telemetry_relay -> Update Internal State -> Display Status (1 Hz)
 
 Rover Communication:
   Command Node -> [Action/Service] -> Rover
@@ -259,11 +253,11 @@ ros2 action send_goal /des_data action_ifaces/action/DesData "{des_lat: 35.6892,
 ```
 mission_control/
 ├── CMakeLists.txt           # Build configuration
-├── package.xml              # Package metadata (v1.0.0)
+├── package.xml              # Package metadata
 ├── README.md                # This file
 ├── src/
-│   ├── node_commands.cpp    # Command node (222 lines)
-│   └── node_monitoring.cpp  # Monitoring node (315 lines)
+│   ├── mission_command_node.cpp     # D5 command node
+│   └── mission_monitoring_node_pc.cpp # D4 telemetry display node
 ├── config/
 │   └── mission_params.yaml  # Parameter configuration
 └── launch/
