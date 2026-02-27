@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 rover_kinematic_control_node.py  (entry point: rover_kinematic_control)
-Workspace:  ws_jetson  |  Package: vision_navigation_pkg
+Workspace:  ws_jetson  |  Package: vision_navigation
 Architecture: Dual-context single process (Domain 6 sub + Domain 5 pub/sub)
 
 Rover Kinematic Control Node
@@ -62,7 +62,7 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from std_msgs.msg import Float32MultiArray
 
-from vision_navigation_pkg.control_filters import (
+from vision_navigation.control_filters import (
     ExponentialMovingAverageLPF,
     clamp,
     pid_controller

@@ -1,35 +1,24 @@
 """
-Vision Navigation System - Domain 6 (Vision Processing)
+Vision Navigation System - Headless/Production Mode Launch File
 
-Launches vision processing nodes on ROS Domain 6 (isolated from control loop).
-These nodes handle all heavy computation: camera streaming, image processing,
-lane detection, and publish results internally on Domain 6.
+Launches complete vision navigation system WITHOUT GUI visualization.
+Designed for production deployment via SSH or headless operation.
 
-Domain Architecture:
-    Domain 6: Vision processing (THIS LAUNCH FILE)
-        - Camera streaming (high bandwidth RGB/depth)
-        - Lane detection (computationally intensive)
-        - Internal communication only
-
-    Domain 5: Control interface (separate launch file)
-        - Single lightweight node that reads Domain 6 results
-        - Publishes control commands to Domain 5 for rover control
-
-Benefits:
-    - Reduces STM32 discovery burden (fewer participants on Domain 5)
-    - Isolates high-bandwidth camera data from control loop
-    - Better scalability for adding more vision/AI nodes
-    - Control loop remains time-critical and stable
+Features:
+- No camera preview windows
+- No lane detection visualization
+- Optimized for remote operation and lower resource usage
+- All three nodes launched in sequence with proper timing
 
 Usage:
-    # Terminal 1: Start vision processing on Domain 6
-    ros2 launch vision_navigation vision_domain6.launch.py
+    ros2 launch vision_navigation vision_nav_headless.launch.py
 
-    # Terminal 2: Start control output on Domain 5 (separate launch)
-    ros2 launch vision_navigation control_domain5.launch.py
+    # With custom parameters
+    ros2 launch vision_navigation vision_nav_headless.launch.py \
+        enable_depth:=true k_p:=5.0
 
 Author: Vision Navigation System
-Date: November 11, 2025
+Date: November 4, 2025
 """
 
 from launch import LaunchDescription
@@ -39,13 +28,15 @@ from launch_ros.actions import Node
 from launch.actions import SetEnvironmentVariable
 from launch_ros.substitutions import FindPackageShare
 
-from vision_navigation_pkg.config import CameraConfig
+from vision_navigation.config import (
+    CameraConfig, LaneDetectionConfig, ControlConfig
+)
 
 
 def generate_launch_description():
     # ==================== ROS2 Domain Configuration ====================
-    # Domain 6: Vision processing nodes (isolated from control loop)
-    set_domain_id = SetEnvironmentVariable('ROS_DOMAIN_ID', '6')
+    # Domain 5: All rover nodes for sensor fusion (vision, GNSS, IMU, encoders)
+    set_domain_id = SetEnvironmentVariable('ROS_DOMAIN_ID', '5')
     
     # ==================== Config File Paths ====================
     system_config = PathJoinSubstitution([
@@ -54,8 +45,15 @@ def generate_launch_description():
         'vision_nav_headless.yaml'
     ])
     
+    steering_config = PathJoinSubstitution([
+        FindPackageShare('vision_navigation'),
+        'config',
+        'rover_kinematic_control_params.yaml'
+    ])
+    
     # ==================== Launch Arguments ====================
     
+    # Camera parameters
     camera_width = DeclareLaunchArgument(
         'camera_width',
         default_value=str(CameraConfig.WIDTH),
@@ -98,7 +96,17 @@ def generate_launch_description():
         description='Path to RealSense advanced mode JSON configuration'
     )
     
-    # ==================== Vision Processing Nodes (Domain 6) ====================
+    # Control parameters
+    k_e1 = DeclareLaunchArgument('k_e1', default_value=str(ControlConfig.K_E1))
+    k_e2 = DeclareLaunchArgument('k_e2', default_value=str(ControlConfig.K_E2))
+    k_p = DeclareLaunchArgument('k_p', default_value=str(ControlConfig.K_P))
+    k_i = DeclareLaunchArgument('k_i', default_value=str(ControlConfig.K_I))
+    k_d = DeclareLaunchArgument('k_d', default_value=str(ControlConfig.K_D))
+    ema_alpha = DeclareLaunchArgument('ema_alpha', default_value=str(ControlConfig.EMA_ALPHA))
+    steer_max_deg = DeclareLaunchArgument('steer_max_deg', default_value=str(ControlConfig.STEER_MAX_DEGREES))
+    steer_when_lost = DeclareLaunchArgument('steer_when_lost', default_value=str(ControlConfig.STEER_WHEN_LOST))
+    
+    # ==================== Nodes with GUI DISABLED ====================
     
     camera_stream_node = Node(
         package='vision_navigation',
@@ -118,6 +126,15 @@ def generate_launch_description():
         parameters=[system_config],
     )
     
+    rover_kinematic_control_node = Node(
+        package='vision_navigation',
+        executable='rover_kinematic_control',
+        name='rover_kinematic_control',
+        output='screen',
+        emulate_tty=True,
+        parameters=[steering_config],
+    )
+    
     # ==================== Launch Sequence ====================
     
     return LaunchDescription([
@@ -126,26 +143,26 @@ def generate_launch_description():
         # Declare arguments
         camera_width, camera_height, camera_fps,
         enable_depth, video_path, loop_video, json_config,
+        k_e1, k_e2, k_p, k_i, k_d, ema_alpha, steer_max_deg, steer_when_lost,
         
         # Startup messages
-        LogInfo(msg='========================================'),
-        LogInfo(msg='Vision Navigation - Domain 6 (Vision Processing)'),
-        LogInfo(msg='========================================'),
-        LogInfo(msg='Domain: 6 (Isolated vision processing)'),
-        LogInfo(msg='Nodes: camera_stream, lane_detection'),
-        LogInfo(msg='Output: Internal lane parameters on Domain 6'),
-        LogInfo(msg='========================================'),
+        LogInfo(msg='Vision Navigation System starting in HEADLESS MODE...'),
+        LogInfo(msg='[HEADLESS] All GUI visualization DISABLED (optimized for SSH/production)'),
         
         # Start camera immediately
         camera_stream_node,
-        LogInfo(msg='[Domain 6] Camera node started, initializing hardware (2s)...'),
+        LogInfo(msg='[INFO] Camera node started (headless), initializing hardware (2s)...'),
         
         # Start lane detection after 2s
         TimerAction(period=2.0, actions=[
-            LogInfo(msg='[Domain 6] Camera ready, starting lane detection...'),
+            LogInfo(msg='[INFO] Camera ready, starting lane detection (headless)...'),
             lane_detection_node,
-            LogInfo(msg='[Domain 6] Vision processing nodes fully initialized!'),
-            LogInfo(msg='[Domain 6] Publishing lane data on tpc_rover_nav_lane (Domain 6)'),
-            LogInfo(msg='[NEXT STEP] Launch control_domain5.launch.py in another terminal'),
+        ]),
+        
+        # Start steering control after 3s
+        TimerAction(period=3.0, actions=[
+            LogInfo(msg='[INFO] Lane detection ready, starting control node...'),
+            rover_kinematic_control_node,
+            LogInfo(msg='[INFO] Vision Navigation System (HEADLESS MODE) fully initialized!'),
         ]),
     ])

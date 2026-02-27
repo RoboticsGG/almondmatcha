@@ -27,7 +27,7 @@ from launch_ros.actions import Node
 from launch.actions import SetEnvironmentVariable
 from launch_ros.substitutions import FindPackageShare
 
-from vision_navigation_pkg.config import CameraConfig
+from vision_navigation.config import CameraConfig
 
 
 def generate_launch_description():

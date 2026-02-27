@@ -29,7 +29,7 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch.actions import SetEnvironmentVariable
 
-from vision_navigation_pkg.config import (
+from vision_navigation.config import (
     CameraConfig, LaneDetectionConfig, ControlConfig, SystemConfig
 )
 

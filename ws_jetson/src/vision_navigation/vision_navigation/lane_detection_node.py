@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 lane_detection_node.py
-Workspace:  ws_jetson  |  Package: vision_navigation_pkg  |  Domain: 6
+Workspace:  ws_jetson  |  Package: vision_navigation  |  Domain: 6
 
 Visual Navigation Image Processing Node
 
@@ -54,7 +54,7 @@ from sensor_msgs.msg import Image
 from std_msgs.msg import Float32MultiArray
 from cv_bridge import CvBridge
 
-from vision_navigation_pkg.lane_detector import process_frame
+from vision_navigation.lane_detector import process_frame
 
 
 class LaneDetectionNode(Node):

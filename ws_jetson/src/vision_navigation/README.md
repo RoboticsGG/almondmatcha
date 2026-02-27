@@ -120,7 +120,7 @@ CSV Output: `logs/rover_ctl_log_ver_3.csv` with columns [time_sec, theta_ema, b_
 
 ### Centralized Configuration (config.py)
 
-All system parameters are centralized in `vision_navigation_pkg/config.py`:
+All system parameters are centralized in `vision_navigation/config.py`:
 
 - CameraConfig: Resolution, FPS, camera modes
 - LaneDetectionConfig: Color thresholds, gradient parameters, window settings
@@ -396,13 +396,13 @@ vision_navigation/
 ├── setup.cfg                           # Setup config
 ├── launch/
 │   └── vision_navigation.launch.py     # ROS2 launch file
-├── vision_navigation_pkg/
+├── vision_navigation/
 │   ├── __init__.py
 │   ├── config.py                       # Centralized configuration
 │   ├── helpers.py                      # Utility functions
 │   ├── camera_stream_node.py           # Camera streaming node
 │   ├── lane_detection_node.py          # Lane detection node
-│   ├── steering_control_node.py        # Steering control node
+│   ├── rover_kinematic_control_node.py # Kinematic control node
 │   ├── lane_detector.py                # Lane detection pipeline
 │   └── control_filters.py              # Filters and utilities
 ├── resource/                           # Package resources

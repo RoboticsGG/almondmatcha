@@ -26,10 +26,10 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'camera_stream_node = vision_navigation_pkg.camera_stream_node:main',
-            'lane_detection_node = vision_navigation_pkg.lane_detection_node:main',
-            'rover_kinematic_control = vision_navigation_pkg.rover_kinematic_control_node:main',
-            'demo_lane = vision_navigation_pkg.demo_lane:main',
+            'camera_stream_node = vision_navigation.camera_stream_node:main',
+            'lane_detection_node = vision_navigation.lane_detection_node:main',
+            'rover_kinematic_control = vision_navigation.rover_kinematic_control_node:main',
+            'demo_lane = vision_navigation.demo_lane:main',
         ],
     },
 )

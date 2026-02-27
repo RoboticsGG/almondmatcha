@@ -1,6 +1,6 @@
 """
 helpers.py
-Workspace:  ws_jetson  |  Package: vision_navigation_pkg
+Workspace:  ws_jetson  |  Package: vision_navigation
 
 Helper Functions Module - Vision Navigation System
 
@@ -544,4 +544,4 @@ def create_float_array_message(data: List[float]) -> 'Float32MultiArray':
 if __name__ == "__main__":
     """Display helper functions info"""
     print("Helper Functions Module Loaded")
-    print("Usage: from vision_navigation_pkg.helpers import <function_name>")
+    print("Usage: from vision_navigation.helpers import <function_name>")

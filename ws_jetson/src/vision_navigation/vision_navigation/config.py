@@ -1,6 +1,6 @@
 """
 config.py
-Workspace:  ws_jetson  |  Package: vision_navigation_pkg
+Workspace:  ws_jetson  |  Package: vision_navigation
 
 Configuration Module - Vision Navigation System
 

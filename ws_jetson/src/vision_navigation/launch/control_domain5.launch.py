@@ -36,7 +36,7 @@ from launch_ros.actions import Node
 from launch.actions import SetEnvironmentVariable
 from launch_ros.substitutions import FindPackageShare
 
-from vision_navigation_pkg.config import ControlConfig
+from vision_navigation.config import ControlConfig
 
 
 def generate_launch_description():

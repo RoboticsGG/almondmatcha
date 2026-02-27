@@ -1,6 +1,6 @@
 """
 control_filters.py
-Workspace:  ws_jetson  |  Package: vision_navigation_pkg
+Workspace:  ws_jetson  |  Package: vision_navigation
 
 Control System Filters and Utilities
 

@@ -187,11 +187,9 @@ almondmatcha/
 │   ├── README.md                      # Build & run instructions
 │   ├── build_clean.sh / build_inc.sh  # Build scripts
 │   ├── launch_gui.sh / launch_headless.sh  # Launch scripts
-│   ├── vision_navigation/
-│   │   ├── vision_navigation_pkg/     # Lane detection, camera stream (Domain 6)
-│   │   └── config/                    # YAML configuration
 │   └── src/
-│       └── rover_monitoring/         # Telemetry CSV logger (Domain 4, Python)
+│       ├── vision_navigation/         # Lane detection, camera, kinematic control (Domain 6)
+│       └── rover_monitoring/          # Telemetry CSV logger (Domain 4, Python)
 │
 ├── ws_base/                           # Base station workspace
 │   ├── README.md                      # Build & run instructions
