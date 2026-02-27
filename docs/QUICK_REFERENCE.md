@@ -131,25 +131,9 @@ ros2 multicast receive # On another - should see messages
 
 ---
 
-## Next Steps
-
-1. **Rebuild STM32 firmware:**
-   ```bash
-   cd ~/almondmatcha/mros2-mbed-chassis-dynamics && ./build.bash
-   cd ~/almondmatcha/mros2-mbed-sensors-gnss && ./build.bash
-   ```
-
-2. **Flash both boards** (ST-Link or mass storage)
-
-3. **Test launch sequence** following timing above
-
-4. **Verify serial logs** - no `[Memory pool] resource limit exceed`
-
----
-
 ## Documentation
 
-- **Full details:** `docs/STM32_MEMORY_POOL_FIX.md`
-- **Launch guide:** `docs/LAUNCH_SEQUENCE_GUIDE.md`
-- **Architecture:** `docs/ARCHITECTURE.md`
-- **Domains:** `docs/DOMAINS.md`
+- **Memory fix details:** [docs/STM32_MEMORY_POOL_FIX.md](STM32_MEMORY_POOL_FIX.md)
+- **Launch guide:** [docs/LAUNCH_INSTRUCTIONS.md](LAUNCH_INSTRUCTIONS.md)
+- **Architecture:** [docs/ARCHITECTURE.md](ARCHITECTURE.md)
+- **Domains:** [docs/DOMAINS.md](DOMAINS.md)

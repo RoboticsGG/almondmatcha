@@ -101,25 +101,6 @@ ws_jetson/runs/
 
 ---
 
-## Rationale
-
-### Why Dual Logging?
-
-1. **Data Redundancy**: If RPi fails or SD card corrupts, Jetson has backup
-2. **Storage Management**: RPi limited SD space, Jetson high capacity
-3. **Future-Proofing**: Python on Jetson enables database migration without STM32/RPi changes
-4. **Resolution Trade-offs**: RPi captures high-rate data, Jetson stores long-term aggregated data
-5. **Domain Isolation**: Jetson on D4 doesn't add STM32 memory load (D5 only)
-
-### Why Not Merge?
-
-- **Different rates**: RPi needs high-rate (50 Hz chassis commands), Jetson needs long-term (5 Hz aggregated)
-- **Different hardware**: RPi limited compute/storage, Jetson high capacity
-- **Different purposes**: RPi for debugging/analysis, Jetson for mission logs/database
-- **Language mismatch**: C++ on RPi (ROS2 native), Python on Jetson (DB-friendly)
-
----
-
 ## CSV Format Details
 
 ### RPi: chassis_sensors.csv
@@ -163,36 +144,6 @@ Timestamp(us), Mission_Active, Distance_km, Dest_Lat, Dest_Lon, Steering_Cmd, La
 Timestamp(ISO), Mission_Active, Distance_km, Spresense_Valid, Spresense_Lat, ..., Lane_Detected
 2025-01-04T14:30:52.123, 1, 2.345, 1, 37.7749, ..., 1
 ```
-
----
-
-## Future Database Migration
-
-### Jetson → PostgreSQL Schema (Example)
-
-```sql
-CREATE TABLE telemetry_log (
-    id SERIAL PRIMARY KEY,
-    timestamp TIMESTAMPTZ NOT NULL,
-    mission_active BOOLEAN,
-    distance_remaining_km REAL,
-    rtk_latitude DOUBLE PRECISION,
-    rtk_longitude DOUBLE PRECISION,
-    rtk_altitude REAL,
-    ...
-);
-
-CREATE INDEX idx_telemetry_timestamp ON telemetry_log(timestamp);
-```
-
-### Migration Path
-
-1. Replace `csv.writer` with database connection in `node_rover_local_monitoring.py`
-2. Write to PostgreSQL/SQLite instead of CSV files
-3. Keep RPi CSV logging unchanged (high-rate debugging data)
-4. Query Jetson database for mission analysis, long-term trends
-
-**Benefit**: No changes to RPi/STM32 firmware, minimal changes to Jetson Python node
 
 ---
 
@@ -242,93 +193,4 @@ tmux send-keys -t jetson:4 "ros2 run rover_monitor_pkg node_rover_local_monitori
 
 No CSV logging on base station (display-only). Monitoring node subscribes to Domain 4 telemetry relay for real-time display.
 
----
 
-## Data Analysis
-
-### RPi Logs (High-Rate Analysis)
-
-Use for:
-- Motor command debugging (~50 Hz chassis_cmd.csv)
-- IMU vibration analysis (~10 Hz chassis_imu.csv)
-- RTK position accuracy (~10 Hz rtk_gnss.csv)
-- Power consumption patterns (~4 Hz chassis_sensors.csv)
-
-**Tools**: Python pandas, MATLAB, Excel
-
-```python
-import pandas as pd
-df = pd.read_csv('run_001_20250104_143052/chassis_cmd.csv')
-df['Timestamp(us)'] = pd.to_datetime(df['Timestamp(us)'], unit='us')
-df.plot(x='Timestamp(us)', y=['Left_Speed', 'Right_Speed'])
-```
-
-### Jetson Logs (Mission Analysis)
-
-Use for:
-- Mission trajectory replay (5 Hz telemetry_unified.csv)
-- Long-term trends (multi-mission database queries)
-- Automated mission reports (SQL aggregation)
-
-**Tools**: PostgreSQL, SQLite, Grafana, Python matplotlib
-
-```python
-df = pd.read_csv('run_001_20250104_143052/telemetry_unified.csv')
-df['Timestamp(ISO)'] = pd.to_datetime(df['Timestamp(ISO)'])
-df.plot(x='Timestamp(ISO)', y='Distance_Remaining_km')
-```
-
----
-
-## Disk Space Management
-
-### RPi (Limited SD Card)
-
-**Est. Size**:
-- chassis_cmd.csv: ~50 Hz × 60 bytes = ~3 KB/s = ~11 MB/hour
-- chassis_imu.csv: ~10 Hz × 80 bytes = ~800 B/s = ~2.8 MB/hour
-- rtk_gnss.csv: ~10 Hz × 100 bytes = ~1 KB/s = ~3.6 MB/hour
-- **Total**: ~20-30 MB/hour
-
-**Recommendation**: Archive runs after each mission, keep last 3 runs on RPi
-
-### Jetson (High Capacity)
-
-**Est. Size**:
-- telemetry_unified.csv: ~5 Hz × 300 bytes = ~1.5 KB/s = ~5.4 MB/hour
-
-**Recommendation**: Keep all runs, rotate to PostgreSQL after 1 week
-
----
-
-## Troubleshooting
-
-### RPi CSV Files Not Created
-
-1. Check directory permissions: `ls -la ~/almondmatcha/ws_rpi/runs/`
-2. Check node logs: `ros2 node info /node_mission_monitoring_rpi`
-3. Verify filesystem not full: `df -h`
-
-### Jetson CSV Files Missing Data
-
-1. Verify Domain 4 telemetry: `ROS_DOMAIN_ID=4 ros2 topic echo /tpc_telemetry_relay`
-2. Check RPi is publishing to D4: RPi logs should show "Publishing to Domain 4"
-3. Verify Jetson has sourced D4: `echo $ROS_DOMAIN_ID` should show `4`
-
-### Different Run Numbers on RPi vs Jetson
-
-**Expected**: Run numbers are independent (RPi boots separately from Jetson). To synchronize, manually rename directories or use network time sync for timestamp alignment.
-
----
-
-## Summary
-
-The dual CSV logging architecture provides:
-
-✅ **Redundancy**: Data logged on both RPi and Jetson  
-✅ **Resolution**: High-rate RPi logs for debugging, aggregated Jetson logs for missions  
-✅ **Scalability**: Jetson Python backend ready for database migration  
-✅ **Domain Isolation**: Jetson on D4 doesn't increase D5 participant count  
-✅ **Storage Balance**: Limited RPi space for high-rate, unlimited Jetson for long-term  
-
-**Key Design Principle**: Log locally at high rate (RPi), aggregate remotely for long-term storage (Jetson), display centrally without logging (Base).

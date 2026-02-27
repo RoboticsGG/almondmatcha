@@ -216,41 +216,8 @@ ros2 topic echo /tpc_telemetry_relay
 3. ROS2 Humble installed (multi-domain requires Humble or later)
 
 ### Symptom: High CPU usage on RPi
-**Expected behavior:** Multi-threaded executor uses ~5-10% CPU for 5 Hz publishing
-- If higher, check for topic storms or network issues
-- Verify all subscriptions use appropriate QoS profiles
-
-## Performance Metrics
-
-### Memory Impact (STM32)
-- Before (12 participants in D5): ~40% free RAM
-- After (10 participants in D5): ~55% free RAM
-- Savings from removing monitoring node + CSV logger from D5
-
-### Network Bandwidth
-- **Domain 5**: Reduced by ~1.4 KB/s (5 Hz × 280 bytes)
-- **Domain 4**: Added ~1.4 KB/s (telemetry relay only)
-- **Net**: Bandwidth shifted, not increased
-
-### CPU Usage
-- **RPi**: +2% (multi-threaded executor overhead)
-- **Base**: Unchanged (same subscription pattern)
-- **STM32**: Unchanged (no visibility to Domain 4)
-
-## Future Enhancements
-
-1. **Compression**: Add message compression for bandwidth optimization
-2. **Adaptive Rate**: Reduce relay rate when stationary (5 Hz → 1 Hz)
-3. **Selective Relay**: Optionally disable unused telemetry fields
-4. **Multi-Base Support**: Multiple base stations on Domain 4 without affecting D5
-5. **Telemetry Recording**: Add rosbag2 recording on Domain 4 for offline analysis
+**Expected behavior:** Multi-threaded executor uses ~5-10% CPU for 5 Hz publishing. If higher, check for topic storms or QoS mismatches.
 
 ---
 
-**Related Documentation:**
-- [DOMAINS.md](DOMAINS.md) - Complete domain architecture
-- [TOPICS.md](TOPICS.md) - Topic reference
-- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture
-
-**Version:** 4.1  
-**Last Updated:** February 26, 2026
+**See Also:** [DOMAINS.md](DOMAINS.md) · [TOPICS.md](TOPICS.md) · [ARCHITECTURE.md](ARCHITECTURE.md)

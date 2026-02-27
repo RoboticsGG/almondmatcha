@@ -74,40 +74,10 @@ osDelay(8000);  // 8 seconds = 16 SPDP cycles @ 500ms
 
 ## Files Modified
 
-### STM32 Chassis Dynamics (mros2-mbed-chassis-dynamics)
-- ✅ `platform/rtps/config.h` - Memory pool optimization
-- ✅ `workspace/chassis_controller/app.cpp` - Discovery delay extended to 8s
-
-### STM32 Sensors GNSS (mros2-mbed-sensors-gnss)
-- ✅ `platform/rtps/config.h` - Memory pool optimization
-- ✅ `workspace/sensors_node/app.cpp` - Discovery delay extended to 8s
-
----
-
-## Deployment Instructions
-
-### 1. Rebuild Both STM32 Firmwares
-
-**Chassis Dynamics Board:**
-```bash
-cd ~/almondmatcha/mros2-mbed-chassis-dynamics
-./build.bash
-```
-
-**Sensors GNSS Board:**
-```bash
-cd ~/almondmatcha/mros2-mbed-sensors-gnss
-./build.bash
-
-### Discovery Delay Extension
-
-**Files modified:**
-- `mros2-mbed-chassis-dynamics/workspace/chassis_controller/app.cpp`
-- `mros2-mbed-sensors-gnss/workspace/sensors_node/app.cpp`
-
-```cpp
-osDelay(8000);  // 8s = 16 SPDP cycles @ 500ms (was 6s)
-```
+- `mros2-mbed-chassis-dynamics/platform/rtps/config.h` — memory pool
+- `mros2-mbed-chassis-dynamics/workspace/chassis_controller/app.cpp` — discovery delay
+- `mros2-mbed-sensors-gnss/platform/rtps/config.h` — memory pool
+- `mros2-mbed-sensors-gnss/workspace/sensors_node/app.cpp` — discovery delay
 
 ---
 
@@ -141,7 +111,7 @@ ssh yupi@192.168.1.5 && cd ~/almondmatcha/ws_jetson && ./launch_headless.sh
 cd ~/almondmatcha/ws_base && ./launch_base_tmux.sh
 ```
 
-See [LAUNCH_SEQUENCE_GUIDE.md](LAUNCH_SEQUENCE_GUIDE.md) for details.
+See [LAUNCH_INSTRUCTIONS.md](LAUNCH_INSTRUCTIONS.md) for details.
 
 ---
 
@@ -178,45 +148,10 @@ ros2 topic hz /tpc_chassis_sensors # ~4 Hz
 # Network connectivity
 ping 192.168.1.2 && ping 192.168.1.6  # Both STM32 boards
 ```
-ros2 topic echo /tpc_chassis_sensors --no-arr
-```
 
 ---
 
 ## Why NOT Separate Domains?
-
-### Question: Should we use different domains for STM32 boards?
-
-**Answer: NO - Stay on unified Domain 5**
-
-**Reasons:**
-
-1. **Separating domains doesn't solve the root cause:**
-   - Memory exhaustion happens from internal RTPS structures, not cross-domain traffic
-   - Each STM32 still needs to track all participants on its domain
-   - Domain separation would require bridge nodes (added latency)
-
-2. **Benefits of unified Domain 5:**
-
----
-
-## Design Rationale
-
-**Why not split domains?**
-- Unified Domain 5 enables native DDS discovery without bridges
-- Lower latency, no relay overhead
-- Native action/service support across all systems
-- Simplified architecture
-
-**Why 14 participants (not 12)?**
-- 12 active participants + 2 headroom for development/debugging
-- Balances memory efficiency with flexibility
-- Minimal overhead (~8 KB) for significant benefit
-
-**Why 8-second discovery?**
-- 16 SPDP cycles @ 500ms = robust discovery margin
-- Prevents race conditions during simultaneous announcements
-- Tested reliable with all 12 participants
 
 ---
 
@@ -261,32 +196,8 @@ arp -a  # Should show all 5 systems
 **Check participant count:**
 ```bash
 export ROS_DOMAIN_ID=5
-ros2 node list | wc -l  # Should show ≤12 nodes
+ros2 node list | wc -l  # Should be ≤12
 ```
-- Serial log shows `[Memory pool] resource limit exceed`
-
-**Debug Steps:**
-
-1. **Count actual participants:**
-   ```bash
-   export ROS_DOMAIN_ID=5
-   ros2 node list | wc -l
-   ```
-   - Should be ≤ 14
-   - If higher, check for extra daemon processes or duplicate nodes
-
-2. **Check ROS_DOMAIN_ID on all systems:**
-   ```bash
-   # On each system (ws_rpi, ws_base, ws_jetson)
-   echo $ROS_DOMAIN_ID  # Should be 5
-   ```
-
-3. **Verify STM32 firmware build:**
-   ```bash
-   # Check that config.h changes were included in build
-   grep "MAX_NUM_PARTICIPANTS" mros2-mbed-*/platform/rtps/config.h
-   # Should show "14", not "16"
-   ```
 
 ---
 
@@ -309,12 +220,11 @@ const uint8_t MAX_NUM_PARTICIPANTS = 16;  // +2 participants = +8 KB heap
 
 ## References
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) - System overview
-- [DOMAINS.md](DOMAINS.md) - Domain 5 unified architecture
-- [LAUNCH_SEQUENCE_GUIDE.md](LAUNCH_SEQUENCE_GUIDE.md) - Startup timing
-- [TOPICS.md](TOPICS.md) - Topic reference
+- [ARCHITECTURE.md](ARCHITECTURE.md)
+- [DOMAINS.md](DOMAINS.md)
+- [LAUNCH_INSTRUCTIONS.md](LAUNCH_INSTRUCTIONS.md)
+- [TOPICS.md](TOPICS.md)
 
 ---
 
-**Status:** ✅ Deployed and tested  
-**Next Steps:** Rebuild/reflash both STM32 boards, test full system startup
+**Status:** ✅ Deployed and tested

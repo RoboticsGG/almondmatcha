@@ -81,15 +81,12 @@ source install/setup.bash
 ./launch_jetson_tmux.sh
 ```
 
-This creates a 3-pane tmux session with:
+This creates a 3-pane tmux session:
 - Pane 0: Camera stream (Domain 6)
 - Pane 1: Lane detection (Domain 6)
-- Pane 2: Steering control (Domain 5)
+- Pane 2: Rover kinematic control (dual-context D6 sub / D5 pub)
 
-**Tmux controls:**
-- `Ctrl+b` → arrows: Navigate panes
-- `Ctrl+b` → `z`: Zoom pane
-- `Ctrl+b` → `d`: Detach (session keeps running)
+**Tmux controls:** `Ctrl+b` + arrows to navigate · `z` to zoom · `d` to detach
 
 **Option B: Background launch script:**
 ```bash
@@ -137,25 +134,12 @@ export ROS_DOMAIN_ID=5
 ./launch_rover_tmux.sh
 ```
 
-This launches 5 nodes in tmux session:
-- GNSS Spresense node
-- GNSS mission monitor  
-- Chassis controller
-- Chassis IMU logger
-- Chassis sensors logger
+This launches 7 nodes in a tmux session (`rover`):
+- GNSS Spresense, GNSS mission monitor, Chassis controller
+- Chassis IMU, Chassis sensors, Mission monitoring node
+- node_gnss_ublox
 
-**Verify tmux session:**
-```bash
-tmux list-sessions
-# Expected: rover:0
-
-tmux attach-session -t rover  # View all panes
-```
-
-**Navigate tmux panes:**
-- `Ctrl+b` then arrow keys: Switch between panes
-- `Ctrl+b` then `z`: Zoom current pane
-- `Ctrl+b` then `d`: Detach session
+**Tmux:** `Ctrl+b`+arrows / `z` zoom / `d` detach / `tmux attach -t rover`
 
 ### Step 4: Launch ws_base Mission Control (Optional)
 
@@ -221,195 +205,47 @@ minicom -D /dev/ttyACM0
 # Should NOT see camera-related messages
 ```
 
-## Shutdown Procedure
+## Shutdown
 
-### Graceful Shutdown
-
-**1. Stop ws_base (if running):**
 ```bash
-# In mission_control terminal
-Ctrl+C
+tmux kill-session -t jetson_vision   # Jetson
+tmux kill-session -t rover           # RPi
+# ws_base: Ctrl+C
 ```
 
-**2. Stop ws_jetson:**
-```bash
-# Option A: Kill tmux session
-tmux kill-session -t jetson_vision
-
-# Option B: If using background scripts
-pkill -f "vision_navigation"
-
-# Option C: Manual shutdown
-Ctrl+C  # In each terminal
-```
-
-**3. Stop ws_rpi:**
-```bash
-# Detach from tmux session if attached
-Ctrl+b then d
-
-# Kill tmux session
-tmux kill-session -t rover
-```
-
-**4. Power down STM32 boards:**
-- Disconnect power supply
-- Wait 5 seconds before reconnecting
+Power down STM32 boards last.
 
 ## Common Issues
 
 ### STM32 Boards Not Visible
-
-**Symptom:** `ros2 node list` on Domain 5 doesn't show /rover_node or /sensors_node
-
-**Troubleshooting:**
 ```bash
-# Check serial console
-minicom -D /dev/ttyACM0
-
-# Check network connectivity
 ping 192.168.1.2  # STM32 chassis
-
-# Rebuild and reflash if domain mismatch
-cd ~/almondmatcha/mros2-mbed-chassis-dynamics
-sudo ./build.bash all NUCLEO_F767ZI chassis_controller
+minicom -D /dev/ttyACM0  # Check serial console
 ```
 
 ### Vision Data Not Reaching Control
-
-**Symptom:** `/rover_kinematic_control` node stuck waiting for lane data
-
-**Troubleshooting:**
 ```bash
-# Verify Domain 6 vision is running
 export ROS_DOMAIN_ID=6
-ros2 topic list | grep nav_lane
-
-# Check control node subscribing to Domain 6
+ros2 topic list | grep nav_lane       # Confirm D6 running
 export ROS_DOMAIN_ID=5
-ros2 node info /rover_kinematic_control
-# Should show subscription to tpc_rover_nav_lane
-
-# Verify localhost DDS discovery
-ros2 topic info /tpc_rover_nav_lane -v
+ros2 node info /rover_kinematic_control  # Confirm D5 subscription
 ```
 
 ### High STM32 Memory Usage
-
-**Symptom:** Serial console shows `[MemoryPool] RESSOURCE LIMIT EXCEEDED`
-
-**Troubleshooting:**
-```bash
-# Verify Domain 5 node count
-export ROS_DOMAIN_ID=5
-ros2 node list | wc -l
-# Should be 8-10 nodes (without ws_base: 8, with ws_base: 10)
-
-# Check for accidental Domain 6 nodes on Domain 5
-ros2 topic list | grep d415
-# Should return nothing (camera topics are Domain 6 only)
-
-# If still failing, increase STM32 config
-# Edit: mros2-mbed-chassis-dynamics/platform/rtps/config.h
-# MAX_NUM_UNMATCHED_REMOTE_WRITERS = 40
-# MAX_NUM_UNMATCHED_REMOTE_READERS = 50
-```
-
-### Topics Not Visible on Domain 5
-
-**Symptom:** `ros2 topic list` shows incomplete or missing topics
-
-**Troubleshooting:**
-```bash
-# Verify correct domain
-echo $ROS_DOMAIN_ID  # Should be 5
-
-# Restart ROS2 daemon
-ros2 daemon stop
-ros2 daemon start
-
-# Check network connectivity
-ping 192.168.1.1  # RPi
-ping 192.168.1.5  # Jetson
-ping 192.168.1.2  # STM32 chassis
-
-# Check multicast support
-ros2 multicast send
-# On another machine:
-ros2 multicast receive
-```
-
-## Performance Verification
-
-### Latency Check
-
+`[MemoryPool] RESSOURCE LIMIT EXCEEDED` — check D5 participant count:
 ```bash
 export ROS_DOMAIN_ID=5
-
-# Control command latency (end-to-end)
-ros2 topic delay /tpc_rover_ctrl_cmd
-# Expected: 50-100 ms
-
-# Camera-to-control latency (includes cross-domain)
-export ROS_DOMAIN_ID=6
-ros2 topic delay /tpc_rover_nav_lane  # Get D6 timestamp
-export ROS_DOMAIN_ID=5
-ros2 topic delay /tpc_rover_ctrl_cmd  # Compare timestamps
-# Expected: 100-150 ms end-to-end
+ros2 node list | wc -l  # Should be 9–11
 ```
+See [STM32_MEMORY_POOL_FIX.md](STM32_MEMORY_POOL_FIX.md) for config details.
 
-### CPU Usage
-
+### Topics Not Visible
 ```bash
-# On Jetson
-top -p $(pgrep -f camera_stream)
-top -p $(pgrep -f lane_detection)
-top -p $(pgrep -f rover_kinematic_control)
-# Expected: 40-50% total CPU
-
-# On RPi
-top -p $(pgrep -f chassis_controller)
-# Expected: 10-20% CPU
-
-# On STM32 (via serial console)
-# Monitor free memory - should have >100KB free
+echo $ROS_DOMAIN_ID          # Verify correct domain
+ros2 daemon stop && ros2 daemon start
+ping 192.168.1.1             # RPi reachable?
 ```
 
-### Network Bandwidth
+---
 
-Domain 6 (localhost only, not network traffic):
-```bash
-# Domain 6 uses ~100 Mbps localhost (shared memory)
-```
-
-Domain 5 (network traffic):
-```bash
-# Monitor with tcpdump
-sudo tcpdump -i eth0 'port 7400-7500'
-# Expected: 10-50 Mbps sustained (DDS multicast)
-```
-
-## Multi-Rover Setup
-
-For multiple rovers, use different Domain IDs:
-
-| Rover | Domain 5 | Domain 6 | Network |
-|-------|----------|----------|---------|
-| Rover 1 | 5 | 6 | 192.168.1.0/24 |
-| Rover 2 | 8 | 9 | 192.168.2.0/24 |
-| Base | 5, 8 | - | All networks |
-
-**Launch Rover 2:**
-```bash
-# On Rover 2 systems, set domain before launch
-export ROS_DOMAIN_ID=8  # Domain 5 equivalent for Rover 2
-```
-
-## See Also
-
-- [DOMAINS.md](DOMAINS.md) - Domain architecture details
-- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture overview
-- [TOPICS.md](TOPICS.md) - Complete topic reference
-- `ws_jetson/README.md` - Jetson-specific instructions
-- `ws_rpi/README.md` - RPi-specific instructions
-- `ws_base/README.md` - Base station instructions
+**See Also:** [DOMAINS.md](DOMAINS.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [TOPICS.md](TOPICS.md)

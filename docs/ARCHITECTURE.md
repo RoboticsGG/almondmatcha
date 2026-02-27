@@ -95,7 +95,7 @@ Almondmatcha rover system architecture: distributed heterogeneous computing with
 
 ### Node Distribution
 
-**Raspberry Pi 4 (192.168.1.1 — Domain 5, 6 nodes):**
+**Raspberry Pi 4 (192.168.1.1 — Domain 5):**
 ```
 ├── node_chassis_controller     - Motor command coordination (D5 sub/pub)
 ├── node_chassis_imu            - IMU data relay (D5 sub)
@@ -106,10 +106,7 @@ Almondmatcha rover system architecture: distributed heterogeneous computing with
 └── mission_monitoring_node_rpi - Aggregates 10 D5 topics:
                                     Sub: D5 (all sensor/command topics)
                                     Pub: D4 /tpc_telemetry_relay (5 Hz)
-                                    CSV: 6 per-topic files, native rates (4-50 Hz)
-```
-├── node_gnss_mission_monitor - Waypoint navigation
-└── [FUTURE] node_ekf_fusion - Multi-sensor fusion
+                                    CSV: 6 per-topic files, native rates (4–50 Hz)
 ```
 
 **Jetson Orin Nano (192.168.1.5 — Multi-Domain):**
@@ -168,36 +165,16 @@ Camera (30 FPS) → Lane Detection (30 FPS) → Steering Control (50 Hz)
 - Motor actuation: 50 ms (20 Hz cycle)
 - **Total end-to-end: 100-150 ms**
 
-### Sensor Fusion Data Flow (Future)
-
-```
-┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-│ IMU (10 Hz) │  │GNSS (10 Hz) │  │Odom (10 Hz) │  │Lane (30 Hz) │
-└──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘
-       │                │                │                │
-       └────────────────┴────────────────┴────────────────┘
-                               ▼
-                    ┌──────────────────────┐
-                    │  EKF Sensor Fusion   │
-                    │  node_ekf_fusion     │
-                    │  (Raspberry Pi)      │
-                    └──────────┬───────────┘
-                               │
-                    Fused State (10 Hz)
-                    [x, y, θ, vx, vy, ωz]
-                               │
-       ┌───────────────────────┼───────────────────────┐
-       │                       │                       │
-       ▼                       ▼                       ▼
- Mission Control        Adaptive Steering      Fault Detection
-```
-
 ### Message Flow Patterns
 
-**Publish-Subscribe (Most Common):**
+**Publish-Subscribe:**
 - Vision stream: camera → lane_detection
 - Sensor data: STM32s → RPi logging nodes
 - Control commands: steering_control → chassis_controller
+
+**Request-Response (Services):** Speed limit updates — base station → chassis controller.
+
+**Action (Goal-Based):** Destination waypoints — base station → mission monitor, with remaining-distance feedback.
 
 **Request-Response (Services):**
 - Speed limit updates: base station → chassis controller
@@ -213,48 +190,21 @@ Camera (30 FPS) → Lane Detection (30 FPS) → Steering Control (50 Hz)
 
 ```
                  Gigabit Ethernet Switch (192.168.1.0/24)
-                    5-8 port managed/unmanaged switch
                               |
         ┌─────────────┬───────┼───────┬─────────────┬─────────────┐
         |             |       |       |             |             |
    RPi (.1)      Jetson (.5)  |  Base (.10)    Chassis (.2)  Sensors (.6)
-   [Gateway]     [Vision]     |  [Monitor]     [STM32]       [STM32]
-                              |
-                       Multicast-enabled
-                       Auto-MDI/MDIX
 ```
 
-**Physical Layer:**
-- Static IP addressing (DHCP disabled)
-- All systems on same L2 broadcast domain
+| Device | IP Address | Role |
+|--------|-----------|------|
+| Raspberry Pi | 192.168.1.1 | Coordination / sensor fusion |
+| Jetson Orin | 192.168.1.5 | Vision processing / kinematic control |
+| Base Station | 192.168.1.10 | Command / monitoring |
+| STM32 Chassis | 192.168.1.2 | Motor / IMU control |
+| STM32 Sensors | 192.168.1.6 | GNSS / encoders / power |
 
-
-**Network Configuration:**
-
-| Device | IP Address | Subnet Mask | Gateway | Role |
-|--------|-----------|-------------|---------|------|
-| Raspberry Pi | 192.168.1.1 | 255.255.255.0 | - | NAT gateway (optional) |
-| Jetson Orin | 192.168.1.5 | 255.255.255.0 | 192.168.1.1 | Vision processing |
-| Base Station | 192.168.1.10 | 255.255.255.0 | 192.168.1.1 | Command/monitor |
-| STM32 Chassis | 192.168.1.2 | 255.255.255.0 | 192.168.1.1 | Motor/IMU control |
-| STM32 Sensors | 192.168.1.6 | 255.255.255.0 | 192.168.1.1 | GNSS/encoders/power |
-
-**DDS Middleware:**
-- Fast-RTPS (default ROS2 Humble implementation) on Linux systems
-- embeddedRTPS (mROS2) on STM32 boards
-- Multicast discovery: 239.255.0.1 (RTPS standard)
-- UDP ports: 7400-7500 (DDS discovery and data)
-- Reliable QoS for critical commands
-- Best-effort QoS for high-frequency sensor streams
-
-### QoS Profiles
-
-| Topic Type | Reliability | History | Depth | Use Case |
-|------------|-------------|---------|-------|----------|
-| Camera streams | Best Effort | Keep Last | 1 | High-frequency vision data |
-| Sensor data | Reliable | Keep Last | 10 | Critical state information |
-| Commands | Reliable | Keep Last | 10 | Motor control commands |
-| Logs | Best Effort | Keep Last | 100 | Debug/telemetry |
+**DDS:** Fast-RTPS on Linux; embeddedRTPS (mROS2) on STM32. Multicast discovery on 239.255.0.1, UDP 7400–7500. Critical commands use Reliable QoS; high-frequency sensor streams use Best-Effort.
 
 ## Storage Architecture
 
@@ -285,59 +235,24 @@ See [CSV_LOGGING.md](CSV_LOGGING.md) for full schema and analysis guidance.
 - Network: IP, netmask, gateway in `mros2-platform.h`
 - Sensors: Pins, I2C addresses in workspace apps
 
-## Scalability Considerations
+## Scalability
 
-### Adding New Sensors
-
-1. If high-frequency (>10 Hz): Add task to STM32 firmware
-2. If low-frequency (<10 Hz): Add ROS2 node to RPi
-3. Update EKF fusion node to subscribe to new sensor topic
-
-### Adding New Computing Nodes
-
-1. Assign static IP in 192.168.1.0/24 range
-2. Configure ROS_DOMAIN_ID=5
-3. Build and deploy ROS2 packages
-4. Update launch files
-
-### Multi-Rover Systems
-
-- Use different Domain IDs per rover (5, 8, 11, ...)
-- Base station can monitor multiple domains
-- Coordinate via higher-level planner
+- Vision/AI nodes: add to Domain 6 — zero STM32 impact.
+- Control nodes: add to Domain 5; monitor `ros2 node list | wc -l` against `MAX_NUM_PARTICIPANTS`.
+- Additional computing boards: assign a static IP in 192.168.1.0/24, set `ROS_DOMAIN_ID=5`.
 
 ## Performance Characteristics
 
 | Subsystem | Metric | Value |
 |-----------|--------|-------|
-| **Vision** | Processing latency | 30-40 ms |
-| **Vision** | Frame rate | 30 FPS |
-| **Control** | Steering update rate | 50 Hz |
-| **Control** | Motor command latency | 20 ms |
-| **Sensors** | IMU sample rate | 10 Hz |
-| **Sensors** | GNSS update rate | 10 Hz |
-| **Network** | End-to-end latency | <50 ms (Domain 5) |
-| **Storage** | Log write rate | 1 Hz per node |
-
-## Failure Modes & Recovery
-
-**STM32 Communication Loss:**
-- Rover stops receiving motor commands
-- Motors timeout after 500 ms (safety feature)
-- Manual recovery: reset STM32 board
-
-**Network Partition:**
-- Jetson vision isolated: rover operates in blind mode
-- RPi isolated: full system failure (requires manual intervention)
-- Base station isolated: rover continues autonomous operation
-
-**Sensor Failures:**
-- IMU failure: Fall back to GNSS + odometry only
-- GNSS failure: Dead reckoning with IMU + odometry
-- Camera failure: GPS waypoint navigation only
+| Vision | Processing latency | 30–40 ms |
+| Vision | Frame rate | 30 FPS |
+| Control | Steering update rate | 50 Hz |
+| Control | Motor command latency | 20 ms |
+| Sensors | IMU sample rate | 10 Hz |
+| Sensors | GNSS update rate | 10 Hz |
+| Network | End-to-end latency | <50 ms (Domain 5) |
 
 ---
 
-**See Also:**
-- [TOPICS.md](TOPICS.md) - Complete topic reference
-- [DOMAINS.md](DOMAINS.md) - Domain architecture details
+**See Also:** [TOPICS.md](TOPICS.md) · [DOMAINS.md](DOMAINS.md)

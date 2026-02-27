@@ -24,20 +24,7 @@ Complete topic reference for Almondmatcha rover system.
 **QoS:** Best Effort, Depth 1  
 **Domain:** 6 (Jetson localhost only)  
 
-RGB image stream from Intel RealSense D415 camera.
-
-**Fields:**
-```yaml
-header:
-  stamp: {sec, nanosec}
-  frame_id: "camera_rgb_optical_frame"
-height: 720              # pixels
-width: 1280              # pixels
-encoding: "rgb8"         # RGB 8-bit per channel
-is_bigendian: 0
-step: 3840               # bytes per row (1280 * 3)
-data: [...]              # Raw pixel data
-```
+RGB image stream from Intel RealSense D415 camera (`rgb8`, 1280×720).
 
 ---
 
@@ -50,20 +37,7 @@ data: [...]              # Raw pixel data
 **QoS:** Best Effort, Depth 1  
 **Domain:** 6 (Jetson localhost only)  
 
-Depth image stream from Intel RealSense D415 camera.
-
-**Fields:**
-```yaml
-header:
-  stamp: {sec, nanosec}
-  frame_id: "camera_depth_optical_frame"
-height: 720
-width: 1280
-encoding: "16UC1"        # 16-bit unsigned depth in mm
-is_bigendian: 0
-step: 2560               # bytes per row (1280 * 2)
-data: [...]              # Depth values (0-65535 mm)
-```
+Depth image from RealSense D415 (`16UC1`, mm units). Not currently subscribed.
 
 ---
 
@@ -108,13 +82,13 @@ data: [theta, b, detected]
 ### `tpc_rover_ctrl_cmd`
 
 **Type:** `std_msgs/msg/Float32MultiArray`  
-**Publisher:** `rover_kinematic_control` (Jetson, Domain 6 → bridge → Domain 5)  
+**Publisher:** `rover_kinematic_control` (Jetson, dual-context D6→D5)  
 **Subscribers:** `node_chassis_controller` (RPi)  
 **Rate:** 50 Hz  
 **QoS:** Best Effort, Depth 10  
 **Domain:** 5  
 
-Combined kinematic control output: steering angle and chassis speed from the bicycle-model PID controller. The domain bridge relays this from Domain 6 (Jetson internal) to Domain 5 (control network).
+Combined kinematic control output: steering angle and chassis speed from the bicycle-model PID controller. Published directly to Domain 5 by the dual-context `rover_kinematic_control` node (no bridge).
 
 **Fields:**
 ```yaml
@@ -460,8 +434,8 @@ camera_stream (D6)
     └── tpc_rover_d415_rgb (D6)
             └── lane_detection (D6)
                     └── tpc_rover_nav_lane (D6)
-                            └── rover_kinematic_control (D6, Jetson)
-                                    └── tpc_rover_ctrl_cmd (D6 → bridge → D5)
+                            └── rover_kinematic_control (dual-ctx D6/D5)
+                                    └── tpc_rover_ctrl_cmd (D5)
 ```
 
 **Chassis Control (Domain 5):**
