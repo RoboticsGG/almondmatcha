@@ -10,11 +10,6 @@ elif [ -f "../install/setup.bash" ]; then
     source ../install/setup.bash
 elif [ -f "/opt/ros/humble/setup.bash" ]; then
     source /opt/ros/humble/setup.bash
-else
-    # Try to source from common ROS2 installation paths
-    if [ -f "/opt/ros/humble/setup.bash" ]; then
-        source /opt/ros/humble/setup.bash
-    fi
 fi
 
 # Incremental build (does not clean old artefacts)

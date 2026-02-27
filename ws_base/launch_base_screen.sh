@@ -1,6 +1,6 @@
 #!/bin/bash
 # ws_base Mission Control - GNU Screen Launcher
-# Domain 6: Base station command & monitoring
+# Domain 5+4: Base station command (D5) & monitoring (D4)
 
 set -e
 SESSION="base_station"

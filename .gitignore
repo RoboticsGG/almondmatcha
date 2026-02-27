@@ -6,6 +6,7 @@ runs/logs/*.csv
 build/
 install/
 log/
+*.egg-info/
 
 # Python cache
 __pycache__/

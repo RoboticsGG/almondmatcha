@@ -1,6 +1,6 @@
 #!/bin/bash
 # Base Station Mission Control Launch with Tmux
-# Domain 6: Base station mission control (command generation & monitoring)
+# Domain 5+4: Base station mission control (command: D5, monitoring: D4)
 # This script launches 2 mission control nodes in separate tmux panes
 
 set -e

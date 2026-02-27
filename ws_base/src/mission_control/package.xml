@@ -8,16 +8,15 @@
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>rosidl_default_generators</buildtool_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
 
-  <buildtool_depend>rosidl_default_generators</buildtool_depend>
-
   <depend>rclcpp</depend>
   <depend>rclcpp_action</depend>
   <depend>action_msgs</depend>
-  <depend>msgs_ifaces</depend> 
+  <depend>msgs_ifaces</depend>
 
   <build_depend>ifaces_base</build_depend>
   <exec_depend>ifaces_base</exec_depend>
@@ -25,9 +24,6 @@
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>ros2launch</exec_depend>
-
-
-  <member_of_group>rosidl_interface_packages</member_of_group>
 
   <export>
     <build_type>ament_cmake</build_type>
