@@ -153,7 +153,7 @@ launch_nodes() {
     # Pane 0 (left): Mission Command Generator (Domain 5)
     print_info "Launching mission_command_node in pane 0 (Domain 5)..."
     send_command_to_pane 0 "MISSION COMMAND (Domain 5)" \
-        "ros2 run mission_control mission_command_node"
+        "ros2 run mission_control mission_command_node --ros-args --params-file src/mission_control/config/params.yaml"
     
     # Pane 1 (right): Mission Monitoring (Telemetry Relay Subscriber - Domain 4)
     print_info "Launching mission_monitoring_node_pc in pane 1 (Domain 4)..."
@@ -196,6 +196,8 @@ display_info() {
     echo -e "  - mission_command_node: Domain 5 (control)"
     echo -e "  - mission_monitoring_node_pc: Domain 4 (base monitoring)"
     echo -e "  - Cross-domain relay from RPi reduces Domain 5 participant count for STM32"
+    echo -e "  - Action watchdog: cancels goal if no feedback for action_watchdog_timeout_sec (default 10 s)"
+    echo -e "  - Edit params: src/mission_control/config/params.yaml"
     echo ""
     
     echo -e "${YELLOW}To reconnect to this session later:${NC}"
