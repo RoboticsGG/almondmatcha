@@ -17,6 +17,12 @@
  *   Service Client: /srv_spd_limit (services_ifaces/SpdLimit) - 0-100% PWM duty cycle
  *   Parameters:     rover_spd, des_lat, des_long
  *
+ * Watchdog:
+ *   A periodic timer (2 s) monitors feedback heartbeat from the action server.
+ *   If no feedback is received for `action_watchdog_timeout_sec` seconds after
+ *   goal acceptance, the goal is automatically cancelled to prevent indefinite
+ *   hang on mid-mission Wi-Fi loss.
+ *
  * Author: AlmondMatcha Rover Team
  * Date:   February 27, 2026
  */
@@ -54,6 +60,13 @@ public:
     void cancel_mission() {
         RCLCPP_WARN(this->get_logger(), "Cancelling active mission...");
 
+        // Disarm watchdog before manual cancel
+        goal_accepted_ = false;
+        if (watchdog_timer_) {
+            watchdog_timer_->cancel();
+            watchdog_timer_.reset();
+        }
+
         if (!goal_handle_) {
             RCLCPP_WARN(this->get_logger(), "No active goal to cancel.");
             return;
@@ -82,6 +95,12 @@ private:
     
     // Mission State
     DesDataGoalHandle::SharedPtr goal_handle_;
+    bool goal_accepted_ = false;
+    rclcpp::Time last_feedback_time_;
+
+    // Watchdog
+    rclcpp::TimerBase::SharedPtr watchdog_timer_;
+    double action_watchdog_timeout_sec_ = 10.0;
 
     // ===================== Initialization Methods =====================
     
@@ -99,9 +118,12 @@ private:
         this->declare_parameter("des_lat", 0.0);
         this->declare_parameter("des_long", 0.0);
 
+        this->declare_parameter("action_watchdog_timeout_sec", 10.0);
+
         rover_speed_percent_ = this->get_parameter("rover_spd").as_int();
         destination_latitude_ = this->get_parameter("des_lat").as_double();
         destination_longitude_ = this->get_parameter("des_long").as_double();
+        action_watchdog_timeout_sec_ = this->get_parameter("action_watchdog_timeout_sec").as_double();
 
         RCLCPP_INFO(this->get_logger(), 
             "Mission Parameters Loaded: speed=%d%%, target=(%f, %f)",
@@ -194,12 +216,21 @@ private:
         send_goal_options.goal_response_callback =
             [this](DesDataGoalHandle::SharedPtr handle) {
                 if (!handle) {
-                    RCLCPP_ERROR(this->get_logger(), 
+                    RCLCPP_ERROR(this->get_logger(),
                         "Navigation goal rejected by rover.");
                 } else {
-                    RCLCPP_INFO(this->get_logger(), 
-                        "Navigation goal accepted by rover.");
+                    RCLCPP_INFO(this->get_logger(),
+                        "Navigation goal accepted. Watchdog armed (timeout=%.1fs).",
+                        action_watchdog_timeout_sec_);
                     goal_handle_ = handle;
+                    goal_accepted_ = true;
+                    last_feedback_time_ = this->now();
+
+                    // Arm the watchdog — check every 2 s
+                    watchdog_timer_ = this->create_wall_timer(
+                        std::chrono::seconds(2),
+                        std::bind(&MissionCommandNode::watchdog_check, this)
+                    );
                 }
             };
         
@@ -207,34 +238,64 @@ private:
         send_goal_options.feedback_callback =
             [this](DesDataGoalHandle::SharedPtr,
                    const std::shared_ptr<const DesDataAction::Feedback> feedback) {
-                RCLCPP_INFO(this->get_logger(), 
+                last_feedback_time_ = this->now();  // reset watchdog
+                RCLCPP_INFO(this->get_logger(),
                     "Distance Remaining: %.2f km", feedback->dis_remain);
             };
         
-        // Callback: Called when goal is complete (success or failure)
+        // Callback: Called when goal is complete (success, abort, or cancel)
         send_goal_options.result_callback =
             [this](const DesDataGoalHandle::WrappedResult &result) {
+                // Disarm watchdog — mission is terminal
+                goal_accepted_ = false;
+                if (watchdog_timer_) {
+                    watchdog_timer_->cancel();
+                    watchdog_timer_.reset();
+                }
                 switch (result.code) {
                     case rclcpp_action::ResultCode::SUCCEEDED:
-                        RCLCPP_INFO(this->get_logger(), 
-                            "Mission Complete: %s", 
+                        RCLCPP_INFO(this->get_logger(),
+                            "Mission Complete: %s",
                             result.result->result_fser.c_str());
                         break;
                     case rclcpp_action::ResultCode::ABORTED:
-                        RCLCPP_WARN(this->get_logger(), 
+                        RCLCPP_WARN(this->get_logger(),
                             "Mission aborted by rover.");
                         break;
                     case rclcpp_action::ResultCode::CANCELED:
-                        RCLCPP_WARN(this->get_logger(), 
+                        RCLCPP_WARN(this->get_logger(),
                             "Mission cancelled.");
                         break;
                     default:
-                        RCLCPP_ERROR(this->get_logger(), 
+                        RCLCPP_ERROR(this->get_logger(),
                             "Mission failed with unknown result code.");
                 }
             };
 
         des_action_client_->async_send_goal(goal, send_goal_options);
+    }
+
+    /**
+     * Watchdog check — fires every 2 s while a goal is active.
+     * Cancels the goal if no feedback has been received within
+     * action_watchdog_timeout_sec_ (default 10 s), which indicates a
+     * mid-mission Wi-Fi drop or action server crash.
+     */
+    void watchdog_check() {
+        if (!goal_accepted_ || !goal_handle_) {
+            return;
+        }
+
+        double elapsed = (this->now() - last_feedback_time_).seconds();
+        if (elapsed > action_watchdog_timeout_sec_) {
+            RCLCPP_WARN(this->get_logger(),
+                "[Watchdog] No feedback for %.1f s (limit=%.1f s). "
+                "Cancelling mission goal — possible Wi-Fi loss.",
+                elapsed, action_watchdog_timeout_sec_);
+            goal_accepted_ = false;
+            watchdog_timer_->cancel();
+            des_action_client_->async_cancel_goal(goal_handle_);
+        }
     }
 };
 
