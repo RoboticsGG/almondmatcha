@@ -35,56 +35,56 @@ tmux select-pane -t 0 -T "GNSS_Spresense"
 tmux send-keys -t $SESSION_NAME:0.0 "cd ~/almondmatcha/ws_rpi && source install/setup.bash" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "export ROS_DOMAIN_ID=5" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "clear && echo -e '\\e[1;36m>>> [1/8] GNSS SPRESENSE <<<\\e[0m' && sleep 1" C-m
-tmux send-keys -t $SESSION_NAME:0.0 "ros2 run pkg_gnss_navigation gnss_spresense_node" C-m
+tmux send-keys -t $SESSION_NAME:0.0 "ros2 run gnss_navigation gnss_spresense_node" C-m
 
 # Pane 1 (middle-left): GNSS Ublox RTK
 tmux select-pane -t 1 -T "GNSS_Ublox_RTK"
 tmux send-keys -t $SESSION_NAME:0.1 "cd ~/almondmatcha/ws_rpi && source install/setup.bash" C-m
 tmux send-keys -t $SESSION_NAME:0.1 "export ROS_DOMAIN_ID=5" C-m
 tmux send-keys -t $SESSION_NAME:0.1 "clear && echo -e '\\e[1;32m>>> [2/8] GNSS UBLOX RTK <<<\\e[0m' && sleep 1" C-m
-tmux send-keys -t $SESSION_NAME:0.1 "ros2 run pkg_gnss_navigation gnss_ublox_node" C-m
+tmux send-keys -t $SESSION_NAME:0.1 "ros2 run gnss_navigation gnss_ublox_node" C-m
 
 # Pane 2 (bottom-left): GNSS Mission Monitor
 tmux select-pane -t 2 -T "GNSS_Mission"
 tmux send-keys -t $SESSION_NAME:0.2 "cd ~/almondmatcha/ws_rpi && source install/setup.bash" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "export ROS_DOMAIN_ID=5" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "clear && echo -e '\\e[1;33m>>> [3/8] GNSS MISSION MONITOR <<<\\e[0m' && sleep 1" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "ros2 run pkg_gnss_navigation gnss_mission_monitor_node" C-m
+tmux send-keys -t $SESSION_NAME:0.2 "ros2 run gnss_navigation gnss_mission_monitor_node" C-m
 
 # Pane 3 (top-right): Chassis Controller
 tmux select-pane -t 3 -T "Chassis_Controller"
 tmux send-keys -t $SESSION_NAME:0.3 "cd ~/almondmatcha/ws_rpi && source install/setup.bash" C-m
 tmux send-keys -t $SESSION_NAME:0.3 "export ROS_DOMAIN_ID=5" C-m
 tmux send-keys -t $SESSION_NAME:0.3 "clear && echo -e '\\e[1;35m>>> [4/8] CHASSIS CONTROLLER <<<\\e[0m' && sleep 1" C-m
-tmux send-keys -t $SESSION_NAME:0.3 "ros2 run pkg_chassis_control chassis_controller_node" C-m
+tmux send-keys -t $SESSION_NAME:0.3 "ros2 run chassis_control chassis_controller_node" C-m
 
 # Pane 4 (upper-middle-right): Chassis IMU
 tmux select-pane -t 4 -T "Chassis_IMU"
 tmux send-keys -t $SESSION_NAME:0.4 "cd ~/almondmatcha/ws_rpi && source install/setup.bash" C-m
 tmux send-keys -t $SESSION_NAME:0.4 "export ROS_DOMAIN_ID=5" C-m
 tmux send-keys -t $SESSION_NAME:0.4 "clear && echo -e '\\e[1;34m>>> [5/8] CHASSIS IMU <<<\\e[0m' && sleep 1" C-m
-tmux send-keys -t $SESSION_NAME:0.4 "ros2 run pkg_chassis_sensors chassis_imu_node" C-m
+tmux send-keys -t $SESSION_NAME:0.4 "ros2 run chassis_sensors chassis_imu_node" C-m
 
 # Pane 5 (lower-middle-right): Chassis Sensors
 tmux select-pane -t 5 -T "Chassis_Sensors"
 tmux send-keys -t $SESSION_NAME:0.5 "cd ~/almondmatcha/ws_rpi && source install/setup.bash" C-m
 tmux send-keys -t $SESSION_NAME:0.5 "export ROS_DOMAIN_ID=5" C-m
 tmux send-keys -t $SESSION_NAME:0.5 "clear && echo -e '\\e[1;31m>>> [6/8] CHASSIS SENSORS <<<\\e[0m' && sleep 1" C-m
-tmux send-keys -t $SESSION_NAME:0.5 "ros2 run pkg_chassis_sensors chassis_sensors_node" C-m
+tmux send-keys -t $SESSION_NAME:0.5 "ros2 run chassis_sensors chassis_sensors_node" C-m
 
 # Pane 6 (second-bottom-right): Mission Monitoring (Telemetry Relay Publisher)
 tmux select-pane -t 6 -T "Mission_Monitor_RPi"
 tmux send-keys -t $SESSION_NAME:0.6 "cd ~/almondmatcha/ws_rpi && source install/setup.bash" C-m
 tmux send-keys -t $SESSION_NAME:0.6 "export ROS_DOMAIN_ID=5" C-m
 tmux send-keys -t $SESSION_NAME:0.6 "clear && echo -e '\\e[1;93m>>> [7/8] MISSION MONITORING (TELEMETRY RELAY) <<<\\e[0m' && sleep 1" C-m
-tmux send-keys -t $SESSION_NAME:0.6 "ros2 run pkg_rover_monitoring mission_monitoring_node_rpi" C-m
+tmux send-keys -t $SESSION_NAME:0.6 "ros2 run rover_monitoring mission_monitoring_node_rpi" C-m
 
 # Pane 7 (bottom-right): CSV Data Logger
 tmux select-pane -t 7 -T "CSV_Logger"
 tmux send-keys -t $SESSION_NAME:0.7 "cd ~/almondmatcha/ws_rpi && source install/setup.bash" C-m
 tmux send-keys -t $SESSION_NAME:0.7 "export ROS_DOMAIN_ID=5" C-m
 tmux send-keys -t $SESSION_NAME:0.7 "clear && echo -e '\\e[1;96m>>> [8/8] CSV DATA LOGGER <<<\\e[0m' && sleep 1" C-m
-tmux send-keys -t $SESSION_NAME:0.7 "ros2 run pkg_rover_monitoring rover_monitoring_node" C-m
+tmux send-keys -t $SESSION_NAME:0.7 "ros2 run rover_monitoring rover_monitoring_node" C-m
 
 # Focus on monitoring pane and attach
 tmux select-pane -t 6

@@ -252,7 +252,7 @@ See [`common_ifaces/msgs_ifaces/msg/TelemetryRelay.msg`](../common_ifaces/msgs_i
 3. Network: `ping 192.168.1.1` from base
 
 **RPi monitoring node missing from D5:**
-1. Build: `colcon build --packages-select pkg_rover_monitoring`
+1. Build: `colcon build --packages-select rover_monitoring`
 2. Check executor running both contexts (no crash in D4 context init)
 3. Verify ROS2 Humble+ (multi-domain context requires Humble or later)
 

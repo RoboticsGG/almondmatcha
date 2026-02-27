@@ -2,7 +2,7 @@ import os
 from glob import glob
 from setuptools import find_packages, setup
 
-package_name = 'rover_monitor_pkg'
+package_name = 'rover_monitoring'
 
 setup(
     name=package_name,
@@ -22,7 +22,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'rover_local_monitoring_node = rover_monitor_pkg.rover_local_monitoring_node:main',
+            'rover_local_monitoring_node = rover_monitoring.rover_local_monitoring_node:main',
         ],
     },
 )

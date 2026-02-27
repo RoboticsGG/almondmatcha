@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>rover_monitor_pkg</name>
+  <name>rover_monitoring</name>
   <version>1.0.0</version>
   <description>Rover local monitoring node for CSV/DB logging (Domain 4)</description>
   <maintainer email="viewjirapat@gmail.com">yupi</maintainer>

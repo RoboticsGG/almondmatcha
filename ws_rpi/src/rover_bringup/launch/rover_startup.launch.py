@@ -10,7 +10,7 @@ import datetime
 # Usage:
 #   cd ~/almondmatcha/ws_rpi/
 #   source install/setup.bash
-#   ros2 launch rover_launch_system rover_startup.launch.py
+#   ros2 launch rover_bringup rover_startup.launch.py
 #
 # Domain 5 nodes (ws_rpi — rover control):
 #   - gnss_spresense_node:        Standard GPS positioning
@@ -41,21 +41,21 @@ def generate_launch_description():
 
             # GNSS Navigation Nodes
             Node(
-                package='pkg_gnss_navigation',
+                package='gnss_navigation',
                 executable='gnss_spresense_node',
                 name='gnss_spresense_node',
                 output='log',
                 emulate_tty=True
             ),
             Node(
-                package='pkg_gnss_navigation',
+                package='gnss_navigation',
                 executable='gnss_ublox_node',
                 name='gnss_ublox_node',
                 output='log',
                 emulate_tty=True
             ),
             Node(
-                package='pkg_gnss_navigation',
+                package='gnss_navigation',
                 executable='gnss_mission_monitor_node',
                 name='gnss_mission_monitor_node',
                 output='log',
@@ -64,7 +64,7 @@ def generate_launch_description():
 
             # Chassis Control Node
             Node(
-                package='pkg_chassis_control',
+                package='chassis_control',
                 executable='chassis_controller_node',
                 name='chassis_controller_node',
                 output='log',
@@ -73,14 +73,14 @@ def generate_launch_description():
 
             # Chassis Sensor Nodes
             Node(
-                package='pkg_chassis_sensors',
+                package='chassis_sensors',
                 executable='chassis_imu_node',
                 name='chassis_imu_node',
                 output='log',
                 emulate_tty=True
             ),
             Node(
-                package='pkg_chassis_sensors',
+                package='chassis_sensors',
                 executable='chassis_sensors_node',
                 name='chassis_sensors_node',
                 output='log',
@@ -89,14 +89,14 @@ def generate_launch_description():
 
             # Monitoring / Logging Nodes
             Node(
-                package='pkg_rover_monitoring',
+                package='rover_monitoring',
                 executable='rover_monitoring_node',
                 name='rover_monitoring_node',
                 output='log',
                 emulate_tty=True
             ),
             Node(
-                package='pkg_rover_monitoring',
+                package='rover_monitoring',
                 executable='mission_monitoring_node_rpi',
                 name='mission_monitoring_node_rpi',
                 output='log',

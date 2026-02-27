@@ -17,7 +17,7 @@ def generate_launch_description():
     # Mission monitoring node (RPi) - runs in Domain 5
     # Subscribes to all Domain 5 rover topics and publishes aggregated telemetry relay
     mission_monitoring_node_rpi = Node(
-        package='pkg_rover_monitoring',
+        package='rover_monitoring',
         executable='mission_monitoring_node_rpi',
         name='mission_monitoring_node_rpi',
         output='screen',
@@ -29,7 +29,7 @@ def generate_launch_description():
     
     # CSV data logger (optional) - for local data recording
     csv_logger_node = Node(
-        package='pkg_rover_monitoring',
+        package='rover_monitoring',
         executable='rover_monitoring_node',
         name='rover_monitoring_node',
         output='screen',

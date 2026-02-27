@@ -28,10 +28,10 @@ tmux kill-session -t rover
 
 | Package | Purpose |
 |---------|---------|
-| `pkg_chassis_control` | Motor coordination, cruise control |
-| `pkg_chassis_sensors` | Sensor data logging (IMU, encoders, power) |
-| `pkg_gnss_navigation` | GPS waypoint navigation, mission monitoring |
-| `rover_launch_system` | System-wide launch configuration |
+| `chassis_control` | Motor coordination, cruise control |
+| `chassis_sensors` | Sensor data logging (IMU, encoders, power) |
+| `gnss_navigation` | GPS waypoint navigation, mission monitoring |
+| `rover_bringup` | System-wide launch configuration |
 
 ## Building
 
@@ -47,7 +47,7 @@ source install/setup.bash
 **What the build script does:**
 - Builds interface packages first (action_ifaces, msgs_ifaces, services_ifaces)
 - Sources environment automatically
-- Builds application packages (pkg_chassis_control, pkg_chassis_sensors, pkg_gnss_navigation, rover_launch_system)
+- Builds application packages (chassis_control, chassis_sensors, gnss_navigation, rover_bringup)
 - Handles proper dependency ordering
 - Creates install/ directory with all executables
 
@@ -63,8 +63,8 @@ colcon build --packages-select action_ifaces msgs_ifaces services_ifaces
 source install/setup.bash
 
 # Step 2: Build application packages
-colcon build --packages-select pkg_chassis_control pkg_chassis_sensors \
-    pkg_gnss_navigation rover_launch_system
+colcon build --packages-select chassis_control chassis_sensors \
+    gnss_navigation rover_bringup
 source install/setup.bash
 ```
 
@@ -77,16 +77,16 @@ After interfaces are built and sourced, you can build packages individually:
 source install/setup.bash
 
 # Chassis control (motor coordination + cruise control)
-colcon build --packages-select pkg_chassis_control
+colcon build --packages-select chassis_control
 
 # Chassis sensors (IMU + encoder/power data loggers)
-colcon build --packages-select pkg_chassis_sensors
+colcon build --packages-select chassis_sensors
 
 # GNSS navigation (Spresense, Ublox, mission monitor)
-colcon build --packages-select pkg_gnss_navigation
+colcon build --packages-select gnss_navigation
 
 # Launch system (ROS2 launch files)
-colcon build --packages-select rover_launch_system
+colcon build --packages-select rover_bringup
 ```
 
 ### Package Build Dependencies
@@ -96,7 +96,7 @@ The build order matters due to dependencies:
 ```
 action_ifaces, msgs_ifaces, services_ifaces (must build first)
     ↓
-pkg_chassis_control, pkg_chassis_sensors, pkg_gnss_navigation, rover_launch_system
+chassis_control, chassis_sensors, gnss_navigation, rover_bringup
 ```
 
 **Important:** Always source `install/setup.bash` after building interface packages before building application packages.
@@ -168,7 +168,7 @@ Launch via ROS2 launch system (all nodes at once):
 cd ~/almondmatcha/ws_rpi
 source install/setup.bash
 export ROS_DOMAIN_ID=5
-ros2 launch rover_launch_system rover_startup.launch.py
+ros2 launch rover_bringup rover_startup.launch.py
 ```
 
 **Note:** This launches all nodes in a single terminal. Less visibility than tmux but suitable for automated startup.
@@ -180,23 +180,23 @@ ros2 launch rover_launch_system rover_startup.launch.py
 export ROS_DOMAIN_ID=5
 cd ~/almondmatcha/ws_rpi
 source install/setup.bash
-ros2 run pkg_chassis_control chassis_controller_node
+ros2 run chassis_control chassis_controller_node
 
 # Terminal 2: GNSS Spresense (Domain 5)
 export ROS_DOMAIN_ID=5
-ros2 run pkg_gnss_navigation gnss_spresense_node
+ros2 run gnss_navigation gnss_spresense_node
 
 # Terminal 3: GNSS Mission Monitor (Domain 5)
 export ROS_DOMAIN_ID=5
-ros2 run pkg_gnss_navigation gnss_mission_monitor_node
+ros2 run gnss_navigation gnss_mission_monitor_node
 
 # Terminal 4: Chassis IMU Logger (Domain 5)
 export ROS_DOMAIN_ID=5
-ros2 run pkg_chassis_sensors chassis_imu_node
+ros2 run chassis_sensors chassis_imu_node
 
 # Terminal 5: Chassis Sensors Logger (Domain 5)
 export ROS_DOMAIN_ID=5
-ros2 run pkg_chassis_sensors chassis_sensors_node
+ros2 run chassis_sensors chassis_sensors_node
 ```
 
 ## Configuration
@@ -407,27 +407,27 @@ ws_rpi/
 ├── launch_rover_tmux.sh         # Tmux launcher
 ├── BUILD.md                     # Detailed build documentation
 └── src/
-    ├── pkg_chassis_control/     # Motor coordination
+    ├── chassis_control/     # Motor coordination
     │   ├── src/
     │   │   └── node_chassis_controller.cpp
     │   ├── CMakeLists.txt
     │   └── package.xml
     │
-    ├── pkg_chassis_sensors/     # Sensor logging
+    ├── chassis_sensors/     # Sensor logging
     │   ├── src/
     │   │   ├── node_chassis_imu.cpp
     │   │   └── node_chassis_sensors.cpp
     │   ├── CMakeLists.txt
     │   └── package.xml
     │
-    ├── pkg_gnss_navigation/     # GPS navigation
+    ├── gnss_navigation/     # GPS navigation
     │   ├── src/
     │   │   ├── node_gnss_spresense.cpp
     │   │   └── node_gnss_mission_monitor.cpp
     │   ├── CMakeLists.txt
     │   └── package.xml
     │
-    ├── rover_launch_system/     # Launch files
+    ├── rover_bringup/     # Launch files
     │   ├── launch/
     │   │   └── rover_startup.launch.py
     │   ├── setup.py

@@ -30,14 +30,14 @@ tmux select-pane -t 0 -T "GNSS_Ublox_RTK"
 tmux send-keys -t $SESSION_NAME:0.0 "cd ~/almondmatcha/ws_rpi && source install/setup.bash" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "export ROS_DOMAIN_ID=5" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "clear && echo -e '\\e[1;36m>>> UBLOX RTK GNSS (Domain 5) <<<\\e[0m' && sleep 1" C-m
-tmux send-keys -t $SESSION_NAME:0.0 "ros2 run pkg_gnss_navigation gnss_ublox_node" C-m
+tmux send-keys -t $SESSION_NAME:0.0 "ros2 run gnss_navigation gnss_ublox_node" C-m
 
 # Pane 1 (bottom-left): Mission Monitoring (Telemetry Relay Publisher)
 tmux select-pane -t 1 -T "Mission_Monitor_RPi"
 tmux send-keys -t $SESSION_NAME:0.1 "cd ~/almondmatcha/ws_rpi && source install/setup.bash" C-m
 tmux send-keys -t $SESSION_NAME:0.1 "export ROS_DOMAIN_ID=5" C-m
 tmux send-keys -t $SESSION_NAME:0.1 "clear && echo -e '\\e[1;32m>>> MISSION MONITORING (Domain 5 - Telemetry Relay) <<<\\e[0m' && sleep 2" C-m
-tmux send-keys -t $SESSION_NAME:0.1 "ros2 run pkg_rover_monitoring mission_monitoring_node_rpi" C-m
+tmux send-keys -t $SESSION_NAME:0.1 "ros2 run rover_monitoring mission_monitoring_node_rpi" C-m
 
 # Pane 2 (right): CSV Data Logger
 tmux select-pane -t 2 -T "CSV_Logger"
@@ -46,7 +46,7 @@ tmux send-keys -t $SESSION_NAME:0.2 "export ROS_DOMAIN_ID=5" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "clear && echo -e '\\e[1;33m>>> CSV DATA LOGGER (Domain 5) <<<\\e[0m'" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "echo 'Waiting for other nodes to start...'" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "sleep 3" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "ros2 run pkg_rover_monitoring rover_monitoring_node" C-m
+tmux send-keys -t $SESSION_NAME:0.2 "ros2 run rover_monitoring rover_monitoring_node" C-m
 
 # Focus on top-left pane and attach
 tmux select-pane -t 0

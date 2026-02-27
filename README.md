@@ -177,11 +177,11 @@ almondmatcha/
 │   ├── build.sh                       # Automated build script
 │   ├── launch_rover_tmux.sh          # Tmux-based system launcher
 │   └── src/
-│       ├── pkg_chassis_control/       # Motor coordination, cruise control
-│       ├── pkg_chassis_sensors/       # Sensor data logging (IMU, encoders)
-│       ├── pkg_gnss_navigation/       # GPS waypoint navigation
-│       ├── pkg_rover_monitoring/      # Telemetry relay publisher, CSV logger
-│       └── rover_launch_system/       # ROS2 launch files
+│       ├── chassis_control/       # Motor coordination, cruise control
+│       ├── chassis_sensors/       # Sensor data logging (IMU, encoders)
+│       ├── gnss_navigation/       # GPS waypoint navigation
+│       ├── rover_monitoring/      # Telemetry relay publisher, CSV logger
+│       └── rover_bringup/       # ROS2 launch files
 │
 ├── ws_jetson/                         # Jetson Orin Nano workspace
 │   ├── README.md                      # Build & run instructions
@@ -191,7 +191,7 @@ almondmatcha/
 │   │   ├── vision_navigation_pkg/     # Lane detection, camera stream (Domain 6)
 │   │   └── config/                    # YAML configuration
 │   └── src/
-│       └── rover_monitor_pkg/         # Telemetry CSV logger (Domain 4, Python)
+│       └── rover_monitoring/         # Telemetry CSV logger (Domain 4, Python)
 │
 ├── ws_base/                           # Base station workspace
 │   ├── README.md                      # Build & run instructions
@@ -496,4 +496,4 @@ See workspace README files for detailed troubleshooting.
 ---
 
 **Last Updated:** February 26, 2026  
-**Version:** 4.1 (Tri-domain, dual CSV logging, rover_monitor_pkg on Jetson)
+**Version:** 4.1 (Tri-domain, dual CSV logging, rover_monitoring on Jetson)

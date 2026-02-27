@@ -13,7 +13,7 @@ The rover implements a **dual-tier CSV logging system** to ensure data redundanc
 
 ### Tier 1: RPi High-Fidelity Logging
 
-**Node**: `mission_monitoring_node_rpi` (pkg_rover_monitoring)  
+**Node**: `mission_monitoring_node_rpi` (rover_monitoring)  
 **Domain**: 5 (rover control domain)  
 **Location**: ws_rpi/runs/  
 **Language**: C++
@@ -51,7 +51,7 @@ ws_rpi/runs/
 
 ### Tier 2: Jetson Aggregated Logging
 
-**Node**: `rover_local_monitoring_node` (rover_monitor_pkg)  
+**Node**: `rover_local_monitoring_node` (rover_monitoring)  
 **Domain**: 4 (base telemetry domain)  
 **Location**: ws_jetson/runs/  
 **Language**: Python
@@ -186,7 +186,7 @@ Add to launch script (Domain 4 context):
 tmux new-window -t jetson:4 -n "RoveMon"
 tmux send-keys -t jetson:4 "source install/setup.bash" C-m
 tmux send-keys -t jetson:4 "export ROS_DOMAIN_ID=4" C-m
-tmux send-keys -t jetson:4 "ros2 run rover_monitor_pkg rover_local_monitoring_node" C-m
+tmux send-keys -t jetson:4 "ros2 run rover_monitoring rover_local_monitoring_node" C-m
 ```
 
 ### Base Station (ws_base)

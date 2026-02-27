@@ -1,7 +1,7 @@
 <package format="3">
-  <name>rover_launch_system</name>
+  <name>rover_bringup</name>
   <version>0.0.0</version>
-  <description>Centralized launch system for the rover.</description>
+  <description>Centralized bringup launch files for the rover.</description>
   <maintainer email="curry@todo.com">curry</maintainer>
   <license>TODO: License declaration</license>
 
