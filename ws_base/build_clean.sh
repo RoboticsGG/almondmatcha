@@ -15,11 +15,20 @@ if [ -f "/opt/ros/humble/setup.bash" ]; then
     source /opt/ros/humble/setup.bash
 fi
 
-# Build the workspace
-echo "Building ws_base workspace..."
-colcon build --symlink-install
+# Step 1: Build interface packages first
+echo "Step 1/2: Building interface packages..."
+colcon build --symlink-install --packages-select action_ifaces msgs_ifaces services_ifaces
 
-# Source the newly built setup.bash if it exists
+# Source so CMake can find interface packages in step 2
+if [ -f "install/setup.bash" ]; then
+    source install/setup.bash
+fi
+
+# Step 2: Build application packages
+echo "Step 2/2: Building application packages..."
+colcon build --symlink-install --packages-select mission_control
+
+# Re-source the final setup
 if [ -f "install/setup.bash" ]; then
     source install/setup.bash
     echo "Sourced install/setup.bash."
