@@ -38,13 +38,13 @@ private:
         // Clear screen for better display (optional - comment out if not desired)
         // std::cout << "\033[2J\033[1;1H";
         
-        RCLCPP_INFO(this->get_logger(), "");
+        RCLCPP_INFO(this->get_logger(), " ");
         RCLCPP_INFO(this->get_logger(), "╔══════════════════════════════════════════════════════════════╗");
         RCLCPP_INFO(this->get_logger(), "║              ROVER TELEMETRY DASHBOARD                       ║");
         RCLCPP_INFO(this->get_logger(), "╚══════════════════════════════════════════════════════════════╝");
         
         // Mission Status
-        RCLCPP_INFO(this->get_logger(), "");
+        RCLCPP_INFO(this->get_logger(), " ");
         RCLCPP_INFO(this->get_logger(), "┌─ Mission Status ────────────────────────────────────────────┐");
         RCLCPP_INFO(this->get_logger(), "│ Active: %s", msg->mission_active ? "YES" : "NO");
         RCLCPP_INFO(this->get_logger(), "│ Distance Remaining: %.3f km", msg->distance_remaining_km);
@@ -55,7 +55,7 @@ private:
         RCLCPP_INFO(this->get_logger(), "└─────────────────────────────────────────────────────────────┘");
         
         // GNSS Position
-        RCLCPP_INFO(this->get_logger(), "");
+        RCLCPP_INFO(this->get_logger(), " ");
         RCLCPP_INFO(this->get_logger(), "┌─ GNSS Position ─────────────────────────────────────────────┐");
         
         if (msg->ublox_valid) {
@@ -81,7 +81,7 @@ private:
         RCLCPP_INFO(this->get_logger(), "└─────────────────────────────────────────────────────────────┘");
         
         // Chassis Status
-        RCLCPP_INFO(this->get_logger(), "");
+        RCLCPP_INFO(this->get_logger(), " ");
         RCLCPP_INFO(this->get_logger(), "┌─ Chassis Status ────────────────────────────────────────────┐");
         
         if (msg->chassis_sensors_valid) {
@@ -106,7 +106,7 @@ private:
         RCLCPP_INFO(this->get_logger(), "└─────────────────────────────────────────────────────────────┘");
         
         // Vision & Navigation
-        RCLCPP_INFO(this->get_logger(), "");
+        RCLCPP_INFO(this->get_logger(), " ");
         RCLCPP_INFO(this->get_logger(), "┌─ Vision & Navigation ───────────────────────────────────────┐");
         
         if (msg->steering_valid) {
@@ -125,7 +125,7 @@ private:
         RCLCPP_INFO(this->get_logger(), "└─────────────────────────────────────────────────────────────┘");
         
         // Data freshness indicators
-        RCLCPP_INFO(this->get_logger(), "");
+        RCLCPP_INFO(this->get_logger(), " ");
         RCLCPP_INFO(this->get_logger(), "Data Status: RTK=%s | GPS=%s | Sensors=%s | IMU=%s | Steering=%s | Lane=%s",
             msg->ublox_valid ? "✓" : "✗",
             msg->spresense_valid ? "✓" : "✗",
@@ -134,7 +134,7 @@ private:
             msg->steering_valid ? "✓" : "✗",
             msg->lane_valid ? "✓" : "✗"
         );
-        RCLCPP_INFO(this->get_logger(), "");
+        RCLCPP_INFO(this->get_logger(), " ");
     }
 
     rclcpp::Subscription<msgs_ifaces::msg::TelemetryRelay>::SharedPtr sub_telemetry_relay_;
