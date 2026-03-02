@@ -32,46 +32,46 @@ volatile int32_t encoder_b_count = 0;
 
 /**
  * @brief Encoder A rising edge handler
- * 
- * Quadrature logic:
- * - If channel B is LOW: forward direction -> increment
- * - If channel B is HIGH: reverse direction -> decrement
+ *
+ * Quadrature logic (sign inverted to match physical mounting):
+ * - If channel B is HIGH: forward direction -> increment
+ * - If channel B is LOW:  reverse direction -> decrement
  */
 static void encoder_a_rise_handler() {
-    encoder_a_count += (enc_a_ch_b.read() == 0) ? 1 : -1;
-}
-
-/**
- * @brief Encoder A falling edge handler
- * 
- * Quadrature logic:
- * - If channel B is HIGH: forward direction -> increment
- * - If channel B is LOW: reverse direction -> decrement
- */
-static void encoder_a_fall_handler() {
     encoder_a_count += (enc_a_ch_b.read() == 1) ? 1 : -1;
 }
 
 /**
- * @brief Encoder B rising edge handler
- * 
- * Quadrature logic:
- * - If channel B is LOW: forward direction -> increment
+ * @brief Encoder A falling edge handler
+ *
+ * Quadrature logic (sign inverted to match physical mounting):
+ * - If channel B is LOW:  forward direction -> increment
  * - If channel B is HIGH: reverse direction -> decrement
  */
+static void encoder_a_fall_handler() {
+    encoder_a_count += (enc_a_ch_b.read() == 0) ? 1 : -1;
+}
+
+/**
+ * @brief Encoder B rising edge handler
+ *
+ * Quadrature logic (sign inverted to match physical mounting):
+ * - If channel B is HIGH: forward direction -> increment
+ * - If channel B is LOW:  reverse direction -> decrement
+ */
 static void encoder_b_rise_handler() {
-    encoder_b_count += (enc_b_ch_b.read() == 0) ? 1 : -1;
+    encoder_b_count += (enc_b_ch_b.read() == 1) ? 1 : -1;
 }
 
 /**
  * @brief Encoder B falling edge handler
- * 
- * Quadrature logic:
- * - If channel B is HIGH: forward direction -> increment
- * - If channel B is LOW: reverse direction -> decrement
+ *
+ * Quadrature logic (sign inverted to match physical mounting):
+ * - If channel B is LOW:  forward direction -> increment
+ * - If channel B is HIGH: reverse direction -> decrement
  */
 static void encoder_b_fall_handler() {
-    encoder_b_count += (enc_b_ch_b.read() == 1) ? 1 : -1;
+    encoder_b_count += (enc_b_ch_b.read() == 0) ? 1 : -1;
 }
 
 // ============================================================================
