@@ -117,8 +117,9 @@ public:
         
         // Kinematic control command (from Jetson → tpc_rover_ctrl_cmd)
         // Format: Float32MultiArray [steer_angle, speed_cmd, detected]
+        // BEST_EFFORT to match rover_kinematic_control_node.py publisher QoS
         sub_steering_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
-            "/tpc_rover_ctrl_cmd", qos_reliable,
+            "/tpc_rover_ctrl_cmd", qos_stm32,
             std::bind(&MissionMonitoringNodeRpi::steering_callback, this, std::placeholders::_1)
         );
         

@@ -132,7 +132,7 @@ private:
     // === Control State ===
     float    steer_angle_cmd_ = 0.0f;   // Steering angle in degrees from Jetson (-max to +max)
     float    speed_cmd_       = 0.0f;   // Chassis speed command (0–255) from Jetson kinematic node
-    bool     cc_rcon_msg_     = false;  // Emergency stop flag: true = mission active, halt motion
+    bool     cc_rcon_msg_     = true;   // Emergency stop flag: true = halted (safe default), false = mission active (motion allowed)
 
     // === Safety Cap (set via srv_spd_limit service) ===
     // Unit: 0–100 (STM32 motor_control.cpp divides by 100.0 to get PWM duty cycle).
@@ -155,11 +155,15 @@ private:
      */
     void cruiseControlCallback(const std::shared_ptr<std_msgs::msg::Bool> msg) {
         std::lock_guard<std::mutex> lock(data_lock_);
-        if (msg->data != cc_rcon_msg_) {
-            cc_rcon_msg_ = msg->data;
+        // mission_active = true  → allow motion (cc_rcon_msg_ = false)
+        // mission_active = false → emergency stop (cc_rcon_msg_ = true)
+        bool new_halt = !msg->data;
+        if (new_halt != cc_rcon_msg_) {
+            cc_rcon_msg_ = new_halt;
             RCLCPP_INFO(this->get_logger(),
-                       "Emergency stop flag: %s",
-                       msg->data ? "ACTIVE — halting motion" : "CLEARED — resuming normal control");
+                       "Emergency stop: %s (tpc_gnss_mission_active=%s)",
+                       new_halt ? "ACTIVE — halting motion" : "CLEARED — resuming normal control",
+                       msg->data ? "true" : "false");
         }
     }
     

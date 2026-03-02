@@ -20,6 +20,7 @@ tmux select-pane -t 3
 tmux split-window -v  # Split right into 2
 tmux split-window -v  # Split right into 3
 tmux split-window -v  # Split right into 4
+tmux split-window -v  # Split right into 5
 
 # Wait for panes to be created
 sleep 0.5
