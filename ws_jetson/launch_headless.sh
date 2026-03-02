@@ -3,6 +3,7 @@
 # Domain 6: Vision processing (camera_stream, lane_detection)
 # Domain 5: Control interface (rover_kinematic_control)
 
+source /opt/ros/humble/setup.bash
 source ~/almondmatcha/common_ifaces/install/setup.bash
 source ~/almondmatcha/ws_jetson/install/setup.bash
 
