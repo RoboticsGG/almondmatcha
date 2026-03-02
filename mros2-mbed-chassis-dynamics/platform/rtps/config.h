@@ -50,7 +50,7 @@ const uint8_t NUM_STATELESS_WRITERS = 4;
 const uint8_t NUM_STATELESS_READERS = 4;
 
 // OPTIMIZED CONFIGURATION - Domain 4/5/6 architecture
-// Domain 5 participants: 11 actual (ws_rpi=6, ws_jetson=1, ws_base=1, STM32=2, rover_monitoring=1)
+// Domain 5 participants: 11 actual (ws_rpi×7, ws_jetson×1, ws_base×1, STM32×2)
 // Memory usage: ~180-200 KB, Free: ~310-330 KB (60%+ headroom)
 const uint8_t NUM_STATEFUL_READERS = 32;              // Max endpoints for all remote writers
 const uint8_t NUM_STATEFUL_WRITERS = 28;              // Max endpoints for all remote readers
@@ -83,7 +83,7 @@ const uint16_t SPDP_RESEND_PERIOD_MS = 500;   // 500ms SPDP announcements for fa
 const uint8_t SPDP_CYCLECOUNT_HEARTBEAT =
     2; // skip x SPDP rounds before checking liveliness
 const uint8_t SPDP_WRITER_PRIO = 24;
-const uint8_t SPDP_MAX_NUMBER_FOUND_PARTICIPANTS = 14; // Match MAX_NUM_PARTICIPANTS
+const uint8_t SPDP_MAX_NUMBER_FOUND_PARTICIPANTS = 14; // MAX_NUM_PARTICIPANTS - 1 (excludes self)
 const uint8_t SPDP_MAX_NUM_LOCATORS = 5;
 const Duration_t SPDP_DEFAULT_REMOTE_LEASE_DURATION = {
     100, 0}; // Default lease duration for remote participants, usually
