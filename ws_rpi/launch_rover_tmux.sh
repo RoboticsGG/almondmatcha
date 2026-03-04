@@ -16,7 +16,7 @@ tmux split-window -h  # Split into left and right columns
 tmux select-pane -t 0
 tmux split-window -v  # Split left into 2
 tmux split-window -v  # Split left into 3
-tmux select-pane -t 3
+tmux select-pane -t 1
 tmux split-window -v  # Split right into 2
 tmux split-window -v  # Split right into 3
 tmux split-window -v  # Split right into 4
