@@ -106,7 +106,7 @@ private:
         des_long_ = 0.0;
         goal_reached_ = false;
 
-        publish_mission_status(true);
+        publish_mission_status(false);  // cancelled → halt rover
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
@@ -214,7 +214,7 @@ private:
 
             // Check if destination reached
             if (distance_km < DESTINATION_THRESHOLD_KM) {
-                publish_mission_status(true);
+                publish_mission_status(false);  // destination reached → halt rover
 
                 if (!goal_reached_) {
                     auto result = std::make_shared<DesData::Result>();
@@ -224,7 +224,7 @@ private:
                     goal_reached_ = true;
                 }
             } else {
-                publish_mission_status(false);
+                publish_mission_status(true);   // en route → allow motion
             }
 
             std::this_thread::sleep_for(std::chrono::seconds(EXECUTION_LOOP_RATE_SEC));
