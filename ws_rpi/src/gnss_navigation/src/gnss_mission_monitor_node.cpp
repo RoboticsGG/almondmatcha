@@ -181,6 +181,10 @@ private:
                 RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), POSITION_WARNING_THROTTLE_MS,
                     "Waiting for GNSS position data...");
                 publish_mission_status(true);
+                // Send keepalive feedback so the base watchdog does not cancel the goal
+                // during GPS cold-start (dis_remain = -1.0 signals "waiting for fix")
+                feedback->dis_remain = -1.0;
+                goal_handle->publish_feedback(feedback);
                 std::this_thread::sleep_for(std::chrono::seconds(EXECUTION_LOOP_RATE_SEC));
                 continue;
             }
@@ -189,6 +193,9 @@ private:
             if (!is_destination_valid()) {
                 RCLCPP_WARN(this->get_logger(), "Waiting for Destination Data...");
                 publish_mission_status(true);
+                // Keepalive feedback while destination is not yet populated
+                feedback->dis_remain = -1.0;
+                goal_handle->publish_feedback(feedback);
                 std::this_thread::sleep_for(std::chrono::seconds(EXECUTION_LOOP_RATE_SEC));
                 continue;
             }
