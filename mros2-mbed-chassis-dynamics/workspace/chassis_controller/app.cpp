@@ -177,7 +177,7 @@ void rover_control_callback(msgs_ifaces::msg::ChassisCtrl* msg) {
     rover_cmd.command_updated = true;
     rover_cmd_mutex.unlock();
     
-    MROS2_DEBUG("ROS2 CB: front=%d angle=%f back=%d speed=%d",
+    MROS2_DEBUG("\nROS2 CB: front=%d angle=%f back=%d speed=%d",
                msg->fdr_msg,
                msg->ro_ctrl_msg,
                msg->bdr_msg,
@@ -208,7 +208,7 @@ int main()
     MROS2_INFO("================================");
     MROS2_INFO("Platform: %s", MROS2_PLATFORM_NAME);
     MROS2_INFO("Node: RoverWithIMU (Domain 5)");
-    MROS2_INFO("Architecture: 2-Task (Motor Control + IMU Reader)");
+    MROS2_INFO("Tasks: 2 (Motor Control + IMU Reader)");
     MROS2_INFO("================================");
     
     // Initialize ROS2

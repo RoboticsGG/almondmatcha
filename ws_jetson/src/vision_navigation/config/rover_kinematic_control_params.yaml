@@ -10,8 +10,8 @@ rover_kinematic_control:
     
     # PID gains (control law: u = kp*e + ki*∫e*dt + kd*de/dt)
     k_p: 4.0                     # Proportional gain
-    k_i: 0.0                     # Integral gain
-    k_d: 0.0                     # Derivative gain
+    k_i: 0.01                     # Integral gain
+    k_d: 0.01                     # Derivative gain
     
     # Filtering
     ema_alpha: 0.05              # Exponential moving average smoothing (0-1)
