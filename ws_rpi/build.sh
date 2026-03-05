@@ -32,16 +32,22 @@ echo -e "${GREEN}========================================${NC}"
 # Navigate to workspace directory
 cd "$(dirname "$0")"
 
-# Option to clean build
-if [ "$1" == "clean" ]; then
-    echo -e "${YELLOW}Cleaning build, install, and log directories...${NC}"
-    rm -rf build install log
-    echo -e "${GREEN}Clean complete!${NC}"
+# Always clean before a full build to avoid symlink/directory collisions
+echo -e "${YELLOW}Cleaning build, install, and log directories...${NC}"
+rm -rf build install log
+echo -e "${GREEN}Clean complete!${NC}"
+
+# Source ROS2 base installation
+if [ -f "/opt/ros/humble/setup.bash" ]; then
+    source /opt/ros/humble/setup.bash
+else
+    echo -e "${RED}ERROR: /opt/ros/humble/setup.bash not found${NC}"
+    exit 1
 fi
 
 # Build interface packages first (they are dependencies for other packages)
 echo -e "\n${YELLOW}Step 1/2: Building interface packages...${NC}"
-colcon build --packages-select action_ifaces msgs_ifaces services_ifaces
+colcon build --symlink-install --packages-select action_ifaces msgs_ifaces services_ifaces
 
 # Source the setup file to make interfaces available
 echo -e "\n${YELLOW}Sourcing install/setup.bash...${NC}"
@@ -49,7 +55,7 @@ source install/setup.bash
 
 # Build application packages
 echo -e "\n${YELLOW}Step 2/2: Building application packages...${NC}"
-colcon build --packages-select \
+colcon build --symlink-install --packages-select \
     chassis_control \
     chassis_sensors \
     gnss_navigation \
