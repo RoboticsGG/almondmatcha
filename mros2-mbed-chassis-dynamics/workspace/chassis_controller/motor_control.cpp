@@ -96,31 +96,30 @@ std::tuple<float, uint8_t, uint8_t> calculate_motor_direction(uint8_t motor_dire
      * motor_direction: 1=forward, 2=backward, 0=stop
      * speed_percent: motor speed 0-100%
      * Returns: (motor_duty, enable_forward, enable_backward) tuple
-     * 
-     * Original working code mapping:
-     * - backDirection == 1: EN_A=1, EN_B=0 (forward)
-     * - backDirection == 2: EN_A=0, EN_B=1 (backward)
-     * - else: EN_A=0, EN_B=0 (stop)
      */
-    
-    uint8_t enable_forward = 0, enable_backward = 0;
-    float motor_duty = (float)speed_percent / 100.0f;
-    
-    if (motor_direction == 1) {
-        // Forward: enable_forward=1, enable_backward=0
-        enable_forward = 1;
-        enable_backward = 0;
-    } else if (motor_direction == 2) {
-        // Backward: enable_forward=0, enable_backward=1
-        enable_forward = 0;
-        enable_backward = 1;
-    } else {
-        // Stop: enable_forward=0, enable_backward=0
-        enable_forward = 0;
-        enable_backward = 0;
-        motor_duty = 0.0f;
+
+    uint8_t enable_forward  = 0;
+    uint8_t enable_backward = 0;
+    float   motor_duty      = (float)speed_percent / 100.0f;
+
+    switch (motor_direction) {
+        case 1:  // Forward
+            enable_forward  = 1;
+            enable_backward = 0;
+            break;
+
+        case 2:  // Backward
+            enable_forward  = 0;
+            enable_backward = 1;
+            break;
+
+        default: // Stop (0 or any unknown value)
+            enable_forward  = 0;
+            enable_backward = 0;
+            motor_duty      = 0.0f;
+            break;
     }
-    
+
     return std::make_tuple(motor_duty, enable_forward, enable_backward);
 }
 
