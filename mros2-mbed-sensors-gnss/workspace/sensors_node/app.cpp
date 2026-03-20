@@ -24,6 +24,7 @@
 #include "encoder_control.h"
 #include "power_monitor.h"
 #include "gnss_reader.h"
+#include "memory_reporter.h"  // single-domain POC: periodic heap/stack JSON to USB serial
 #include <cstdlib>
 #include <cstring>
 
@@ -189,8 +190,10 @@ int main()
   // (ws_rpi(5) + ws_base(2) + ws_jetson(3) + STM32(2) = 12 participants)
   // This fixes intermittent "no messages received" and "[Memory pool] resource limit exceed"
   // by ensuring publishers/subscribers are fully matched before data transmission starts
-  MROS2_INFO("Waiting 8 seconds for DDS participant discovery (12 participants)...");
-  osDelay(8000);  // 8 seconds = 16 SPDP cycles @ 500ms for robust discovery
+  // Single-domain POC: 15 participants total (up from 12 in baseline).
+  // 10 s = 20 SPDP cycles @ 500 ms gives comfortable margin for all nodes to discover each other.
+  MROS2_INFO("Waiting 10 seconds for DDS participant discovery (15 participants, single-domain POC)...");
+  osDelay(10000);
   MROS2_INFO("Discovery wait complete - initializing sensors");
   // ==========================================
 
@@ -223,6 +226,10 @@ int main()
 
   osDelay(1000);  // Wait for initialization to complete
   MROS2_INFO("ready to pub/sub message\r\n---");
+
+  // Single-domain POC: start memory reporter (prints heap JSON to USB serial every 2 s)
+  memory_reporter_start("sensors");
+  MROS2_INFO("Memory reporter started (2 s interval) — look for {\"type\":\"STM32_MEM\"} on serial");
 
   // ---- Main Sensor Publishing Loop ----
   // Main loop focuses on aggregating data from the three independent tasks

@@ -27,6 +27,7 @@
 
 #include "motor_control.h"
 #include "led_status.h"
+#include "memory_reporter.h"  // single-domain POC: periodic heap/stack JSON to USB serial
 
 #include <tuple>
 
@@ -235,8 +236,10 @@ int main()
     // (ws_rpi(5) + ws_base(2) + ws_jetson(3) + STM32(2) = 12 participants)
     // This fixes intermittent "no messages received" and "[Memory pool] resource limit exceed"
     // by ensuring publishers/subscribers are fully matched before data transmission starts
-    MROS2_INFO("Waiting 8 seconds for DDS participant discovery (12 participants)...");
-    osDelay(8000);  // 8 seconds = 16 SPDP cycles @ 500ms for robust discovery
+    // Single-domain POC: 15 participants total (up from 12 in baseline).
+    // 10 s = 20 SPDP cycles @ 500 ms gives comfortable margin for all nodes to discover each other.
+    MROS2_INFO("Waiting 10 seconds for DDS participant discovery (15 participants, single-domain POC)...");
+    osDelay(10000);
     MROS2_INFO("Discovery wait complete - initializing sensors");
     // ==========================================
     
@@ -270,7 +273,11 @@ int main()
     MROS2_INFO("All tasks launched - entering ROS2 spin loop");
     MROS2_INFO("Sampling rates: Motor=%ldms, IMU=%ldms (publish every %ld samples)",
                MOTOR_RESPONSE_PERIOD_MS, IMU_SAMPLE_PERIOD_MS, IMU_PUBLISH_INTERVAL);
-    
+
+    // Single-domain POC: start memory reporter (prints heap JSON to USB serial every 2 s)
+    memory_reporter_start("chassis");
+    MROS2_INFO("Memory reporter started (2 s interval) — look for {\"type\":\"STM32_MEM\"} on serial");
+
     // Main loop: Spin ROS2 communication
     mros2::spin();
     
