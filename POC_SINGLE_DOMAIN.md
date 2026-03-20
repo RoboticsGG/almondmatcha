@@ -40,15 +40,93 @@ bash build.bash
 
 ### 2. Install LTTng + ros2_tracing on each SBC
 
-Run once on each target (RPi and Jetson):
+Do this once on **both the RPi (192.168.1.1 / `curry`)** and the **Jetson (192.168.1.5 / `yupi`)**.  
+SSH in and run each block in order, or use the helper script `ws_base/tools/tracing/setup_tracing.sh`.
+
+#### 2a. LTTng kernel and userspace packages
 
 ```bash
-# From base PC — push and run setup script
-scp ws_base/tools/tracing/setup_tracing.sh curry@192.168.1.1:~
-ssh curry@192.168.1.1 "bash ~/setup_tracing.sh"
+sudo apt-get update
+sudo apt-get install -y \
+    lttng-tools \
+    lttng-modules-dkms \
+    liblttng-ust-dev \
+    python3-lttng \
+    babeltrace2
+```
 
-scp ws_base/tools/tracing/setup_tracing.sh yupi@192.168.1.5:~
-ssh yupi@192.168.1.5 "bash ~/setup_tracing.sh"
+- `lttng-tools` — the `lttng` CLI used to create/start/stop trace sessions  
+- `lttng-modules-dkms` — kernel probe modules (sched, irq, net); DKMS rebuilds them automatically on kernel upgrades  
+- `liblttng-ust-dev` — userspace tracing library; required so that ROS2 nodes compiled with tracepoints can register them at runtime  
+- `python3-lttng` — Python bindings for scripting  
+- `babeltrace2` — CTF trace reader used by `analyze_latency.py`
+
+#### 2b. ROS2 tracetools packages
+
+```bash
+sudo apt-get install -y \
+    ros-humble-tracetools \
+    ros-humble-tracetools-launch \
+    ros-humble-ros2trace \
+    ros-humble-tracetools-read \
+    ros-humble-tracetools-analysis
+```
+
+> **Note:** `ros-humble-tracetools-analysis` may not be available in the standard apt mirror for arm64.  
+> If the install fails for that package only, omit it — `analyze_latency.py` uses `babeltrace2` directly and does not depend on it.
+
+#### 2c. Add your user to the `tracing` group
+
+Without this, starting an LTTng session requires `sudo`.
+
+```bash
+sudo usermod -aG tracing $USER
+```
+
+**Log out and back in** (or run `newgrp tracing` in the current shell) for the group change to take effect.
+
+#### 2d. Load kernel probe modules
+
+The kernel modules are needed to capture scheduler and network events alongside the ROS2 userspace tracepoints.
+
+```bash
+sudo modprobe lttng-probe-sched
+sudo modprobe lttng-probe-irq
+# Persist across reboots:
+echo -e "lttng-probe-sched\nlttng-probe-irq" | sudo tee /etc/modules-load.d/lttng.conf
+```
+
+#### 2e. Verify tracepoints are visible
+
+Start a short-lived ROS2 node, then list registered userspace tracepoints:
+
+```bash
+source /opt/ros/humble/setup.bash
+# In one terminal — run any ros2 node briefly so rclcpp registers its tracepoints
+ros2 run demo_nodes_cpp talker &
+# In another terminal
+lttng list --userspace | grep ros2
+# Expected output lines like:
+#   ros2:rclcpp_publish (loglevel: TRACE_DEBUG_FUNCTION (12)) (type: tracepoint)
+#   ros2:dispatch_subscription_callback (...)
+#   ...
+kill %1
+```
+
+If no `ros2:` lines appear, verify that `ros-humble-tracetools` was installed and that the node was built with `-DTRACETOOLS_TRACEPOINTS_ENABLED=ON` (the Humble apt packages have this enabled by default).
+
+#### 2f. Quick smoke-test
+
+```bash
+lttng create test_session --output=/tmp/test_trace
+lttng enable-event --userspace 'ros2:*'
+lttng start test_session
+# run a node for a few seconds
+source /opt/ros/humble/setup.bash && ros2 run demo_nodes_cpp talker &
+sleep 5 && kill %1
+lttng stop test_session && lttng destroy test_session
+babeltrace2 /tmp/test_trace | head -20
+# Should print CTF events including ros2:rclcpp_publish lines
 ```
 
 After setup, **log out and back in** on each SBC so the `tracing` group is active.
