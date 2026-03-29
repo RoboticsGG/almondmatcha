@@ -17,14 +17,37 @@ set -e
 
 ROS_DISTRO="${ROS_DISTRO:-humble}"
 
+# Detect Jetson (Tegra BSP kernel)
+# lttng-modules-dkms cannot build against the Tegra BSP kernel because
+# linux-headers-*-tegra are NOT available as standard apt packages.
+KERNEL_VER=$(uname -r)
+echo "[INFO] Detected kernel: $KERNEL_VER"
+
+IS_TEGRA=false
+if echo "$KERNEL_VER" | grep -qi "tegra"; then
+    IS_TEGRA=true
+    echo "[INFO] Tegra/Jetson kernel detected — skipping lttng-modules-dkms"
+fi
+
 echo "=== Installing LTTng kernel/userspace tools ==="
-sudo apt-get update -qq
-sudo apt-get install -y \
-    lttng-tools \
-    lttng-modules-dkms \
-    liblttng-ust-dev \
-    python3-lttng \
-    babeltrace2
+sudo apt-get update -qq || true
+
+if [ "$IS_TEGRA" = true ]; then
+    sudo apt-get install -y \
+        lttng-tools \
+        liblttng-ust-dev \
+        python3-lttng \
+        babeltrace2
+    echo "[WARN] Kernel LTTng modules skipped — Tegra BSP kernel has no apt headers."
+    echo "       Userspace (rclcpp/rcl/rmw) tracepoints are still fully available."
+else
+    sudo apt-get install -y \
+        lttng-tools \
+        lttng-modules-dkms \
+        liblttng-ust-dev \
+        python3-lttng \
+        babeltrace2
+fi
 
 echo "=== Installing ROS2 tracetools for $ROS_DISTRO ==="
 sudo apt-get install -y \
@@ -46,6 +69,11 @@ lttng list --userspace 2>&1 | grep -i ros || \
 
 echo ""
 echo "=== Setup complete ==="
+if [ "$IS_TEGRA" = true ]; then
+    echo "Jetson: kernel tracing UNAVAILABLE (Tegra BSP kernel has no apt headers)."
+    echo "Userspace tracing (rclcpp, rcl, rmw) is fully functional."
+else
+    echo "Kernel tracing requires lttng-modules-dkms to be loaded:"
+    echo "   sudo modprobe lttng-probe-sched lttng-probe-irq"
+fi
 echo "Next: run start_trace.sh on this machine (or remotely from the base PC)."
-echo "Kernel tracing requires lttng-modules-dkms to be loaded:"
-echo "   sudo modprobe lttng-probe-sched lttng-probe-irq"
