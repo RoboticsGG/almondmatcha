@@ -85,9 +85,15 @@ sudo usermod -aG tracing $USER
 
 **Log out and back in** (or run `newgrp tracing` in the current shell) for the group change to take effect.
 
-#### 2d. Load kernel probe modules
+#### 2d. Load kernel probe modules (RPi only — skip on Jetson)
 
-The kernel modules are needed to capture scheduler and network events alongside the ROS2 userspace tracepoints.
+> **Jetson Orin Nano:** The Tegra BSP kernel (`5.15.148-tegra`) does **not** ship
+> `lttng-probe-sched` or `lttng-probe-irq`. Running `modprobe` will fail with
+> _"Module not found in directory /lib/modules/5.15.148-tegra"_.  
+> **Skip this step on the Jetson.** Userspace tracepoints (`ros2:*`, `ros2_rmw:*`)
+> are fully available and sufficient for latency/jitter measurement.
+
+On the **RPi** (standard Ubuntu kernel):
 
 ```bash
 sudo modprobe lttng-probe-sched
