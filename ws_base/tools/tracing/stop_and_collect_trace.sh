@@ -14,7 +14,7 @@ TARGET_LABEL="${TARGET_LABEL:-unknown}"
 SESSION_NAME="ros2_poc_${TARGET_LABEL}"
 
 # Read trace dir saved by start_trace.sh
-TRACE_DIR_FILE="/tmp/last_trace_dir_${TARGET_LABEL}.txt"
+TRACE_DIR_FILE="$HOME/ros2_traces/last_trace_dir_${TARGET_LABEL}.txt"
 if [ -f "$TRACE_DIR_FILE" ]; then
     REMOTE_TRACE_DIR=$(cat "$TRACE_DIR_FILE")
 else

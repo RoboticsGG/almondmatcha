@@ -21,7 +21,7 @@ set -e
 TARGET_HOST="${TARGET_HOST:-}"          # empty = run locally
 TARGET_LABEL="${TARGET_LABEL:-unknown}"
 SESSION_NAME="ros2_poc_${TARGET_LABEL}"
-TRACE_DIR="/tmp/ros2_trace_${TARGET_LABEL}_$(date +%Y%m%d_%H%M%S)"
+TRACE_DIR="\$HOME/ros2_traces/ros2_trace_${TARGET_LABEL}_$(date +%Y%m%d_%H%M%S)"
 
 # Commands to execute (either locally or via SSH)
 run_cmd() {
@@ -37,6 +37,7 @@ echo "=== Trace output: ${TRACE_DIR} ==="
 
 run_cmd "
 set -e
+mkdir -p \"\$HOME/ros2_traces\"
 source /opt/ros/humble/setup.bash 2>/dev/null || true
 
 # Destroy stale session if it exists
@@ -60,5 +61,6 @@ echo '[OK] Trace dir: ${TRACE_DIR}'
 "
 
 # Save trace dir path locally for stop script to use
-echo "${TRACE_DIR}" > /tmp/last_trace_dir_${TARGET_LABEL}.txt
-echo "Saved trace dir reference: /tmp/last_trace_dir_${TARGET_LABEL}.txt"
+mkdir -p "$HOME/ros2_traces"
+echo "${TRACE_DIR}" > "$HOME/ros2_traces/last_trace_dir_${TARGET_LABEL}.txt"
+echo "Saved trace dir reference: $HOME/ros2_traces/last_trace_dir_${TARGET_LABEL}.txt"
