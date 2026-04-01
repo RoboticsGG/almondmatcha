@@ -116,6 +116,8 @@ echo -e "lttng-probe-sched\nlttng-probe-irq" | sudo tee /etc/modules-load.d/lttn
 
 #### 2e. Verify tracepoints are visible
 
+> **Run on: RPi (`curry`) and Jetson (`orion`) — SSH in from base PC, or run directly on each SBC.**
+
 Start a short-lived ROS2 node, then list registered userspace tracepoints:
 
 ```bash
@@ -134,6 +136,8 @@ kill %1
 If no `ros2:` lines appear, verify that `ros-humble-tracetools` was installed and that the node was built with `-DTRACETOOLS_TRACEPOINTS_ENABLED=ON` (the Humble apt packages have this enabled by default).
 
 #### 2f. Quick smoke-test
+
+> **Run on: RPi (`curry`) and Jetson (`orion`) — SSH in from base PC, or run directly on each SBC.**
 
 ```bash
 lttng create test_session --output=/tmp/test_trace
