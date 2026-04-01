@@ -45,6 +45,18 @@ SSH in and run each block in order, or use the helper script `ws_base/tools/trac
 
 #### 2a. LTTng kernel and userspace packages
 
+> **Jetson Orin Nano:** `lttng-modules-dkms` will **fail** to build on the Tegra BSP kernel
+> (`5.15.148-tegra`) because `linux-headers-*-tegra` are not available as standard apt packages.
+> Use the helper script `ws_base/tools/tracing/setup_tracing.sh` which detects the Tegra kernel
+> and skips `lttng-modules-dkms` automatically. Or run the block below — it is safe on both RPi and Jetson.
+
+```bash
+# Jetson-safe: use setup_tracing.sh (auto-detects Tegra kernel)
+bash ~/almondmatcha/ws_base/tools/tracing/setup_tracing.sh
+```
+
+Or manually (RPi only — includes lttng-modules-dkms):
+
 ```bash
 sudo apt-get update
 sudo apt-get install -y \
@@ -56,7 +68,7 @@ sudo apt-get install -y \
 ```
 
 - `lttng-tools` — the `lttng` CLI used to create/start/stop trace sessions  
-- `lttng-modules-dkms` — kernel probe modules (sched, irq, net); DKMS rebuilds them automatically on kernel upgrades  
+- `lttng-modules-dkms` — kernel probe modules (sched, irq, net); **not available on Jetson Tegra BSP kernel** (skip on Jetson)  
 - `liblttng-ust-dev` — userspace tracing library; required so that ROS2 nodes compiled with tracepoints can register them at runtime  
 - `python3-lttng` — Python bindings for scripting  
 - `babeltrace2` — CTF trace reader used by `analyze_latency.py`
@@ -139,8 +151,16 @@ After setup, **log out and back in** on each SBC so the `tracing` group is activ
 
 ### 3. Python dependencies on base PC
 
+> **Note:** `babeltrace2` is **not** a pip package. Install it via apt, then install the rest with pip3.
+
 ```bash
-pip install babeltrace2 pandas numpy matplotlib
+sudo apt-get install -y babeltrace2 python3-bt2
+pip3 install pandas numpy matplotlib
+```
+
+Verify:
+```bash
+python3 -c "import bt2; print(bt2.__version__)"
 ```
 
 ---
@@ -185,12 +205,12 @@ Open two extra terminals on the base PC and SSH in:
 # Terminal A — RPi network stats
 ssh curry@192.168.1.1 \
   "python3 ~/almondmatcha/ws_base/tools/monitoring/collect_net_stats.py \
-     --iface eth0 --out /tmp/net_stats_rpi.csv"
+     --iface eth0 --out ~/ros2_traces/net_stats_rpi.csv"
 
 # Terminal B — Jetson network stats
 ssh yupi@192.168.1.5 \
   "python3 ~/almondmatcha/ws_base/tools/monitoring/collect_net_stats.py \
-     --iface eth0 --out /tmp/net_stats_jetson.csv"
+     --iface eth0 --out ~/ros2_traces/net_stats_jetson.csv"
 ```
 
 ### Step 4 — Start STM32 memory collection on base PC
@@ -199,8 +219,8 @@ Both STM32 boards are connected to the base PC via USB serial (`/dev/ttyACM0` ch
 
 ```bash
 python3 ws_base/tools/stm32_serial/collect_stm32_memory.py \
-  --ports /dev/ttyACM0 /dev/ttyACM1 \
-  --out /tmp/stm32_memory.csv
+  --chassis /dev/ttyACM0 --sensors /dev/ttyACM1 \
+  --out ~/ros2_traces/stm32_memory_poc.csv
 ```
 
 The collector filters only `{"type":"STM32_MEM",...}` JSON lines and ignores all other serial output. No suppression is needed in firmware.
@@ -220,8 +240,8 @@ TARGET_HOST=yupi@192.168.1.5   TARGET_LABEL=jetson bash ws_base/tools/tracing/st
 # Stop STM32 collector (Ctrl-C)
 
 # Pull net stats CSVs back
-scp curry@192.168.1.1:/tmp/net_stats_rpi.csv        ws_base/tools/monitoring/data/
-scp yupi@192.168.1.5:/tmp/net_stats_jetson.csv      ws_base/tools/monitoring/data/
+scp curry@192.168.1.1:~/ros2_traces/net_stats_rpi.csv        ws_base/tools/monitoring/data/poc_net_stats_rpi.csv
+scp yupi@192.168.1.5:~/ros2_traces/net_stats_jetson.csv      ws_base/tools/monitoring/data/poc_net_stats_jetson.csv
 ```
 
 ---
@@ -277,7 +297,8 @@ Key columns:
 ```bash
 python3 - << 'EOF'
 import pandas as pd
-df = pd.read_csv("/tmp/stm32_memory.csv")
+import os
+df = pd.read_csv(os.path.expanduser("~/ros2_traces/stm32_memory_poc.csv"))
 for node, g in df.groupby("node"):
     print(f"\n=== {node} ===")
     print(g[["ts_ms","heap_used","heap_max","heap_free","alloc_fail"]].describe())
@@ -290,14 +311,16 @@ Compare `heap_used` and `heap_max` between baseline and POC runs. An increase in
 
 ## Collecting Baseline Traces for Comparison
 
-To get a proper before/after comparison, repeat **Steps 2–6** on the `main` branch (with the original `launch_*_tmux.sh` scripts and unmodified firmware).
+To get a proper before/after comparison, repeat **Steps 2–6** on the `multi-domain` branch, which runs the original multi-domain architecture with the same measurement tooling.
 
 ```bash
-git checkout main
-# flash original firmware
-# launch with original scripts
-TARGET_LABEL=baseline_rpi bash ws_base/tools/tracing/start_trace.sh ...
+git checkout multi-domain
+# Rebuild and re-flash both STM32 boards from multi-domain firmware
+# Launch with multi-domain scripts
+TARGET_LABEL=rpi bash ws_base/tools/tracing/start_trace.sh
 ```
+
+See `MULTI_DOMAIN_BASELINE.md` on the `multi-domain` branch for the full guide.
 
 ---
 
