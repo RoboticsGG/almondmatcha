@@ -118,22 +118,19 @@ echo -e "lttng-probe-sched\nlttng-probe-irq" | sudo tee /etc/modules-load.d/lttn
 
 > **Run on: RPi (`curry`) and Jetson (`orion`) — SSH in from base PC, or run directly on each SBC.**
 
-Start a short-lived ROS2 node, then list registered userspace tracepoints.
+Start a short-lived ROS2 publisher, then list registered userspace tracepoints.
 
-> **Note:** `demo_nodes_cpp` is not installed on the SBCs. Use a node from the rover workspace instead.
+> **Note:** `ros2 topic pub` uses `rclcpp` internally and is always available after sourcing `/opt/ros/humble/setup.bash` — no workspace build required.
 
 ```bash
-cd ~/almondmatcha/ws_rpi        # on RPi
-# cd ~/almondmatcha/ws_jetson   # on Jetson
 source /opt/ros/humble/setup.bash
-source install/setup.bash
 export ROS_DOMAIN_ID=5
 
-# Run any rover node briefly so rclcpp registers its tracepoints
-ros2 run mission_control mission_command_node &
+# Run a publisher briefly so rclcpp registers its tracepoints
+ros2 topic pub /test std_msgs/msg/String "data: 'hi'" &
 sleep 3
 
-# In the same terminal — check registered tracepoints
+# Check registered tracepoints
 lttng list --userspace | grep ros2
 # Expected output lines like:
 #   ros2:rclcpp_publish (loglevel: TRACE_DEBUG_FUNCTION (12)) (type: tracepoint)
@@ -143,24 +140,23 @@ lttng list --userspace | grep ros2
 kill %1
 ```
 
-If no `ros2:` lines appear, verify that `ros-humble-tracetools` was installed and that the workspace was built with tracepoints enabled (the default for Humble apt packages).
+If no `ros2:` lines appear, verify that `ros-humble-tracetools` was installed and that the group change from step 2c has taken effect (`newgrp tracing` or re-login).
 
 #### 2f. Quick smoke-test
 
 > **Run on: RPi (`curry`) and Jetson (`orion`) — SSH in from base PC, or run directly on each SBC.**
 
 ```bash
-cd ~/almondmatcha/ws_rpi        # on RPi
-# cd ~/almondmatcha/ws_jetson   # on Jetson
-source /opt/ros/humble/setup.bash && source install/setup.bash
+source /opt/ros/humble/setup.bash
 export ROS_DOMAIN_ID=5
+mkdir -p ~/ros2_traces
 
 lttng create test_session --output=~/ros2_traces/test_trace
 lttng enable-event --userspace 'ros2:*'
 lttng start test_session
 
-# Run a rover node for a few seconds
-ros2 run mission_control mission_command_node &
+# Publish for a few seconds — no workspace build required
+ros2 topic pub /test std_msgs/msg/String "data: 'hi'" &
 sleep 5 && kill %1
 
 lttng stop test_session && lttng destroy test_session
