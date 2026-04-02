@@ -120,27 +120,33 @@ echo -e "lttng-probe-sched\nlttng-probe-irq" | sudo tee /etc/modules-load.d/lttn
 
 Start a short-lived ROS2 publisher, then list registered userspace tracepoints.
 
-> **Note:** `ros2 topic pub` uses `rclcpp` internally and is always available after sourcing `/opt/ros/humble/setup.bash` — no workspace build required.
+> **Note:** `lttng-sessiond` must be running **before** the ROS2 process starts — otherwise the process never registers its tracepoints with the daemon and `lttng list` returns nothing.
 
 ```bash
 source /opt/ros/humble/setup.bash
 export ROS_DOMAIN_ID=5
 
-# Run a publisher briefly so rclcpp registers its tracepoints
+# 1. Start the session daemon (safe to run even if already running)
+lttng-sessiond --daemonize 2>/dev/null; sleep 1
+
+# 2. Run a publisher so rclcpp loads and registers its tracepoints
 ros2 topic pub /test std_msgs/msg/String "data: 'hi'" &
+PUB_PID=$!
 sleep 3
 
-# Check registered tracepoints
+# 3. Check registered tracepoints (run in the same terminal)
 lttng list --userspace | grep ros2
 # Expected output lines like:
 #   ros2:rclcpp_publish (loglevel: TRACE_DEBUG_FUNCTION (12)) (type: tracepoint)
 #   ros2:dispatch_subscription_callback (...)
 #   ...
 
-kill %1
+kill $PUB_PID 2>/dev/null
 ```
 
-If no `ros2:` lines appear, verify that `ros-humble-tracetools` was installed and that the group change from step 2c has taken effect (`newgrp tracing` or re-login).
+If no `ros2:` lines appear after the above, verify:
+- `ros-humble-tracetools` is installed: `dpkg -l | grep ros-humble-tracetools`
+- The group change from step 2c has taken effect: `groups | grep tracing`
 
 #### 2f. Quick smoke-test
 
@@ -151,14 +157,20 @@ source /opt/ros/humble/setup.bash
 export ROS_DOMAIN_ID=5
 mkdir -p ~/ros2_traces
 
+# 1. Start session daemon first
+lttng-sessiond --daemonize 2>/dev/null; sleep 1
+
+# 2. Create and start a trace session
 lttng create test_session --output=~/ros2_traces/test_trace
 lttng enable-event --userspace 'ros2:*'
 lttng start test_session
 
-# Publish for a few seconds — no workspace build required
+# 3. Run a publisher — must start AFTER session daemon is up
 ros2 topic pub /test std_msgs/msg/String "data: 'hi'" &
-sleep 5 && kill %1
+PUB_PID=$!
+sleep 5 && kill $PUB_PID
 
+# 4. Stop and read the trace
 lttng stop test_session && lttng destroy test_session
 babeltrace2 ~/ros2_traces/test_trace | head -20
 # Should print CTF events including ros2:rclcpp_publish lines
