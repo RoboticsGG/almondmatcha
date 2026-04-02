@@ -40,72 +40,36 @@ bash build.bash
 
 ### 2. Install LTTng + ros2_tracing on each SBC
 
-Do this once on **both the RPi (192.168.1.1 / `curry`)** and the **Jetson (192.168.1.5 / `yupi`)**.  
-SSH in and run each block in order, or use the helper script `ws_base/tools/tracing/setup_tracing.sh`.
+> **Run every step directly on the SBC** (SSH in from base PC or run locally).  
+> Do this once on **both the RPi (`curry`)** and the **Jetson (`orion`)**.
 
-#### 2a. LTTng kernel and userspace packages
+#### 2a. Install all packages
 
-> **Jetson Orin Nano:** `lttng-modules-dkms` will **fail** to build on the Tegra BSP kernel
-> (`5.15.148-tegra`) because `linux-headers-*-tegra` are not available as standard apt packages.
-> Use the helper script `ws_base/tools/tracing/setup_tracing.sh` which detects the Tegra kernel
-> and skips `lttng-modules-dkms` automatically. Or run the block below — it is safe on both RPi and Jetson.
+The helper script auto-detects the Tegra BSP kernel on Jetson and skips `lttng-modules-dkms` (which cannot build against it). It installs everything in one shot:
 
 ```bash
-# Jetson-safe: use setup_tracing.sh (auto-detects Tegra kernel)
-bash ~/almondmatcha/ws_base/tools/tracing/setup_tracing.sh
+cd ~/almondmatcha && git pull
+bash ws_base/tools/tracing/setup_tracing.sh
 ```
 
-Or manually (RPi only — includes lttng-modules-dkms):
+This installs: `lttng-tools`, `liblttng-ust-dev`, `python3-lttng`, `babeltrace2`, `lttng-modules-dkms` (**RPi only**), and all `ros-humble-tracetools*` packages.
 
-```bash
-sudo apt-get update
-sudo apt-get install -y \
-    lttng-tools \
-    lttng-modules-dkms \
-    liblttng-ust-dev \
-    python3-lttng \
-    babeltrace2
-```
-
-- `lttng-tools` — the `lttng` CLI used to create/start/stop trace sessions  
-- `lttng-modules-dkms` — kernel probe modules (sched, irq, net); **not available on Jetson Tegra BSP kernel** (skip on Jetson)  
-- `liblttng-ust-dev` — userspace tracing library; required so that ROS2 nodes compiled with tracepoints can register them at runtime  
-- `python3-lttng` — Python bindings for scripting  
-- `babeltrace2` — CTF trace reader used by `analyze_latency.py`
-
-#### 2b. ROS2 tracetools packages
-
-```bash
-sudo apt-get install -y \
-    ros-humble-tracetools \
-    ros-humble-tracetools-launch \
-    ros-humble-ros2trace \
-    ros-humble-tracetools-read \
-    ros-humble-tracetools-analysis
-```
-
-> **Note:** `ros-humble-tracetools-analysis` may not be available in the standard apt mirror for arm64.  
-> If the install fails for that package only, omit it — `analyze_latency.py` uses `babeltrace2` directly and does not depend on it.
-
-#### 2c. Add your user to the `tracing` group
-
-Without this, starting an LTTng session requires `sudo`.
+#### 2b. Add user to the `tracing` group
 
 ```bash
 sudo usermod -aG tracing $USER
+newgrp tracing   # apply immediately in current shell
 ```
 
-**Log out and back in** (or run `newgrp tracing` in the current shell) for the group change to take effect.
+> **Also log out and back in** so the group change is permanent across all shells.
 
-#### 2d. Load kernel probe modules (RPi only — skip on Jetson)
+#### 2c. Load kernel probe modules (RPi only — skip on Jetson)
 
 > **Jetson Orin Nano:** The Tegra BSP kernel (`5.15.148-tegra`) does **not** ship
-> `lttng-probe-sched` or `lttng-probe-irq`. Running `modprobe` will fail with
-> _"Module not found in directory /lib/modules/5.15.148-tegra"_.  
-> **Skip this step on the Jetson.** Userspace tracepoints (`ros2:*`, `ros2_rmw:*`)
-> are fully available and sufficient for latency/jitter measurement.
+> `lttng-probe-sched` or `lttng-probe-irq`. **Skip this entire step on the Jetson.**  
+> Userspace tracepoints (`ros2:*`) are sufficient for latency/jitter measurement.
 
-On the **RPi** (standard Ubuntu kernel):
+On the **RPi** only:
 
 ```bash
 sudo modprobe lttng-probe-sched
@@ -114,69 +78,80 @@ sudo modprobe lttng-probe-irq
 echo -e "lttng-probe-sched\nlttng-probe-irq" | sudo tee /etc/modules-load.d/lttng.conf
 ```
 
-#### 2e. Verify tracepoints are visible
-
-> **Run on: RPi (`curry`) and Jetson (`orion`) — SSH in from base PC, or run directly on each SBC.**
-
-Start a short-lived ROS2 publisher, then list registered userspace tracepoints.
-
-> **Note:** `lttng-sessiond` must be running **before** the ROS2 process starts — otherwise the process never registers its tracepoints with the daemon and `lttng list` returns nothing.
+#### 2d. Verify installation (no running nodes needed)
 
 ```bash
+# Check lttng is installed
+lttng --version
+
+# Check you are in the tracing group (must show 'tracing')
+groups
+
+# Check ros2 tracetools packages are installed
 source /opt/ros/humble/setup.bash
-export ROS_DOMAIN_ID=5
+dpkg -l | grep ros-humble-tracetools | awk '{print $2, $3}'
+# Expected: at least ros-humble-tracetools and ros-humble-ros2trace
 
-# 1. Start the session daemon (safe to run even if already running)
-lttng-sessiond --daemonize 2>/dev/null; sleep 1
-
-# 2. Run a publisher so rclcpp loads and registers its tracepoints
-ros2 topic pub /test std_msgs/msg/String "data: 'hi'" &
-PUB_PID=$!
-sleep 3
-
-# 3. Check registered tracepoints (run in the same terminal)
-lttng list --userspace | grep ros2
-# Expected output lines like:
-#   ros2:rclcpp_publish (loglevel: TRACE_DEBUG_FUNCTION (12)) (type: tracepoint)
-#   ros2:dispatch_subscription_callback (...)
-#   ...
-
-kill $PUB_PID 2>/dev/null
+# Check liblttng-ust is present
+ldconfig -p | grep lttng-ust
+# Expected: liblttng-ust.so.1 ...
 ```
 
-If no `ros2:` lines appear after the above, verify:
-- `ros-humble-tracetools` is installed: `dpkg -l | grep ros-humble-tracetools`
-- The group change from step 2c has taken effect: `groups | grep tracing`
-
-#### 2f. Quick smoke-test
-
-> **Run on: RPi (`curry`) and Jetson (`orion`) — SSH in from base PC, or run directly on each SBC.**
+#### 2e. Start session daemon and verify it accepts commands
 
 ```bash
+lttng-sessiond --daemonize; sleep 1
+lttng list
+# Expected: "Currently no available recording session"
+# This is CORRECT — it means the daemon is running and responding.
+# "No session" just means no trace session has been created yet.
+```
+
+#### 2f. Smoke-test with a C++ rover node (RPi only — requires workspace built)
+
+> **Why C++ only?**  
+> The `ros2:*` LTTng tracepoints are instrumented in `rclcpp` (the C++ client library).  
+> Python nodes (`rclpy`) do **not** emit `ros2:*` events. Since all Jetson nodes in this  
+> project are Python, **the smoke-test is RPi only**. The tracing infrastructure on Jetson  
+> is still valid — it will capture `ros2_rmw:*` events from CycloneDDS at the middleware layer.
+
+> **If the RPi workspace is not yet built**, skip this step. The tracepoints will be  
+> confirmed during Step 2 of the experiment when the rover nodes are running.
+
+On **RPi only** (workspace must be built):
+
+```bash
+cd ~/almondmatcha/ws_rpi
 source /opt/ros/humble/setup.bash
+source install/setup.bash
 export ROS_DOMAIN_ID=5
 mkdir -p ~/ros2_traces
 
-# 1. Start session daemon first
-lttng-sessiond --daemonize 2>/dev/null; sleep 1
-
-# 2. Create and start a trace session
+# Create and start a trace session
 lttng create test_session --output=~/ros2_traces/test_trace
 lttng enable-event --userspace 'ros2:*'
 lttng start test_session
 
-# 3. Run a publisher — must start AFTER session daemon is up
-ros2 topic pub /test std_msgs/msg/String "data: 'hi'" &
-PUB_PID=$!
-sleep 5 && kill $PUB_PID
+# Run a C++ rover node briefly
+ros2 run rover_monitoring rover_monitoring_node &
+NODE_PID=$!
+sleep 5 && kill $NODE_PID
 
-# 4. Stop and read the trace
+# Stop and verify
 lttng stop test_session && lttng destroy test_session
-babeltrace2 ~/ros2_traces/test_trace | head -20
-# Should print CTF events including ros2:rclcpp_publish lines
+babeltrace2 ~/ros2_traces/test_trace | head -30
+# Should print CTF event lines including: ros2:rclcpp_publish, ros2:rcl_timer_init, etc.
 ```
 
-After setup, **log out and back in** on each SBC so the `tracing` group is active.
+**On Jetson — skip 2f and just verify the daemon responds:**
+
+```bash
+# All ws_jetson nodes are Python (rclpy) — no ros2:rclcpp_* tracepoints.
+# Just confirm the infrastructure is ready:
+lttng-sessiond --daemonize 2>/dev/null; sleep 1
+lttng list
+# Expected: "Currently no available recording session" — daemon is running
+```
 
 ### 3. Python dependencies on base PC
 
