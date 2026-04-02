@@ -118,36 +118,53 @@ echo -e "lttng-probe-sched\nlttng-probe-irq" | sudo tee /etc/modules-load.d/lttn
 
 > **Run on: RPi (`curry`) and Jetson (`orion`) — SSH in from base PC, or run directly on each SBC.**
 
-Start a short-lived ROS2 node, then list registered userspace tracepoints:
+Start a short-lived ROS2 node, then list registered userspace tracepoints.
+
+> **Note:** `demo_nodes_cpp` is not installed on the SBCs. Use a node from the rover workspace instead.
 
 ```bash
+cd ~/almondmatcha/ws_rpi        # on RPi
+# cd ~/almondmatcha/ws_jetson   # on Jetson
 source /opt/ros/humble/setup.bash
-# In one terminal — run any ros2 node briefly so rclcpp registers its tracepoints
-ros2 run demo_nodes_cpp talker &
-# In another terminal
+source install/setup.bash
+export ROS_DOMAIN_ID=5
+
+# Run any rover node briefly so rclcpp registers its tracepoints
+ros2 run mission_control mission_command_node &
+sleep 3
+
+# In the same terminal — check registered tracepoints
 lttng list --userspace | grep ros2
 # Expected output lines like:
 #   ros2:rclcpp_publish (loglevel: TRACE_DEBUG_FUNCTION (12)) (type: tracepoint)
 #   ros2:dispatch_subscription_callback (...)
 #   ...
+
 kill %1
 ```
 
-If no `ros2:` lines appear, verify that `ros-humble-tracetools` was installed and that the node was built with `-DTRACETOOLS_TRACEPOINTS_ENABLED=ON` (the Humble apt packages have this enabled by default).
+If no `ros2:` lines appear, verify that `ros-humble-tracetools` was installed and that the workspace was built with tracepoints enabled (the default for Humble apt packages).
 
 #### 2f. Quick smoke-test
 
 > **Run on: RPi (`curry`) and Jetson (`orion`) — SSH in from base PC, or run directly on each SBC.**
 
 ```bash
-lttng create test_session --output=/tmp/test_trace
+cd ~/almondmatcha/ws_rpi        # on RPi
+# cd ~/almondmatcha/ws_jetson   # on Jetson
+source /opt/ros/humble/setup.bash && source install/setup.bash
+export ROS_DOMAIN_ID=5
+
+lttng create test_session --output=~/ros2_traces/test_trace
 lttng enable-event --userspace 'ros2:*'
 lttng start test_session
-# run a node for a few seconds
-source /opt/ros/humble/setup.bash && ros2 run demo_nodes_cpp talker &
+
+# Run a rover node for a few seconds
+ros2 run mission_control mission_command_node &
 sleep 5 && kill %1
+
 lttng stop test_session && lttng destroy test_session
-babeltrace2 /tmp/test_trace | head -20
+babeltrace2 ~/ros2_traces/test_trace | head -20
 # Should print CTF events including ros2:rclcpp_publish lines
 ```
 
