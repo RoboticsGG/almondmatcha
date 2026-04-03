@@ -18,6 +18,73 @@
 
 ---
 
+## What is Measured
+
+Five independent collectors run in parallel. Each targets a different layer of the system.
+
+### 1. ROS2 message jitter and end-to-end latency — `collect_latency.py` (on SBC)
+
+Source: `rclpy` subscriber callback wall-clock time (`time.time()` — NTP epoch float).
+
+| Metric | Column | Topics | Meaning |
+|---|---|---|---|
+| **Inter-arrival interval** | `interval_ms` | all | Time between consecutive messages on the same topic. Std-dev of this is the primary jitter metric — high std-dev means DDS scheduling is unstable. |
+| **End-to-end latency** | `latency_ms` | `/tpc_telemetry_relay` only | `recv_time − header.stamp`. Measures how long a publisher-stamped message takes to reach the subscriber. Only available for message types that carry `header.stamp`. |
+| Receive wall-clock | `recv_time_s` | all | Absolute NTP-aligned timestamp; used as the sync anchor in `--merge` mode. |
+
+> **Why only `/tpc_telemetry_relay` for latency?** It is the only project message type whose
+> definition includes a `header.stamp` field. All other message types (`ChassisIMU`,
+> `ChassisSensors`, etc.) carry raw sensor values only — the publisher timestamp is not
+> embedded in the payload, so latency cannot be computed from the message content alone.
+
+### 2. Network interface bandwidth and socket buffer pressure — `collect_net_stats.py` (on SBC)
+
+Source: `/proc/net/dev` (interface counters) + `/proc/net/udp` (per-socket kernel buffers), sampled every 0.5 s.
+
+| Metric | Column | Meaning |
+|---|---|---|
+| **RX / TX bandwidth** | `rx_bps`, `tx_bps` | Bytes per second on `eth0`. Indicates how much extra traffic the domain consolidation adds (especially camera frames at 30 FPS joining D5). |
+| **Interface packet drops** | `rx_drop`, `tx_drop` | Cumulative kernel-level drops at the NIC ring buffer. Non-zero = the SBC is falling behind at the driver layer. Should stay 0. |
+| Interface errors | `rx_errs`, `tx_errs` | Hardware-level CRC / frame errors. Should stay 0. |
+| **UDP socket count** | `udp_sockets` | Number of open UDP sockets. DDS opens one socket per topic per participant; an increase vs baseline reveals the cost of extra participants in one domain. |
+| **Max per-socket RX buffer fill** | `max_rx_queue` | Bytes sitting unread in the largest UDP receive buffer on the SBC (`/proc/net/udp`). Non-zero means the application layer is not draining the kernel buffer fast enough — backpressure. |
+| Total RX / TX queue | `total_rx_queue`, `total_tx_queue` | Sum across all UDP sockets. Complements `max_rx_queue`. |
+| SS UDP total | `ss_udp_total` | Cross-check from `ss -s`; total UDP socket count from the kernel's socket layer. |
+
+> **Why `max_rx_queue` matters:** When DDS adds more topics to a single domain the kernel
+> must demultiplex more UDP multicast streams on the same interface. If `max_rx_queue` grows
+> non-zero in the POC but stays zero in the baseline, the extra participants are creating
+> buffer pressure — a precursor to dropped DDS messages.
+
+### 3. STM32 RTPS heap and stack footprint — `collect_stm32_memory.py` (base PC, USB serial)
+
+Source: `memory_reporter.h` firmware thread, emits one `{"type":"STM32_MEM",...}` JSON line per second over UART.
+
+| Metric | Column | Meaning |
+|---|---|---|
+| **Heap used** | `heap_used` (bytes) | Current mbed heap allocation. Rises during RTPS discovery as participant proxy structs are allocated. |
+| **Heap high-water mark** | `heap_max` (bytes) | Peak allocated since boot. Set during the 10-second discovery window and never released — the key comparison figure between baseline and POC. |
+| Heap free | `heap_free` (bytes) | `total_heap − heap_used`. Negative trend = leak risk. |
+| **Alloc failures** | `alloc_fail` | Count of failed `malloc` calls. Any non-zero value means the RTPS pool is exhausted — critical failure indicator. |
+| Stack free (minimum) | `stack_free` (bytes) | Minimum free stack across all RTOS threads. Non-zero headroom required; too-small value risks stack overflow under domain-consolidation load. |
+| Board uptime | `ts_ms` | STM32 uptime in ms (no RTC). Used for relative timing within a single board run; `wall_clock` (base PC NTP time) is used for cross-source alignment. |
+
+> **Why the discovery window is critical:** `MAX_NUM_PARTICIPANTS` was raised from 15 → 20.
+> Each additional remote participant causes the RTPS stack to allocate writer/reader proxy
+> structs in a statically-bounded pool. If the POC's `heap_max` exceeds the baseline's by
+> more than the pool-size increase predicts, it indicates unexpected allocation elsewhere
+> (e.g. larger RTPS history caches under higher topic count).
+
+### Summary table
+
+| Layer | Tool | Collector runs on | Primary POC question |
+|---|---|---|---|
+| ROS2 message timing | `collect_latency.py` | RPi, Jetson | Does single-domain increase jitter or latency? |
+| Linux NIC / socket buffers | `collect_net_stats.py` | RPi, Jetson | Do extra participants fill UDP buffers or drop packets? |
+| STM32 RTPS heap | `collect_stm32_memory.py` | Base PC (USB serial) | Does `MAX_NUM_PARTICIPANTS=20` leave enough heap headroom? |
+
+---
+
 ## Prerequisites
 
 ### 1. Flash STM32 firmware (both boards)
