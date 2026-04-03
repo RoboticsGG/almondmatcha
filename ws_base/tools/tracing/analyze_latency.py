@@ -30,6 +30,21 @@ Note on metrics:
     interval_ms (inter-arrival jitter) is available for ALL topics.
     latency_ms  (header.stamp → recv)  is only available for TelemetryRelay
     (/tpc_telemetry_relay), the only project message type with a header.stamp field.
+
+
+Unified timeline (--merge):
+    Synchronises all four collectors onto one time axis and produces a single
+    multi-panel PNG (unified_timeline.png).  All Linux hosts use NTP so their
+    wall-clocks are already aligned to ~1–10 ms.  The STM32 has no RTC; its
+    wall_clock column is the base-PC receive time and is used directly.
+
+    python3 analyze_latency.py --merge \\
+        --latency-rpi    ws_base/tools/tracing/data/poc_latency_rpi.csv \\
+        --latency-jetson ws_base/tools/tracing/data/poc_latency_jetson.csv \\
+        --stm32          ~/ros2_traces/stm32_memory_poc.csv \\
+        --net-rpi        ws_base/tools/monitoring/data/poc_net_stats_rpi.csv \\
+        --net-jetson     ws_base/tools/monitoring/data/poc_net_stats_jetson.csv \\
+        --out-dir        ws_base/tools/tracing/results/
 """
 
 import argparse
@@ -37,6 +52,7 @@ import csv
 import statistics
 import sys
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 try:
@@ -49,7 +65,7 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
-# CSV loading
+# CSV loading — jitter/latency (existing)
 # ---------------------------------------------------------------------------
 
 def load_csv(path: Path, topics_filter=None):
@@ -78,6 +94,87 @@ def load_csv(path: Path, topics_filter=None):
                 pass
 
     return dict(latencies), dict(intervals)
+
+
+# ---------------------------------------------------------------------------
+# CSV loading — merge mode (time-synced)
+# ---------------------------------------------------------------------------
+
+def _iso_to_epoch(s: str) -> float:
+    """Parse datetime.utcnow().isoformat() string → UNIX epoch float (UTC).
+    Both collect_net_stats.py and collect_stm32_memory.py write naive UTC ISO
+    strings. We add UTC tzinfo so timestamp() returns the correct epoch."""
+    dt = datetime.fromisoformat(s)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.timestamp()
+
+
+def load_latency_timeseries(path: Path, topics_filter=None):
+    """Load collect_latency.py CSV as a per-topic time-series.
+    recv_time_s is already a UNIX epoch float (time.time() on the SBC) — no
+    conversion needed; NTP keeps RPi/Jetson clocks within ~1–10 ms of UTC.
+    Returns: {topic: [(t_epoch_s, interval_ms), ...]}
+    """
+    series = defaultdict(list)
+    with open(path, newline='') as f:
+        for row in csv.DictReader(f):
+            topic = row.get('topic', '')
+            if topics_filter and topic not in topics_filter:
+                continue
+            try:
+                t = float(row['recv_time_s'])
+                if row.get('interval_ms'):
+                    series[topic].append((t, float(row['interval_ms'])))
+            except (ValueError, KeyError):
+                pass
+    return dict(series)
+
+
+def load_stm32_csv(path: Path):
+    """Load collect_stm32_memory.py CSV.
+    wall_clock is datetime.utcnow().isoformat() on the base PC — used directly
+    as the absolute timestamp (NTP-synced).  ts_ms (STM32 uptime) is kept for
+    reference but wall_clock is the sync anchor.
+    Returns: list of dicts with keys: t_epoch, node, heap_used_kb, heap_max_kb
+    """
+    rows = []
+    with open(path, newline='') as f:
+        for row in csv.DictReader(f):
+            try:
+                rows.append({
+                    't_epoch':     _iso_to_epoch(row['wall_clock']),
+                    'node':        row.get('node', ''),
+                    'heap_used_kb': int(row['heap_used']) // 1024
+                                   if row.get('heap_used') else None,
+                    'heap_max_kb':  int(row['heap_max'])  // 1024
+                                   if row.get('heap_max')  else None,
+                    'ts_ms':       int(row['ts_ms']) if row.get('ts_ms') else None,
+                })
+            except (ValueError, KeyError):
+                pass
+    return rows
+
+
+def load_net_csv(path: Path, label: str):
+    """Load collect_net_stats.py CSV.
+    timestamp is datetime.utcnow().isoformat() on the SBC (NTP-synced).
+    rx_bps / tx_bps are bytes/s already computed by the collector.
+    Returns: list of dicts with keys: t_epoch, rx_kbps, tx_kbps, label
+    """
+    rows = []
+    with open(path, newline='') as f:
+        for row in csv.DictReader(f):
+            try:
+                rows.append({
+                    't_epoch':  _iso_to_epoch(row['timestamp']),
+                    'rx_kbps':  float(row['rx_bps']) / 1024 if row.get('rx_bps') else 0.0,
+                    'tx_kbps':  float(row['tx_bps']) / 1024 if row.get('tx_bps') else 0.0,
+                    'label':    label,
+                })
+            except (ValueError, KeyError):
+                pass
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -200,6 +297,162 @@ def plot_jitter(raw_intervals_per_label: dict, out_path: Path):
     print(f'[OK] Plot → {out_path}')
 
 
+def _rolling_mean(xs: list, ys: list, window: int = 15):
+    """Simple centered rolling mean — no numpy needed."""
+    half = window // 2
+    ys_out = []
+    for i in range(len(ys)):
+        lo = max(0, i - half)
+        hi = min(len(ys), i + half + 1)
+        ys_out.append(sum(ys[lo:hi]) / (hi - lo))
+    return xs, ys_out
+
+
+def plot_unified_timeline(
+    latency_rpi=None,       # {topic: [(t_epoch_s, interval_ms), ...]}
+    latency_jetson=None,
+    stm32_rows=None,        # [{'t_epoch', 'node', 'heap_used_kb', 'heap_max_kb'}, ...]
+    net_rpi=None,           # [{'t_epoch', 'rx_kbps', 'tx_kbps'}, ...]
+    net_jetson=None,
+    out_path=None,
+):
+    """Synchronise all collectors onto a common elapsed-seconds x-axis and
+    produce a stacked multi-panel PNG.
+
+    Time sync rationale:
+      - collect_latency.py  → recv_time_s is time.time() (NTP epoch float)
+      - collect_net_stats.py → timestamp is datetime.utcnow() ISO (NTP)
+      - collect_stm32_memory.py → wall_clock is datetime.utcnow() ISO on base PC (NTP)
+        STM32 ts_ms is board uptime ms (no RTC); wall_clock is the sync anchor.
+    All Linux hosts are NTP-synced → clocks differ by ~1–10 ms, acceptable for
+    a seconds-scale timeline.  Global t_min is subtracted so x=0 is the first
+    recorded event across all datasets.
+    """
+    if not HAS_MATPLOTLIB:
+        print('[WARN] matplotlib not available — skipping unified timeline plot')
+        return
+
+    if out_path is None:
+        out_path = Path('unified_timeline.png')
+
+    # Determine which panels we have data for
+    panels = []
+    if latency_rpi:
+        panels.append('rpi_jitter')
+    if latency_jetson:
+        panels.append('jetson_jitter')
+    if stm32_rows:
+        panels.append('stm32_heap')
+    if net_rpi or net_jetson:
+        panels.append('net_bw')
+
+    if not panels:
+        print('[WARN] --merge: no data provided — nothing to plot')
+        return
+
+    # Find global t_min across every dataset
+    all_t = []
+    for src in (latency_rpi, latency_jetson):
+        if src:
+            for pts in src.values():
+                all_t.extend(t for t, _ in pts)
+    for src in (stm32_rows, net_rpi, net_jetson):
+        if src:
+            all_t.extend(r['t_epoch'] for r in src)
+    t_min = min(all_t)
+
+    n = len(panels)
+    fig, raw_axes = plt.subplots(n, 1, figsize=(15, 4 * n), sharex=True)
+    axes = [raw_axes] if n == 1 else list(raw_axes)
+    ax_map = dict(zip(panels, axes))
+    cmap = plt.cm.tab10.colors
+
+    # ── RPi jitter ────────────────────────────────────────────────────────────
+    if 'rpi_jitter' in ax_map:
+        ax = ax_map['rpi_jitter']
+        for i, (topic, pts) in enumerate(sorted(latency_rpi.items())):
+            if not pts:
+                continue
+            xs = [t - t_min for t, _ in pts]
+            ys = [v for _, v in pts]
+            c = cmap[i % len(cmap)]
+            ax.scatter(xs, ys, s=5, alpha=0.30, color=c)
+            _, ys_s = _rolling_mean(xs, ys)
+            ax.plot(xs, ys_s, linewidth=1.3, color=c, label=topic.lstrip('/'))
+        ax.set_ylabel('Interval (ms)')
+        ax.set_title('RPi — per-topic inter-arrival interval')
+        ax.legend(fontsize=7, loc='upper right')
+        ax.grid(True, alpha=0.25)
+
+    # ── Jetson jitter ─────────────────────────────────────────────────────────
+    if 'jetson_jitter' in ax_map:
+        ax = ax_map['jetson_jitter']
+        for i, (topic, pts) in enumerate(sorted(latency_jetson.items())):
+            if not pts:
+                continue
+            xs = [t - t_min for t, _ in pts]
+            ys = [v for _, v in pts]
+            c = cmap[i % len(cmap)]
+            ax.scatter(xs, ys, s=5, alpha=0.30, color=c)
+            _, ys_s = _rolling_mean(xs, ys)
+            ax.plot(xs, ys_s, linewidth=1.3, color=c, label=topic.lstrip('/'))
+        ax.set_ylabel('Interval (ms)')
+        ax.set_title('Jetson — per-topic inter-arrival interval')
+        ax.legend(fontsize=7, loc='upper right')
+        ax.grid(True, alpha=0.25)
+
+    # ── STM32 heap ────────────────────────────────────────────────────────────
+    if 'stm32_heap' in ax_map:
+        ax = ax_map['stm32_heap']
+        nodes = sorted({r['node'] for r in stm32_rows})
+        for i, node in enumerate(nodes):
+            c = cmap[i % len(cmap)]
+            used_pts = [(r['t_epoch'] - t_min, r['heap_used_kb'])
+                        for r in stm32_rows
+                        if r['node'] == node and r['heap_used_kb'] is not None]
+            if used_pts:
+                xs, ys = zip(*used_pts)
+                ax.plot(xs, ys, linewidth=1.5, color=c, label=f'{node} used')
+            max_pts = [(r['t_epoch'] - t_min, r['heap_max_kb'])
+                       for r in stm32_rows
+                       if r['node'] == node and r['heap_max_kb'] is not None]
+            if max_pts:
+                xs, ys = zip(*max_pts)
+                ax.plot(xs, ys, linewidth=0.9, color=c, linestyle='--',
+                        alpha=0.6, label=f'{node} high-water')
+        ax.set_ylabel('Heap (KB)')
+        ax.set_title('STM32 — heap during discovery ramp + steady-state')
+        ax.legend(fontsize=7, loc='upper right')
+        ax.grid(True, alpha=0.25)
+
+    # ── Network bandwidth ─────────────────────────────────────────────────────
+    if 'net_bw' in ax_map:
+        ax = ax_map['net_bw']
+        color_idx = 0
+        for rows, lbl in [(net_rpi, 'RPi'), (net_jetson, 'Jetson')]:
+            if not rows:
+                continue
+            xs = [r['t_epoch'] - t_min for r in rows]
+            rx = [r['rx_kbps'] for r in rows]
+            tx = [r['tx_kbps'] for r in rows]
+            c = cmap[color_idx % len(cmap)]
+            ax.plot(xs, rx, linewidth=1.2, color=c,
+                    label=f'{lbl} rx')
+            ax.plot(xs, tx, linewidth=1.2, color=c, linestyle='--',
+                    label=f'{lbl} tx')
+            color_idx += 2
+        ax.set_ylabel('Bandwidth (KB/s)')
+        ax.set_title('Network — rx / tx per SBC')
+        ax.legend(fontsize=7, loc='upper right')
+        ax.grid(True, alpha=0.25)
+
+    axes[-1].set_xlabel('Elapsed time (s) — NTP-aligned across all collectors')
+    fig.suptitle('Unified Timeline — Single-Domain POC', fontsize=12)
+    plt.tight_layout()
+    plt.savefig(str(out_path), dpi=150, bbox_inches='tight')
+    print(f'[OK] Unified timeline → {out_path}')
+
+
 # ---------------------------------------------------------------------------
 # Analysis runner
 # ---------------------------------------------------------------------------
@@ -230,16 +483,29 @@ def main():
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument('--csv',      type=Path, help='Single CSV file to analyze')
-    ap.add_argument('--baseline', type=Path, help='Baseline CSV (multi-domain)')
-    ap.add_argument('--poc',      type=Path, help='POC CSV (single-domain)')
-    ap.add_argument('--topics',   nargs='*', help='Filter to these topic names only')
-    ap.add_argument('--out-dir',  type=Path, default=Path('.'),
+    ap.add_argument('--csv',            type=Path, help='Single CSV file to analyze')
+    ap.add_argument('--baseline',       type=Path, help='Baseline CSV (multi-domain)')
+    ap.add_argument('--poc',            type=Path, help='POC CSV (single-domain)')
+    ap.add_argument('--topics',         nargs='*', help='Filter to these topic names only')
+    ap.add_argument('--out-dir',        type=Path, default=Path('.'),
                     help='Directory for output files (default: .)')
+    # ── Unified timeline (--merge) ────────────────────────────────────────────
+    ap.add_argument('--merge',          action='store_true',
+                    help='Produce NTP-aligned unified timeline from all collectors')
+    ap.add_argument('--latency-rpi',    type=Path,
+                    help='Merge: collect_latency.py CSV from RPi')
+    ap.add_argument('--latency-jetson', type=Path,
+                    help='Merge: collect_latency.py CSV from Jetson')
+    ap.add_argument('--stm32',          type=Path,
+                    help='Merge: collect_stm32_memory.py CSV')
+    ap.add_argument('--net-rpi',        type=Path,
+                    help='Merge: collect_net_stats.py CSV from RPi')
+    ap.add_argument('--net-jetson',     type=Path,
+                    help='Merge: collect_net_stats.py CSV from Jetson')
     args = ap.parse_args()
 
-    if not args.csv and not args.baseline and not args.poc:
-        ap.error('Provide --csv or at least one of --baseline / --poc')
+    if not args.csv and not args.baseline and not args.poc and not args.merge:
+        ap.error('Provide --csv, --baseline/--poc, or --merge')
 
     topics_filter = set(args.topics) if args.topics else None
     out_dir = args.out_dir
@@ -280,6 +546,25 @@ def main():
 
     if len(raw_jitter_per_label) > 1:
         plot_jitter(raw_jitter_per_label, out_dir / 'jitter_boxplot.png')
+
+    # ── Unified timeline (--merge) ────────────────────────────────────────────
+    if args.merge:
+        lat_rpi    = (load_latency_timeseries(args.latency_rpi,    topics_filter)
+                      if args.latency_rpi    else None)
+        lat_jetson = (load_latency_timeseries(args.latency_jetson, topics_filter)
+                      if args.latency_jetson else None)
+        stm32      = load_stm32_csv(args.stm32)     if args.stm32      else None
+        net_rpi    = load_net_csv(args.net_rpi,    'RPi')    if args.net_rpi    else None
+        net_jetson = load_net_csv(args.net_jetson, 'Jetson') if args.net_jetson else None
+
+        plot_unified_timeline(
+            latency_rpi    = lat_rpi,
+            latency_jetson = lat_jetson,
+            stm32_rows     = stm32,
+            net_rpi        = net_rpi,
+            net_jetson     = net_jetson,
+            out_path       = out_dir / 'unified_timeline.png',
+        )
 
 
 if __name__ == '__main__':
