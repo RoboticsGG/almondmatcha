@@ -43,13 +43,12 @@ check "rosidl_runtime_py importable" \
     "source /opt/ros/humble/setup.bash && python3 -c 'from rosidl_runtime_py.utilities import get_message'"
 
 # ── Workspaces ────────────────────────────────────────────────────────────
-# msgs_ifaces are symlinked into ws_rpi/src and ws_jetson/src and built there.
-# common_ifaces/install/ is only populated if built standalone (not required).
-check "msgs_ifaces built (in ws_rpi or ws_jetson install)" \
-    "[ -d ~/almondmatcha/ws_rpi/install/msgs_ifaces ] || [ -d ~/almondmatcha/ws_jetson/install/msgs_ifaces ]"
-
+# ws_rpi has msgs_ifaces symlinked into src/ and built into ws_rpi/install/.
+# ws_jetson does NOT include interface packages in its src/ — it loads them
+# from common_ifaces/install/ which is pre-built in the repo.
+# Either way, the 'custom messages loadable' check below is the real gate.
 check "ws_rpi built  (or ws_jetson)" \
-    "[ -d ~/almondmatcha/ws_rpi/install ] || [ -d ~/almondmatcha/ws_jetson/install ]"
+    "[ -d ~/almondmatcha/ws_rpi/install/rover_monitoring ] || [ -d ~/almondmatcha/ws_jetson/install/vision_navigation ]"
 
 # ── Custom messages loadable ──────────────────────────────────────────────
 # collect_latency.py needs to dynamically load ChassisIMU, TelemetryRelay, etc.
