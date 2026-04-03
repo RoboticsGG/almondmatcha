@@ -1,7 +1,7 @@
 # Quick Reference: System Launch & Configuration
 
-**Date:** February 26, 2026  
-**Status:** Optimized for 11 D5 participants + 4 headroom  
+**Last updated:** April 3, 2026  
+**Configuration:** Single-domain POC — all nodes on D5; 16 participants + 4 margin  
 **Network:** All systems connected via Gigabit Ethernet switch (192.168.1.0/24)
 
 ---
@@ -11,14 +11,17 @@
 ### Memory Pool Settings (Both Boards)
 
 ```cpp
-MAX_NUM_PARTICIPANTS = 15        // 11 active D5 + 4 margin
-SPDP_WRITER_STACKSIZE = 4096     // Halved from 8192 (critical savings)
-NUM_WRITERS_PER_PARTICIPANT = 20 // Per node (ws_base/Jetson are heavy)
-NUM_READERS_PER_PARTICIPANT = 20 // Per node
+MAX_NUM_PARTICIPANTS     = 20   // 16 D5 nodes + 4 margin
+NUM_STATEFUL_WRITERS     = 3    // 2 SEDP + 1 app publisher (both boards)
+NUM_STATEFUL_READERS     = 3    // 2 SEDP + 1 app sub (chassis); 2 for sensors
+NUM_WRITERS_PER_PARTICIPANT = 8   // max publishers per remote node
+NUM_READERS_PER_PARTICIPANT = 8   // max subscribers per remote node
+SPDP_WRITER_STACKSIZE    = 4096 // halved from 8192
 ```
 
 **Memory Impact:**
-- SPDP heap: ~61 KB (15 × 4096)
+- SPDP heap: ~82 KB (20 × 4096)
+- **OVERALL_HEAP_SIZE: ~100 KB** ((1+1+20+3) × 4096)
 - **Headroom: 4 spare participant slots** for development
 
 ---
@@ -69,23 +72,18 @@ cd ~/almondmatcha/ws_base
 
 ## Participant Count
 
-**Domain 5 (Control Network — visible to STM32):**
+**Domain 5 (all nodes — single-domain POC):**
 
 | System | Nodes | D5 Total |
-|--------|-------|---------|
-| STM32 boards | 2 | 2 |
-| ws_rpi | 7 | 9 |
-| ws_jetson | 1 (rover_kinematic_control) | 10 |
-| ws_base | 1 (mission_command_node) | **11** |
-| **Headroom** | - | **+1** |
-| **STM32 capacity** | - | **12** |
+|--------|-------|----------|
+| STM32 boards | chassis + sensors | 2 |
+| ws_rpi | 8 rover/GNSS nodes | 10 |
+| ws_jetson | camera_stream, lane_detection, rover_kinematic_control, rover_local_monitoring | 14 |
+| ws_base | 2 base nodes | **16** |
+| **Headroom** | | **+4** |
+| **STM32 capacity (`MAX_NUM_PARTICIPANTS`)** | | **20** |
 
-**Domain 4 (Telemetry — not visible to STM32):**
-
-| System | Nodes |
-|--------|-------|
-| ws_base | 1 (mission_monitoring_node_pc) |
-| ws_jetson | 1 (rover_local_monitoring_node) |
+> All nodes run on D5. No D4/D6 domain separation — this is the single-domain POC configuration.
 
 ---
 
@@ -109,15 +107,11 @@ ping 192.168.1.10 # Base (if connected)
 
 # Check participant count in D5
 export ROS_DOMAIN_ID=5
-ros2 node list | wc -l  # Should be 11
-
-# Check D4 telemetry nodes
-export ROS_DOMAIN_ID=4
-ros2 node list  # mission_monitoring_node_pc, rover_local_monitoring_node
+ros2 node list | wc -l  # Should be 16 (all D5 nodes including STM32 boards)
 
 # Check STM32 config
 grep "MAX_NUM_PARTICIPANTS" ~/almondmatcha/mros2-mbed-*/platform/rtps/config.h
-# Should show: 12
+# Should show: 20 (single-domain)
 
 # Verify data flow (from any machine on switch)
 ros2 topic hz /tpc_chassis_imu      # ~10 Hz

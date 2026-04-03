@@ -83,8 +83,8 @@ controlling `OVERALL_HEAP_SIZE`.
 
 | Branch | Chassis | Sensors | Reason |
 |---|---|---|---|
-| `single-domain` | 3 | 3 | 2 SEDP + 1 app; heap budget with `MAX_NUM_PARTICIPANTS=20` |
-| `multi-domain` / `main` | 28 | 28 | Sized for full D5 discovery pool; works at `MAX_NUM_PARTICIPANTS=15` |
+| `single-domain` | 3 | 3 | 2 SEDP + 1 app publisher; required to stay in heap budget with `MAX_NUM_PARTICIPANTS=20` |
+| `multi-domain` / `main` | 28 | 28 | Over-provisioned from original main config; same SEDP floor applies (minimum 3) but 184 KB still fits heap at `MAX_NUM_PARTICIPANTS=15` |
 
 ### `NUM_STATEFUL_READERS`
 ```cpp

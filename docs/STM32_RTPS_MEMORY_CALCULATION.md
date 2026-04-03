@@ -165,7 +165,7 @@ OVERALL_HEAP_SIZE =
 = 204,800 B  (200 KB)  ← OOM before any data structs allocated
 ```
 
-**Rule of thumb:** Keep `OVERALL_HEAP_SIZE < 120 KB` to leave room for data pools.
+**Rule of thumb:** Keep `OVERALL_HEAP_SIZE < 200 KB` (hard limit; current single-domain config is at ~100 KB).
 
 ### Step 4 — Size the proxy pools
 
@@ -185,7 +185,7 @@ The heaviest node is `ws_base` with ~6 subscribers. Using 8 gives safe margin.
 
 ### Step 5 — Size the unmatched discovery queues
 
-During the 10-second discovery window all 15+ participants announce themselves simultaneously.
+During the 8-second discovery window all 15+ participants announce themselves simultaneously.
 `MAX_NUM_UNMATCHED_REMOTE_WRITERS` / `MAX_NUM_UNMATCHED_REMOTE_READERS` are ring-buffer slots
 for announcements that arrive before the local match table is ready.
 
@@ -285,10 +285,12 @@ If the domain participant count changes (new nodes added, topology changed), rec
 1. List all DDS nodes visible on this board's `DOMAIN_ID`
 2. `MAX_NUM_PARTICIPANTS = count + 4`
 3. `OVERALL_HEAP_SIZE = (1+1+MAX_NUM_PARTICIPANTS+NUM_STATEFUL_WRITERS) × 4096`
-4. Verify `OVERALL_HEAP_SIZE < 120,000`
-5. If it exceeds 120 KB, reduce `SPDP_WRITER_STACKSIZE` before touching `NUM_STATEFUL_WRITERS`
-   (minimum safe `SPDP_WRITER_STACKSIZE` tested is 3072 B)
-6. Rebuild, flash, verify with memory reporter that `alloc_fail = 0`
+4. Verify `OVERALL_HEAP_SIZE < 200,000` (200 KB hard limit; 100 KB is current target)
+5. If it exceeds 200 KB, reduce `NUM_STATEFUL_WRITERS` to `2 (SEDP) + local app publishers`
+   (minimum: 3 for chassis with 1 app publisher, 3 for sensors with 1 app publisher)
+6. If still over budget, reduce `SPDP_WRITER_STACKSIZE`
+   (minimum safe value tested is 3072 B)
+7. Rebuild, flash, verify with memory reporter that `alloc_fail = 0`
 
 > **Do not copy ws_base or ws_rpi node endpoint counts into the STM32 config.**
 > `NUM_STATEFUL_WRITERS` and `NUM_STATEFUL_READERS` describe **this board's own** publishers
