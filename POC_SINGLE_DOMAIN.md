@@ -77,6 +77,83 @@ cd ~/almondmatcha/ws_jetson && colcon build --symlink-install
 pip3 install pandas numpy matplotlib
 ```
 
+### 4. Smoke-test: verify collect_latency.py works end-to-end
+
+Run this on the **RPi** before the real experiment to confirm data is being captured.
+You need at least one ROS2 node running so there are messages to record.
+
+**Terminal 1 on RPi** — start a node that publishes to a D5 topic:
+```bash
+source /opt/ros/humble/setup.bash
+source ~/almondmatcha/common_ifaces/install/setup.bash
+source ~/almondmatcha/ws_rpi/install/setup.bash
+export ROS_DOMAIN_ID=5
+ros2 run rover_monitoring rover_monitoring_node
+```
+
+**Terminal 2 on RPi** (or SSH from base PC) — run the collector:
+```bash
+source /opt/ros/humble/setup.bash
+source ~/almondmatcha/common_ifaces/install/setup.bash
+source ~/almondmatcha/ws_rpi/install/setup.bash
+export ROS_DOMAIN_ID=5
+
+python3 ~/almondmatcha/ws_base/tools/tracing/collect_latency.py \
+    --topics /tpc_chassis_imu /tpc_chassis_sensors /tpc_telemetry_relay \
+    --out ~/ros2_traces/smoke_test.csv
+```
+
+Expected output while running:
+```
+Writing to /home/curry/ros2_traces/smoke_test.csv
+Waiting for 3 topic(s) to appear on the DDS bus...
+  Subscribed: /tpc_telemetry_relay  [msgs_ifaces/msg/TelemetryRelay]
+  Subscribed: /tpc_chassis_imu     [msgs_ifaces/msg/ChassisIMU]
+  Subscribed: /tpc_chassis_sensors [msgs_ifaces/msg/ChassisSensors]
+All topics subscribed. Collecting...
+```
+
+Wait 30 seconds, then press **Ctrl-C** to stop the collector.
+
+**Verify the CSV on RPi:**
+```bash
+# Check it has rows
+wc -l ~/ros2_traces/smoke_test.csv
+
+# Preview the data
+head -5 ~/ros2_traces/smoke_test.csv
+# Expected header: topic,recv_time_s,header_stamp_s,latency_ms,interval_ms
+# interval_ms filled for all rows; latency_ms only for /tpc_telemetry_relay
+```
+
+**Quick analysis on base PC** — pull and check:
+```bash
+scp curry@192.168.1.1:~/ros2_traces/smoke_test.csv /tmp/
+
+python3 - << 'EOF'
+import csv, statistics, collections
+intervals = collections.defaultdict(list)
+with open("/tmp/smoke_test.csv") as f:
+    for row in csv.DictReader(f):
+        if row["interval_ms"]:
+            intervals[row["topic"]].append(float(row["interval_ms"]))
+for topic, vals in sorted(intervals.items()):
+    print(f"{topic}")
+    print(f"  n={len(vals)}  mean={statistics.mean(vals):.1f}ms  "
+          f"std={statistics.stdev(vals):.2f}ms  max={max(vals):.1f}ms")
+EOF
+```
+
+Expected (approximate, from STM32 STM32 publishing at 10 Hz):
+```
+/tpc_chassis_imu      n=29  mean=100.3ms  std=1.2ms  max=103.5ms
+/tpc_chassis_sensors  n=11  mean=252.1ms  std=2.1ms  max=256.0ms
+/tpc_telemetry_relay  n=14  mean=200.5ms  std=3.4ms  max=210.2ms
+```
+
+If `n=0` for a topic: the STM32 board is not publishing yet (normal if not powered on).  
+If the collector shows "Waiting..." and never subscribes: confirm `ROS_DOMAIN_ID=5` is set in both terminals.
+
 ---
 
 ## Running the POC Experiment
