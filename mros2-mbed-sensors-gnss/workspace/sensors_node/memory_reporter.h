@@ -29,9 +29,12 @@
 #define MEM_REPORT_INTERVAL_MS 2000
 #endif
 
-// Stack for the reporter thread — 512 B is sufficient for printf + mbed_stats
+// Stack for the reporter thread — 1536 B required for printf with 7 format args
+// ("type", node name, ts_ms, heap_used, heap_max, heap_free, alloc_fail, stack_free)
+// ARM std printf lib needs ~800-1200 B per call; 640 B caused stack overflow
+// and INVPC HardFault via interrupt-on-corrupted-SP during the printf call.
 #ifndef MEM_REPORTER_STACK_SIZE
-#define MEM_REPORTER_STACK_SIZE 640
+#define MEM_REPORTER_STACK_SIZE 1536
 #endif
 
 // Trim: keep the node name tag short so the JSON line stays under 256 chars
