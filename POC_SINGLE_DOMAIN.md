@@ -60,16 +60,20 @@ ssh yupi@192.168.1.5  'bash ~/almondmatcha/ws_base/tools/tracing/setup_tracing.s
 All checks must say `[OK]`. If `ws_rpi` or `ws_jetson` is not built yet, build it now:
 
 ```bash
-# RPi (SSH in)
-source /opt/ros/humble/setup.bash
-source ~/almondmatcha/common_ifaces/install/setup.bash
-cd ~/almondmatcha/ws_rpi && colcon build --symlink-install
+# RPi (SSH in) — build.sh also compiles msgs_ifaces/action_ifaces/services_ifaces
+cd ~/almondmatcha/ws_rpi
+./build.sh
+source install/setup.bash
 
 # Jetson (SSH in)
-source /opt/ros/humble/setup.bash
-source ~/almondmatcha/common_ifaces/install/setup.bash
-cd ~/almondmatcha/ws_jetson && colcon build --symlink-install
+cd ~/almondmatcha/ws_jetson
+./build_clean.sh
+source install/setup.bash
 ```
+
+> **Note:** The interface packages (`msgs_ifaces`, `action_ifaces`, `services_ifaces`) are
+> symlinked into `ws_rpi/src/` from `common_ifaces/`, so `build.sh` builds them automatically.
+> There is **no need to build `common_ifaces/` separately.**
 
 ### 3. Python dependencies on base PC
 

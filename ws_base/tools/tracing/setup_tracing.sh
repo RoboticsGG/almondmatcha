@@ -43,11 +43,21 @@ check "rosidl_runtime_py importable" \
     "source /opt/ros/humble/setup.bash && python3 -c 'from rosidl_runtime_py.utilities import get_message'"
 
 # ── Workspaces ────────────────────────────────────────────────────────────
-check "common_ifaces built" \
-    "[ -d ~/almondmatcha/common_ifaces/install/msgs_ifaces ]"
+# msgs_ifaces are symlinked into ws_rpi/src and ws_jetson/src and built there.
+# common_ifaces/install/ is only populated if built standalone (not required).
+check "msgs_ifaces built (in ws_rpi or ws_jetson install)" \
+    "[ -d ~/almondmatcha/ws_rpi/install/msgs_ifaces ] || [ -d ~/almondmatcha/ws_jetson/install/msgs_ifaces ]"
 
 check "ws_rpi built  (or ws_jetson)" \
     "[ -d ~/almondmatcha/ws_rpi/install ] || [ -d ~/almondmatcha/ws_jetson/install ]"
+
+# ── Custom messages loadable ──────────────────────────────────────────────
+# collect_latency.py needs to dynamically load ChassisIMU, TelemetryRelay, etc.
+check "custom messages loadable by rclpy" \
+    "source /opt/ros/humble/setup.bash && \
+     (source ~/almondmatcha/ws_rpi/install/setup.bash 2>/dev/null || \
+      source ~/almondmatcha/ws_jetson/install/setup.bash 2>/dev/null) && \
+     python3 -c 'from rosidl_runtime_py.utilities import get_message; get_message(\"msgs_ifaces/msg/ChassisIMU\")'"
 
 # ── collect_latency.py ────────────────────────────────────────────────────
 check "collect_latency.py present" \
