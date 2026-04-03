@@ -71,8 +71,9 @@ void _memory_reporter_task()
         int ts_ms = (int)chrono::duration_cast<chrono::milliseconds>(
                             uptime.elapsed_time()).count();
 
-        // Single \r\n terminated JSON line — collector matches on "type":"STM32_MEM"
-        printf("{\"type\":\"STM32_MEM\",\"node\":\"%s\",\"ts_ms\":%d,"
+        // \r\n prefix ensures we start on a fresh line even if IMU printf left the
+        // cursor mid-line (no trailing newline on its \r-terminated output).
+        printf("\r\n{\"type\":\"STM32_MEM\",\"node\":\"%s\",\"ts_ms\":%d,"
                "\"heap_used\":%lu,\"heap_max\":%lu,\"heap_free\":%lu,"
                "\"alloc_fail\":%lu,\"stack_free\":%lu}\r\n",
                _mem_reporter_node_name,

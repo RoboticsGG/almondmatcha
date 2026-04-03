@@ -149,7 +149,7 @@ void imu_reader_task() {
             imu_pub_ptr->publish(imu_msg);
             
             // Print IMU values in the same line (overwrite previous output)
-            printf("\r[imu_reader_task] Accel: X=%ld\tY=%ld\tZ=%ld\t| Gyro: X=%ld\tY=%ld\tZ=%ld",
+            printf("\r\n[imu_reader_task] Accel: X=%ld\tY=%ld\tZ=%ld\t| Gyro: X=%ld\tY=%ld\tZ=%ld",
                    imu_msg.accel_x, imu_msg.accel_y, imu_msg.accel_z,
                    imu_msg.gyro_x, imu_msg.gyro_y, imu_msg.gyro_z);
             fflush(stdout);
