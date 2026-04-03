@@ -134,6 +134,13 @@ head -4 ~/ros2_traces/smoke_test.csv
 # /tpc_chassis_imu,1775224309.323,...,,99.8
 ```
 
+> **Smoke test timestamps:** `recv_time_s` is a real NTP-aligned UNIX epoch float (identical
+> format to the main experiment). `header_stamp_s` and `latency_ms` are empty because
+> `ChassisIMU` has no `header.stamp` field — latency is only measurable for
+> `/tpc_telemetry_relay`. The smoke test only runs the latency collector (no STM32 or
+> net_stats collectors), so `--merge` does not apply here; use `--csv` for single-file
+> analysis.
+
 **Quick analysis on base PC:**
 ```bash
 scp curry@192.168.1.1:~/ros2_traces/smoke_test.csv /tmp/
@@ -286,6 +293,35 @@ Output:
 - Per-topic latency stats for `/tpc_telemetry_relay` if present
 - `latency_summary.csv` — machine-readable comparison table
 - `jitter_boxplot.png` — box-plot when both `--baseline` and `--poc` are given
+
+### Unified timeline — all sources on one NTP-aligned axis
+
+After pulling all CSVs to the base PC, merge them into a single multi-panel PNG.
+All Linux clocks are NTP-synced (~1–10 ms accuracy). The STM32 has no RTC; its
+`wall_clock` column (base PC receive time) is used directly as the sync anchor —
+`ts_ms` (board uptime) is kept in the CSV for reference only.
+
+```bash
+python3 ws_base/tools/tracing/analyze_latency.py --merge \
+    --latency-rpi    ws_base/tools/tracing/data/poc_latency_rpi.csv \
+    --latency-jetson ws_base/tools/tracing/data/poc_latency_jetson.csv \
+    --stm32          ~/ros2_traces/stm32_memory_poc.csv \
+    --net-rpi        ws_base/tools/monitoring/data/poc_net_stats_rpi.csv \
+    --net-jetson     ws_base/tools/monitoring/data/poc_net_stats_jetson.csv \
+    --out-dir        ws_base/tools/tracing/results/
+```
+
+Outputs `results/unified_timeline.png` — up to 4 stacked panels sharing a common
+elapsed-seconds x-axis (x=0 = earliest event across all datasets):
+
+| Panel | Source | What to look for |
+|---|---|---|
+| RPi jitter | `poc_latency_rpi.csv` | Spikes in `interval_ms` during discovery |
+| Jetson jitter | `poc_latency_jetson.csv` | Same, Jetson-side |
+| STM32 heap | `stm32_memory_poc.csv` | Rising ramp during 10 s boot window → flat steady-state |
+| Network BW | `net_stats_*.csv` | Bandwidth spike when camera_stream@30fps joins D5 |
+
+All five `--*` arguments are optional — omit any source not collected.
 
 ### Socket buffer and bandwidth (from net_stats CSV)
 
