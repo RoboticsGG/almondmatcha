@@ -233,12 +233,10 @@ int main()
     // Wait for DDS/RTPS participant discovery to complete
     // SPDP announcements sent every 500ms (SPDP_RESEND_PERIOD_MS)
     // Need at least 8-10 cycles for reliable discovery across all nodes
-    // (ws_rpi(5) + ws_base(2) + ws_jetson(3) + STM32(2) = 12 participants)
-    // This fixes intermittent "no messages received" and "[Memory pool] resource limit exceed"
-    // by ensuring publishers/subscribers are fully matched before data transmission starts
-    // Single-domain POC: 15 participants total (up from 12 in baseline).
+    // Single-domain POC: ws_rpi(8) + ws_jetson(4) + ws_base(2) + STM32(2) = 16 participants
+    // MAX_NUM_PARTICIPANTS = 20 (16 actual + 4 margin)
     // 10 s = 20 SPDP cycles @ 500 ms gives comfortable margin for all nodes to discover each other.
-    MROS2_INFO("Waiting 10 seconds for DDS participant discovery (15 participants, single-domain POC)...");
+    MROS2_INFO("Waiting 10 seconds for DDS participant discovery (16 participants, single-domain POC)...");
     osDelay(10000);
     MROS2_INFO("Discovery wait complete - initializing sensors");
     // ==========================================
@@ -258,7 +256,10 @@ int main()
     MROS2_INFO("Motor Control Task started (osPriorityHigh)");
     
     // Launch Task 2: IMU Reader (Normal Priority)
-    Thread imu_thread(osPriorityNormal, 2048, NULL, "imu_read");
+    // 4096 B required: mros2 publish() traverses CDR serialization → embeddedRTPS → lwIP UDP
+    // send, which consumes ~1.5–2 KB of call stack on top of local variables and printf.
+    // 2048 B caused a stack overflow → NULL-ptr HardFault (UFSR INVSTATE, PC=0x00000000).
+    Thread imu_thread(osPriorityNormal, 4096, NULL, "imu_read");
     imu_thread.start(callback(imu_reader_task));
     MROS2_INFO("IMU Reader Task started (osPriorityNormal)");
     
