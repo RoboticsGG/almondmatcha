@@ -49,22 +49,31 @@ const uint8_t DOMAIN_ID = 5; // 230 possible with UDP
 const uint8_t NUM_STATELESS_WRITERS = 4;
 const uint8_t NUM_STATELESS_READERS = 4;
 
-// SINGLE-DOMAIN POC CONFIGURATION
-// All 15 nodes on D5: ws_rpi×7, ws_jetson×4, ws_base×2, STM32×2
-// (D4 monitoring + D6 vision nodes migrated to D5; camera/lane Image@30fps on network)
-// Memory usage: ~200-220 KB (+20 KB for 5 extra participant slots)
-const uint8_t NUM_STATEFUL_READERS = 32;              // Max endpoints for all remote writers
-const uint8_t NUM_STATEFUL_WRITERS = 28;              // Max endpoints for all remote readers
+// SINGLE-DOMAIN POC CONFIGURATION — sensors/GNSS board
+// This board: 1 publisher (tpc_chassis_sensors), 0 subscribers
+//
+// NUM_STATEFUL_WRITERS / NUM_STATEFUL_READERS are the LOCAL endpoint pool sizes for
+// THIS board only.  Each stateful writer spawns one heartbeat OS thread consuming
+// HEARTBEAT_STACKSIZE bytes from the heap.  Setting these to ws_base-scale values
+// (28/32) consumes 28×4096 = 114 KB in thread stacks alone and OOMs the Nucleo.
+//
+// OVERALL_HEAP_SIZE (thread stacks only):
+//   1×4096 +  1×4096  (thread pool writer+reader)
+//  +20×4096            (SPDP writer per participant)
+//  + 2×4096            (heartbeat per stateful writer)
+//  = 4096+4096+81920+8192 = 96,304 B  ← fits in Nucleo-F767ZI heap
+const uint8_t NUM_STATEFUL_READERS = 2;               // local readers: 0 actual + 2 margin
+const uint8_t NUM_STATEFUL_WRITERS = 2;               // local writers: 1 (tpc_chassis_sensors) + 1 margin
 const uint8_t MAX_NUM_PARTICIPANTS = 20;              // D5 single-domain: 15 actual + 5 margin
-const uint8_t NUM_WRITERS_PER_PARTICIPANT = 20;       // Max publishers per node (ws_base heavy)
-const uint8_t NUM_READERS_PER_PARTICIPANT = 20;       // Max subscribers per node (ws_base heavy)
-const uint8_t NUM_WRITER_PROXIES_PER_READER = 28;     // Track all possible remote writers
-const uint8_t NUM_READER_PROXIES_PER_WRITER = 28;     // Track all possible remote readers (GNSS monitoring)
+const uint8_t NUM_WRITERS_PER_PARTICIPANT = 8;        // how many publishers each remote node may have
+const uint8_t NUM_READERS_PER_PARTICIPANT = 8;        // how many subscribers each remote node may have
+const uint8_t NUM_WRITER_PROXIES_PER_READER = 5;      // remote writers tracked per local reader (minimal)
+const uint8_t NUM_READER_PROXIES_PER_WRITER = 15;     // remote readers tracked per local writer
 
-// Discovery burst handling - Critical for preventing [MemoryPool] errors
-const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 60;  // Handles simultaneous discovery
-const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 80;  // Handles ws_base monitoring burst
-    
+// Discovery burst handling
+const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 20;  // simultaneous discovery burst
+const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 25;  // ws_base monitoring burst
+
 const uint8_t MAX_NUM_READER_CALLBACKS = 2;  // This board has no callbacks (publish-only)
 
 

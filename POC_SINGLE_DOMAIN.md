@@ -243,13 +243,19 @@ If `interval_ms` column is empty for all rows: confirm `ROS_DOMAIN_ID=5` is set 
 Verify USB serial device paths first:
 ```bash
 ls /dev/ttyACM*
-# Expect: /dev/ttyACM0 (chassis dynamics), /dev/ttyACM1 (sensors/GNSS)
+# Expect two devices — confirm which is which:
+minicom -b 115200 -D /dev/ttyACM0   # check "app name:" line on boot
+minicom -b 115200 -D /dev/ttyACM1
+# ttyACM0 = sensors/GNSS board  (IP 192.168.1.6, "STM32 Sensors Node")
+# ttyACM1 = chassis board        (IP 192.168.1.2, "RoverWithIMU")
+# NOTE: USB enumeration order depends on plug-in sequence — verify before each run.
 ```
 
 Start the collector (it blocks, waiting for `{"type":"STM32_MEM",...}` JSON lines):
 ```bash
+# Adjust /dev/ttyACM* to match the ports confirmed above
 python3 ws_base/tools/stm32_serial/collect_stm32_memory.py \
-  --chassis /dev/ttyACM0 --sensors /dev/ttyACM1 \
+  --chassis /dev/ttyACM1 --sensors /dev/ttyACM0 \
   --out ~/ros2_traces/stm32_memory_poc.csv
 ```
 
