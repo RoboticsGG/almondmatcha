@@ -57,13 +57,18 @@ const uint8_t NUM_STATELESS_READERS = 4;
 // HEARTBEAT_STACKSIZE bytes from the heap.  Setting these to ws_base-scale values
 // (28/32) consumes 28×4096 = 114 KB in thread stacks alone and OOMs the Nucleo.
 //
+// embeddedRTPS internally creates 2 SEDP stateful writers (sedpPubWriter,
+// sedpSubWriter) and 2 SEDP stateful readers before any app endpoints.
+// NUM_STATEFUL_WRITERS must be >= 2 (SEDP) + app publishers.
+// NUM_STATEFUL_READERS must be >= 2 (SEDP) + app subscribers.
+//
 // OVERALL_HEAP_SIZE (thread stacks only):
 //   1×4096 +  1×4096  (thread pool writer+reader)
 //  +20×4096            (SPDP writer per participant)
 //  + 3×4096            (heartbeat per stateful writer)
 //  = 4096+4096+81920+12288 = 100,400 B  ← fits in Nucleo-F767ZI heap
-const uint8_t NUM_STATEFUL_READERS = 3;               // local readers: 1 (tpc_chassis_cmd) + 2 margin
-const uint8_t NUM_STATEFUL_WRITERS = 3;               // local writers: 1 (tpc_chassis_imu) + 2 margin
+const uint8_t NUM_STATEFUL_READERS = 3;               // SEDP: 2 internal + 1 app subscriber (tpc_chassis_cmd)
+const uint8_t NUM_STATEFUL_WRITERS = 3;               // SEDP: 2 internal + 1 app publisher (tpc_chassis_imu)
 const uint8_t MAX_NUM_PARTICIPANTS = 20;              // D5 single-domain: 15 actual + 5 margin
 const uint8_t NUM_WRITERS_PER_PARTICIPANT = 8;        // how many publishers each remote node may have
 const uint8_t NUM_READERS_PER_PARTICIPANT = 8;        // how many subscribers each remote node may have

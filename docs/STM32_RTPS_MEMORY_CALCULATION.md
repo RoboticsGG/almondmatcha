@@ -8,9 +8,12 @@
 > - `docs/STM32_MEMORY_POOL_FIX.md` — history of the original baseline pool fix (Nov 2025)
 > - `POC_SINGLE_DOMAIN.md` — single-domain POC experiment guide
 >
-> **TL;DR of the crash (April 2026):** Setting `NUM_STATEFUL_WRITERS = 28` (ws_base-scale)
-> on a board that has 1 publisher caused 28 heartbeat threads × 4 KB = 114 KB of thread
-> stacks to be allocated before any RTPS data pools, exhausting the heap mid-init.
+> **TL;DR of the crash (April 2026):** `MAX_NUM_PARTICIPANTS` was bumped from 15 → 20 to
+> accommodate more D5 nodes, pushing `OVERALL_HEAP_SIZE` from 184 KB → 204 KB with the
+> original `NUM_STATEFUL_WRITERS=28`. Fix: reduce `NUM_STATEFUL_WRITERS` to the board's
+> own publisher count + the **2 SEDP internal writers** that embeddedRTPS always creates.
+> **Minimum: `NUM_STATEFUL_WRITERS = 2 + app_publishers`.** Setting it lower than this
+> silently prevents the app publisher from being created with no crash or error log.
 
 ---
 
@@ -82,18 +85,23 @@ Total SRAM:              512 KB
 
 ### Step 1 — Count this board's own endpoints
 
-Answer for each board:
+embeddedRTPS **always** creates 2 internal SEDP stateful writers (`sedpPubWriter`,
+`sedpSubWriter`) and 2 internal SEDP stateful readers before any application endpoint.
+These consume pool slots. The minimum values are:
 
-| Question | Chassis board | Sensors board |
-|---|---|---|
-| How many topics does this board **publish**? | 1 (`tpc_chassis_imu`) | 1 (`tpc_chassis_sensors`) |
-| How many topics does this board **subscribe** to? | 1 (`tpc_chassis_cmd`) | 0 |
+```
+NUM_STATEFUL_WRITERS = 2 (SEDP internal) + number of app publishers
+NUM_STATEFUL_READERS = 2 (SEDP internal) + number of app subscribers
+```
 
-Set:
-```
-NUM_STATEFUL_WRITERS = (number of publishers) + 2   # +2 margin for mros2 internals
-NUM_STATEFUL_READERS = (number of subscribers) + 2
-```
+| Board | App publishers | App subscribers | `NUM_STATEFUL_WRITERS` | `NUM_STATEFUL_READERS` |
+|---|---|---|---|---|
+| Chassis | 1 (`tpc_chassis_imu`) | 1 (`tpc_chassis_cmd`) | **3** | **3** |
+| Sensors | 1 (`tpc_chassis_sensors`) | 0 | **3** | **2** |
+
+> **If you set `NUM_STATEFUL_WRITERS < 2 + app_publishers`**, `createWriter()` returns
+> `nullptr` for the app publisher and the board silently stops publishing. There is no
+> crash — just silent topic absence.
 
 ### Step 2 — Count total domain participants (MAX_NUM_PARTICIPANTS)
 
@@ -146,9 +154,9 @@ OVERALL_HEAP_SIZE =
 
 **Sensors board (single-domain POC):**
 ```
-= 1×4096 + 1×4096 + 20×4096 + 2×4096
-= 4096 + 4096 + 81920 + 8192
-= 98,304 B  (~96 KB)                 ← fits well within budget
+= 1×4096 + 1×4096 + 20×4096 + 3×4096
+= 4096 + 4096 + 81920 + 12288
+= 100,352 B  (~100 KB)                ← fits well within budget
 ```
 
 **What crashed (April 2026 — wrong config):**
@@ -198,8 +206,8 @@ appears in the serial log at boot, increase these by 5 and rebuild.
 
 | Constant | Value | Reasoning |
 |---|---|---|
-| `NUM_STATEFUL_WRITERS` | 3 | 1 publisher (tpc_chassis_imu) + 2 mros2 internal margin |
-| `NUM_STATEFUL_READERS` | 3 | 1 subscriber (tpc_chassis_cmd) + 2 margin |
+| `NUM_STATEFUL_WRITERS` | 3 | 2 SEDP internal + 1 app publisher (tpc_chassis_imu) |
+| `NUM_STATEFUL_READERS` | 3 | 2 SEDP internal + 1 app subscriber (tpc_chassis_cmd) |
 | `MAX_NUM_PARTICIPANTS` | 20 | 16 actual D5 nodes + 4 margin |
 | `NUM_WRITERS_PER_PARTICIPANT` | 8 | ws_base publishes up to ~5 topics |
 | `NUM_READERS_PER_PARTICIPANT` | 8 | ws_base subscribes to up to ~6 topics |
@@ -215,8 +223,8 @@ appears in the serial log at boot, increase these by 5 and rebuild.
 
 | Constant | Value | Reasoning |
 |---|---|---|
-| `NUM_STATEFUL_WRITERS` | 2 | 1 publisher (tpc_chassis_sensors) + 1 margin |
-| `NUM_STATEFUL_READERS` | 2 | 0 subscribers + 2 margin |
+| `NUM_STATEFUL_WRITERS` | 3 | 2 SEDP internal + 1 app publisher (tpc_chassis_sensors) |
+| `NUM_STATEFUL_READERS` | 2 | 2 SEDP internal + 0 app subscribers = minimum |
 | `MAX_NUM_PARTICIPANTS` | 20 | Same as chassis |
 | `NUM_WRITERS_PER_PARTICIPANT` | 8 | Same as chassis |
 | `NUM_READERS_PER_PARTICIPANT` | 8 | Same as chassis |
@@ -224,7 +232,7 @@ appears in the serial log at boot, increase these by 5 and rebuild.
 | `NUM_READER_PROXIES_PER_WRITER` | 15 | tpc_chassis_sensors has ~8 subscribers |
 | `MAX_NUM_UNMATCHED_REMOTE_WRITERS` | 20 | Same as chassis |
 | `MAX_NUM_UNMATCHED_REMOTE_READERS` | 25 | Same as chassis |
-| `OVERALL_HEAP_SIZE` (computed) | **96 KB** | Well within budget |
+| `OVERALL_HEAP_SIZE` (computed) | **100 KB** | Well within budget |
 
 ---
 
