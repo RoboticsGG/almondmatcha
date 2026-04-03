@@ -1,30 +1,29 @@
 #!/bin/bash
-# start_trace.sh — Start an LTTng trace session on a target machine
+# start_trace.sh — Start collect_latency.py on a target SBC in background.
 #
-# Usage (from base PC, run against RPi or Jetson via SSH):
-#   TARGET_HOST=pi@192.168.1.x TARGET_LABEL=rpi  bash start_trace.sh
-#   TARGET_HOST=yupi@192.168.1.x TARGET_LABEL=jetson bash start_trace.sh
+# Usage (from base PC):
+#   TARGET_HOST=curry@192.168.1.1 TARGET_LABEL=rpi   bash start_trace.sh
+#   TARGET_HOST=yupi@192.168.1.5  TARGET_LABEL=jetson bash start_trace.sh
 #
-# Or run directly ON the target:
+# Or run directly on the SBC:
 #   TARGET_LABEL=rpi bash start_trace.sh
 #
-# Collected tracepoints:
-#   ros2:*               — rclcpp publish, callback_start/end, subscription callbacks
-#   ros2_rmw:*           — RMW-layer publish/receive timestamps (DDS latency contribution)
-#   lttng_ust_cyg_profile — (optional) function-level profiling, DISABLED by default
-#
-# Output: /tmp/ros2_trace_<LABEL>_<TIMESTAMP>/  (CTF format)
-#         After stopping, use stop_and_collect_trace.sh to pull it back.
+# The collector writes to ~/ros2_traces/latency_<LABEL>.csv on the SBC.
+# Use stop_and_collect_trace.sh to stop it and pull the CSV to the base PC.
 
 set -e
 
 TARGET_HOST="${TARGET_HOST:-}"          # empty = run locally
 TARGET_LABEL="${TARGET_LABEL:-unknown}"
-SESSION_NAME="ros2_poc_${TARGET_LABEL}"
-TRACE_DIR="\$HOME/ros2_traces/ros2_trace_${TARGET_LABEL}_$(date +%Y%m%d_%H%M%S)"
+OUT_CSV="\$HOME/ros2_traces/latency_${TARGET_LABEL}.csv"
+PID_FILE="\$HOME/ros2_traces/collector_${TARGET_LABEL}.pid"
+LOG_FILE="\$HOME/ros2_traces/collector_${TARGET_LABEL}.log"
 
-# Commands to execute (either locally or via SSH)
-run_cmd() {
+# All D5 topics for this project
+TOPICS="/tpc_chassis_imu /tpc_chassis_sensors /tpc_chassis_cmd
+/tpc_gnss_spresense /tpc_gnss_ublox /tpc_rover_ctrl_cmd /tpc_telemetry_relay"
+
+run_remote() {
     if [ -n "$TARGET_HOST" ]; then
         ssh "$TARGET_HOST" "$@"
     else
@@ -32,35 +31,33 @@ run_cmd() {
     fi
 }
 
-echo "=== Starting LTTng trace session '${SESSION_NAME}' on ${TARGET_HOST:-localhost} ==="
-echo "=== Trace output: ${TRACE_DIR} ==="
+echo "=== Starting latency collector on ${TARGET_HOST:-localhost} (label=${TARGET_LABEL}) ==="
 
-run_cmd "
+run_remote "
 set -e
-mkdir -p \"\$HOME/ros2_traces\"
-source /opt/ros/humble/setup.bash 2>/dev/null || true
+source /opt/ros/humble/setup.bash
+source ~/almondmatcha/common_ifaces/install/setup.bash 2>/dev/null || true
+source ~/almondmatcha/ws_rpi/install/setup.bash 2>/dev/null || \
+    source ~/almondmatcha/ws_jetson/install/setup.bash 2>/dev/null || true
+export ROS_DOMAIN_ID=5
 
-# Destroy stale session if it exists
-lttng destroy '${SESSION_NAME}' 2>/dev/null || true
+mkdir -p ~/ros2_traces
 
-# Create session with output directory
-lttng create '${SESSION_NAME}' --output='${TRACE_DIR}'
+# Kill any stale collector for this label
+if [ -f '${PID_FILE}' ]; then
+    OLD_PID=\$(cat '${PID_FILE}')
+    kill \"\$OLD_PID\" 2>/dev/null || true
+fi
 
-# ── ROS2 userspace tracepoints ────────────────────────────────────────────────
-lttng enable-event --userspace 'ros2:*'
+nohup python3 ~/almondmatcha/ws_base/tools/tracing/collect_latency.py \
+    --topics ${TOPICS} \
+    --out '${OUT_CSV}' \
+    < /dev/null > '${LOG_FILE}' 2>&1 &
+echo \$! > '${PID_FILE}'
 
-# ── RMW (DDS) userspace tracepoints (available in rmw_fastrtps) ──────────────
-lttng enable-event --userspace 'ros2_rmw:*' 2>/dev/null || \
-    echo '[WARN] ros2_rmw tracepoints not available on this rmw implementation'
-
-# ── Start the session ─────────────────────────────────────────────────────────
-lttng start '${SESSION_NAME}'
-
-echo '[OK] Trace session started. Run stop_and_collect_trace.sh when ready.'
-echo '[OK] Trace dir: ${TRACE_DIR}'
+echo '[OK] Collector PID: '\$(cat '${PID_FILE}')
+echo '[OK] Output CSV:    ${OUT_CSV}'
+echo '[OK] Log:           ${LOG_FILE}'
 "
-
-# Save trace dir path locally for stop script to use
-mkdir -p "$HOME/ros2_traces"
-echo "${TRACE_DIR}" > "$HOME/ros2_traces/last_trace_dir_${TARGET_LABEL}.txt"
-echo "Saved trace dir reference: $HOME/ros2_traces/last_trace_dir_${TARGET_LABEL}.txt"
+echo "=== Collector started. Topics will appear as ROS2 nodes come up. ==="
+echo "    Run: stop_and_collect_trace.sh when ready to stop."

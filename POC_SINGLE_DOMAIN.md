@@ -38,133 +38,43 @@ bash build.bash
 # Flash via ST-Link
 ```
 
-### 2. Install LTTng + ros2_tracing on each SBC
+### 2. Pre-flight checks on each SBC (no installation needed)
 
-> **Run every step directly on the SBC** (SSH in from base PC or run locally).  
-> Do this once on **both the RPi (`curry`)** and the **Jetson (`orion`)**.
+> **Why no installation?** The measurement tool (`collect_latency.py`) is a plain `rclpy`
+> subscriber node — no LTTng required.
+>
+> **Background:** The official apt `ros-humble-rclcpp` for arm64/Humble is compiled with
+> `TRACETOOLS_DISABLED=1`, so `ros2:*` LTTng tracepoints are not available in the binary.
+> Jitter and latency are measured at the application layer instead.
 
-#### 2a. Install all packages
-
-The helper script auto-detects the Tegra BSP kernel on Jetson and skips `lttng-modules-dkms` (which cannot build against it). It installs everything in one shot:
+SSH into each SBC and run the check script:
 
 ```bash
-cd ~/almondmatcha && git pull
-bash ws_base/tools/tracing/setup_tracing.sh
+# RPi
+ssh curry@192.168.1.1 'bash ~/almondmatcha/ws_base/tools/tracing/setup_tracing.sh'
+
+# Jetson
+ssh yupi@192.168.1.5  'bash ~/almondmatcha/ws_base/tools/tracing/setup_tracing.sh'
 ```
 
-This installs: `lttng-tools`, `liblttng-ust-dev`, `python3-lttng`, `babeltrace2`, `lttng-modules-dkms` (**RPi only**), and all `ros-humble-tracetools*` packages.
-
-#### 2b. Add user to the `tracing` group
+All checks must say `[OK]`. If `ws_rpi` or `ws_jetson` is not built yet, build it now:
 
 ```bash
-sudo usermod -aG tracing $USER
-newgrp tracing   # apply immediately in current shell
-```
-
-> **Also log out and back in** so the group change is permanent across all shells.
-
-#### 2c. Load kernel probe modules (RPi only — skip on Jetson)
-
-> **Jetson Orin Nano:** The Tegra BSP kernel (`5.15.148-tegra`) does **not** ship
-> `lttng-probe-sched` or `lttng-probe-irq`. **Skip this entire step on the Jetson.**  
-> Userspace tracepoints (`ros2:*`) are sufficient for latency/jitter measurement.
-
-On the **RPi** only:
-
-```bash
-sudo modprobe lttng-probe-sched
-sudo modprobe lttng-probe-irq
-# Persist across reboots:
-echo -e "lttng-probe-sched\nlttng-probe-irq" | sudo tee /etc/modules-load.d/lttng.conf
-```
-
-#### 2d. Verify installation (no running nodes needed)
-
-```bash
-# Check lttng is installed
-lttng --version
-
-# Check you are in the tracing group (must show 'tracing')
-groups
-
-# Check ros2 tracetools packages are installed
+# RPi (SSH in)
 source /opt/ros/humble/setup.bash
-dpkg -l | grep ros-humble-tracetools | awk '{print $2, $3}'
-# Expected: at least ros-humble-tracetools and ros-humble-ros2trace
+source ~/almondmatcha/common_ifaces/install/setup.bash
+cd ~/almondmatcha/ws_rpi && colcon build --symlink-install
 
-# Check liblttng-ust is present
-ldconfig -p | grep lttng-ust
-# Expected: liblttng-ust.so.1 ...
-```
-
-#### 2e. Start session daemon and verify it accepts commands
-
-```bash
-lttng-sessiond --daemonize; sleep 1
-lttng list
-# Expected: "Currently no available recording session"
-# This is CORRECT — it means the daemon is running and responding.
-# "No session" just means no trace session has been created yet.
-```
-
-#### 2f. Smoke-test with a C++ rover node (RPi only — requires workspace built)
-
-> **Why C++ only?**  
-> The `ros2:*` LTTng tracepoints are instrumented in `rclcpp` (the C++ client library).  
-> Python nodes (`rclpy`) do **not** emit `ros2:*` events. Since all Jetson nodes in this  
-> project are Python, **the smoke-test is RPi only**. The tracing infrastructure on Jetson  
-> is still valid — it will capture `ros2_rmw:*` events from CycloneDDS at the middleware layer.
-
-> **If the RPi workspace is not yet built**, skip this step. The tracepoints will be  
-> confirmed during Step 2 of the experiment when the rover nodes are running.
-
-On **RPi only** (workspace must be built):
-
-```bash
-cd ~/almondmatcha/ws_rpi
+# Jetson (SSH in)
 source /opt/ros/humble/setup.bash
-source install/setup.bash
-export ROS_DOMAIN_ID=5
-mkdir -p ~/ros2_traces
-
-# Create and start a trace session
-lttng create test_session --output=~/ros2_traces/test_trace
-lttng enable-event --userspace 'ros2:*'
-lttng start test_session
-
-# Run a C++ rover node briefly
-ros2 run rover_monitoring rover_monitoring_node &
-NODE_PID=$!
-sleep 5 && kill $NODE_PID
-
-# Stop and verify
-lttng stop test_session && lttng destroy test_session
-babeltrace2 ~/ros2_traces/test_trace | head -30
-# Should print CTF event lines including: ros2:rclcpp_publish, ros2:rcl_timer_init, etc.
-```
-
-**On Jetson — skip 2f and just verify the daemon responds:**
-
-```bash
-# All ws_jetson nodes are Python (rclpy) — no ros2:rclcpp_* tracepoints.
-# Just confirm the infrastructure is ready:
-lttng-sessiond --daemonize 2>/dev/null; sleep 1
-lttng list
-# Expected: "Currently no available recording session" — daemon is running
+source ~/almondmatcha/common_ifaces/install/setup.bash
+cd ~/almondmatcha/ws_jetson && colcon build --symlink-install
 ```
 
 ### 3. Python dependencies on base PC
 
-> **Note:** `babeltrace2` is **not** a pip package. Install it via apt, then install the rest with pip3.
-
 ```bash
-sudo apt-get install -y babeltrace2 python3-bt2
 pip3 install pandas numpy matplotlib
-```
-
-Verify:
-```bash
-python3 -c "import bt2; print(bt2.__version__)"
 ```
 
 ---
@@ -191,15 +101,19 @@ bash ws_base/launch_base_single_domain.sh
 
 The tmux session borders are **yellow/red** (vs blue/cyan in baseline) so you can tell at a glance which mode you are in.
 
-### Step 2 — Start LTTng tracing on RPi and Jetson
+### Step 2 — Start latency/jitter collection on RPi and Jetson
 
 ```bash
-# From base PC — start tracing on RPi
+# From base PC — start collector on RPi (runs in background on SBC)
 TARGET_HOST=curry@192.168.1.1 TARGET_LABEL=rpi bash ws_base/tools/tracing/start_trace.sh
 
-# Start tracing on Jetson
+# Start collector on Jetson
 TARGET_HOST=yupi@192.168.1.5 TARGET_LABEL=jetson bash ws_base/tools/tracing/start_trace.sh
 ```
+
+The collector (`collect_latency.py`) subscribes to all D5 topics and records per-message
+timestamps to `~/ros2_traces/latency_<label>.csv` on the SBC. Topics appear automatically
+as nodes come up — no manual topic registration needed.
 
 ### Step 3 — Start network stats collection on each SBC
 
@@ -236,9 +150,11 @@ Run for **at least 5 minutes** under representative load (send a mission command
 ### Step 6 — Stop collection
 
 ```bash
-# Stop LTTng and pull CTF data to base PC
-TARGET_HOST=curry@192.168.1.1  TARGET_LABEL=rpi    bash ws_base/tools/tracing/stop_and_collect_trace.sh
-TARGET_HOST=yupi@192.168.1.5   TARGET_LABEL=jetson bash ws_base/tools/tracing/stop_and_collect_trace.sh
+# Stop latency collector and pull CSV to base PC
+TARGET_HOST=curry@192.168.1.1 TARGET_LABEL=rpi    bash ws_base/tools/tracing/stop_and_collect_trace.sh
+TARGET_HOST=yupi@192.168.1.5  TARGET_LABEL=jetson bash ws_base/tools/tracing/stop_and_collect_trace.sh
+# Pulls to: ws_base/tools/tracing/data/poc_latency_rpi.csv
+#           ws_base/tools/tracing/data/poc_latency_jetson.csv
 
 # Stop net stats (Ctrl-C in each SSH terminal)
 # Stop STM32 collector (Ctrl-C)
@@ -252,29 +168,37 @@ scp yupi@192.168.1.5:~/ros2_traces/net_stats_jetson.csv      ws_base/tools/monit
 
 ## Analyzing Results
 
-### Latency and jitter (from LTTng traces)
+### Latency and jitter (from CSV)
+
+The primary metric is **inter-arrival jitter** (std-dev of the time between consecutive
+messages on each topic). This works for all topics and is the most relevant indicator
+of DDS scheduling instability under domain consolidation.
+
+**End-to-end latency** (publisher timestamp → subscriber receive time) is also available
+for `/tpc_telemetry_relay` — the only project message type that includes `header.stamp`.
 
 ```bash
-# Analyze POC trace only
+# Analyze POC run only (prints table to stdout + saves latency_summary.csv)
 python3 ws_base/tools/tracing/analyze_latency.py \
-  --trace-dir ws_base/tools/tracing/traces/rpi_<timestamp>
+  --csv ws_base/tools/tracing/data/poc_latency_rpi.csv
 
-# Side-by-side comparison (requires a baseline trace collected on main branch)
+# Side-by-side comparison (requires baseline CSV from multi-domain branch)
 python3 ws_base/tools/tracing/analyze_latency.py \
-  --baseline ws_base/tools/tracing/traces/baseline_rpi_<ts> \
-  --poc      ws_base/tools/tracing/traces/poc_rpi_<ts>
+  --baseline ws_base/tools/tracing/data/baseline_latency_rpi.csv \
+  --poc      ws_base/tools/tracing/data/poc_latency_rpi.csv \
+  --out-dir  ws_base/tools/tracing/results/
 
 # Filter to specific topics only
 python3 ws_base/tools/tracing/analyze_latency.py \
-  --poc ... \
+  --poc ws_base/tools/tracing/data/poc_latency_rpi.csv \
   --topics /tpc_chassis_imu /tpc_chassis_sensors /tpc_rover_ctrl_cmd
 ```
 
 Output:
-- Per-topic table: `mean`, `p50`, `p95`, `p99`, `max`, `std_dev` latency (ms)
-- Per-topic jitter: `std_dev` of inter-publish interval (ms)
-- `latency_poc.csv` (or `latency_baseline.csv`)
-- `latency_boxplot.png` (when both `--baseline` and `--poc` are given)
+- Per-topic table: `mean`, `p50`, `p95`, `p99`, `max`, `std` of inter-arrival interval (ms)
+- Per-topic latency stats for `/tpc_telemetry_relay` if present
+- `latency_summary.csv` — machine-readable comparison table
+- `jitter_boxplot.png` — box-plot when both `--baseline` and `--poc` are given
 
 ### Socket buffer and bandwidth (from net_stats CSV)
 
@@ -313,15 +237,17 @@ Compare `heap_used` and `heap_max` between baseline and POC runs. An increase in
 
 ---
 
-## Collecting Baseline Traces for Comparison
+## Collecting Baseline Data for Comparison
 
-To get a proper before/after comparison, repeat **Steps 2–6** on the `multi-domain` branch, which runs the original multi-domain architecture with the same measurement tooling.
+To get a proper before/after comparison, repeat **Steps 2–6** on the `multi-domain` branch,
+which runs the original multi-domain architecture with the same measurement tooling.
+Baseline CSVs will be saved as `baseline_latency_rpi.csv` / `baseline_latency_jetson.csv`.
 
 ```bash
 git checkout multi-domain
 # Rebuild and re-flash both STM32 boards from multi-domain firmware
-# Launch with multi-domain scripts
-TARGET_LABEL=rpi bash ws_base/tools/tracing/start_trace.sh
+# Launch with multi-domain scripts, then:
+TARGET_HOST=curry@192.168.1.1 TARGET_LABEL=rpi bash ws_base/tools/tracing/start_trace.sh
 ```
 
 See `MULTI_DOMAIN_BASELINE.md` on the `multi-domain` branch for the full guide.
@@ -339,10 +265,11 @@ ws_base/
   launch_base_single_domain.sh        # all D5 (monitoring was D4)
   tools/
     tracing/
-      setup_tracing.sh                # install LTTng + ros-humble-tracetools
-      start_trace.sh                  # create LTTng session (ros2:* events)
-      stop_and_collect_trace.sh       # stop + scp CTF data to base PC
-      analyze_latency.py              # CTF → latency/jitter CSV + plot
+      setup_tracing.sh                # pre-flight environment check on SBC
+      collect_latency.py              # rclpy subscriber → latency/jitter CSV
+      start_trace.sh                  # SSH wrapper: launch collect_latency.py on SBC
+      stop_and_collect_trace.sh       # SSH wrapper: stop collector + scp CSV to base PC
+      analyze_latency.py              # CSV → jitter/latency stats + boxplot
     monitoring/
       collect_net_stats.py            # /proc/net/dev + udp queue → CSV
     stm32_serial/

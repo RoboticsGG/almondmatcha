@@ -1,79 +1,67 @@
 #!/bin/bash
-# setup_tracing.sh — Install LTTng + ros2_tracing dependencies
+# setup_tracing.sh — Pre-flight environment check for collect_latency.py
 #
-# Run once on EACH target machine (RPi and Jetson) via SSH:
-#   ssh pi@<rpi_ip>    "bash -s" < setup_tracing.sh
-#   ssh yupi@<jetson_ip> "bash -s" < setup_tracing.sh
+# The measurement tool (collect_latency.py) uses rclpy — no LTTng installation needed.
+# NOTE: ros-humble-rclcpp on arm64 apt is compiled with TRACETOOLS_DISABLED=1,
+#       so LTTng ros2:* tracepoints are not available. We use rclpy subscriber-based
+#       latency/jitter collection instead.
 #
-# Or source it locally on the target.
-#
-# What this does:
-#   1. Installs lttng-tools, lttng-modules, liblttng-ust-dev
-#   2. Installs ros-humble-tracetools and ros-humble-ros2trace
-#   3. Adds current user to the 'tracing' group (needed to start sessions without sudo)
-#   4. Verifies the tracepoints are visible in rclcpp
+# Run on each SBC to verify the environment is ready:
+#   ssh curry@192.168.1.1   'bash ~/almondmatcha/ws_base/tools/tracing/setup_tracing.sh'
+#   ssh yupi@192.168.1.5    'bash ~/almondmatcha/ws_base/tools/tracing/setup_tracing.sh'
 
 set -e
 
 ROS_DISTRO="${ROS_DISTRO:-humble}"
+PASS=0
+FAIL=0
 
-# Detect Jetson (Tegra BSP kernel)
-# lttng-modules-dkms cannot build against the Tegra BSP kernel because
-# linux-headers-*-tegra are NOT available as standard apt packages.
-KERNEL_VER=$(uname -r)
-echo "[INFO] Detected kernel: $KERNEL_VER"
+check() {
+    local desc="$1"
+    local cmd="$2"
+    if eval "$cmd" > /dev/null 2>&1; then
+        echo "  [OK]   $desc"
+        PASS=$((PASS+1))
+    else
+        echo "  [FAIL] $desc"
+        FAIL=$((FAIL+1))
+    fi
+}
 
-IS_TEGRA=false
-if echo "$KERNEL_VER" | grep -qi "tegra"; then
-    IS_TEGRA=true
-    echo "[INFO] Tegra/Jetson kernel detected — skipping lttng-modules-dkms"
-fi
+echo "=== Pre-flight check for collect_latency.py ==="
+echo "    Host: $(hostname)  Kernel: $(uname -r)"
+echo ""
 
-echo "=== Installing LTTng kernel/userspace tools ==="
-sudo apt-get update -qq || true
+# ── ROS2 ─────────────────────────────────────────────────────────────────
+check "ROS2 Humble installed" \
+    "[ -d /opt/ros/humble ]"
 
-if [ "$IS_TEGRA" = true ]; then
-    sudo apt-get install -y \
-        lttng-tools \
-        liblttng-ust-dev \
-        python3-lttng \
-        babeltrace2
-    echo "[WARN] Kernel LTTng modules skipped — Tegra BSP kernel has no apt headers."
-    echo "       Userspace (rclcpp/rcl/rmw) tracepoints are still fully available."
-else
-    sudo apt-get install -y \
-        lttng-tools \
-        lttng-modules-dkms \
-        liblttng-ust-dev \
-        python3-lttng \
-        babeltrace2
-fi
+check "ROS2 sourced (rclpy importable)" \
+    "source /opt/ros/humble/setup.bash && python3 -c 'import rclpy'"
 
-echo "=== Installing ROS2 tracetools for $ROS_DISTRO ==="
-sudo apt-get install -y \
-    "ros-${ROS_DISTRO}-tracetools" \
-    "ros-${ROS_DISTRO}-tracetools-launch" \
-    "ros-${ROS_DISTRO}-ros2trace" \
-    "ros-${ROS_DISTRO}-tracetools-read" \
-    "ros-${ROS_DISTRO}-tracetools-analysis" 2>/dev/null || \
-    echo "[WARN] Some tracetools packages not available in apt — may need to build from source"
+check "rosidl_runtime_py importable" \
+    "source /opt/ros/humble/setup.bash && python3 -c 'from rosidl_runtime_py.utilities import get_message'"
 
-echo "=== Adding user to 'tracing' group ==="
-sudo usermod -aG tracing "$USER" || true
-echo "[INFO] Group change takes effect on next login; for now run: newgrp tracing"
+# ── Workspaces ────────────────────────────────────────────────────────────
+check "common_ifaces built" \
+    "[ -d ~/almondmatcha/common_ifaces/install/msgs_ifaces ]"
 
-echo "=== Verifying LTTng userspace providers ==="
-# Check that ros2 tracepoints are registered when rclcpp is loaded
-lttng list --userspace 2>&1 | grep -i ros || \
-    echo "[WARN] No ros tracepoints visible yet — start a node and re-check"
+check "ws_rpi built  (or ws_jetson)" \
+    "[ -d ~/almondmatcha/ws_rpi/install ] || [ -d ~/almondmatcha/ws_jetson/install ]"
+
+# ── collect_latency.py ────────────────────────────────────────────────────
+check "collect_latency.py present" \
+    "[ -f ~/almondmatcha/ws_base/tools/tracing/collect_latency.py ]"
+
+# ── Output dir ────────────────────────────────────────────────────────────
+mkdir -p ~/ros2_traces
+check "~/ros2_traces/ writable" \
+    "touch ~/ros2_traces/.test && rm ~/ros2_traces/.test"
 
 echo ""
-echo "=== Setup complete ==="
-if [ "$IS_TEGRA" = true ]; then
-    echo "Jetson: kernel tracing UNAVAILABLE (Tegra BSP kernel has no apt headers)."
-    echo "Userspace tracing (rclcpp, rcl, rmw) is fully functional."
+if [ "$FAIL" -eq 0 ]; then
+    echo "=== All checks passed. Ready to collect latency data. ==="
 else
-    echo "Kernel tracing requires lttng-modules-dkms to be loaded:"
-    echo "   sudo modprobe lttng-probe-sched lttng-probe-irq"
+    echo "=== $FAIL check(s) FAILED — fix before running the experiment ==="
+    exit 1
 fi
-echo "Next: run start_trace.sh on this machine (or remotely from the base PC)."
