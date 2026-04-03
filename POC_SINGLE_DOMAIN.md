@@ -83,52 +83,58 @@ pip3 install pandas numpy matplotlib
 
 ### 4. Smoke-test: verify collect_latency.py works end-to-end
 
-Run this on the **RPi** before the real experiment to confirm data is being captured.
-You need at least one ROS2 node running so there are messages to record.
+This test verifies the collector records data correctly **without needing STM32 boards or a full system launch**. It uses `ros2 topic pub` to inject synthetic traffic.
 
-**Terminal 1 on RPi** — start a node that publishes to a D5 topic:
+> **Note:** `rover_monitoring_node` is a *subscriber* — it waits for STM32 data and won't produce messages on its own. Use `ros2 topic pub` below instead.
+
+Run all commands on the **RPi** (SSH in from base PC or directly):
+
+**Terminal 1** — inject synthetic IMU messages at 10 Hz:
 ```bash
 source /opt/ros/humble/setup.bash
 source ~/almondmatcha/ws_rpi/install/setup.bash
 export ROS_DOMAIN_ID=5
-ros2 run rover_monitoring rover_monitoring_node
+
+ros2 topic pub /tpc_chassis_imu msgs_ifaces/msg/ChassisIMU \
+  "{accel_x: 100, accel_y: 0, accel_z: 980, gyro_x: 0, gyro_y: 0, gyro_z: 0}" \
+  --rate 10
 ```
 
-**Terminal 2 on RPi** (or SSH from base PC) — run the collector:
+**Terminal 2** — run the collector:
 ```bash
 source /opt/ros/humble/setup.bash
 source ~/almondmatcha/ws_rpi/install/setup.bash
 export ROS_DOMAIN_ID=5
 
 python3 ~/almondmatcha/ws_base/tools/tracing/collect_latency.py \
-    --topics /tpc_chassis_imu /tpc_chassis_sensors /tpc_telemetry_relay \
+    --topics /tpc_chassis_imu \
     --out ~/ros2_traces/smoke_test.csv
 ```
 
-Expected output while running:
+Expected output in Terminal 2:
 ```
 Writing to /home/curry/ros2_traces/smoke_test.csv
-Waiting for 3 topic(s) to appear on the DDS bus...
-  Subscribed: /tpc_telemetry_relay  [msgs_ifaces/msg/TelemetryRelay]
-  Subscribed: /tpc_chassis_imu     [msgs_ifaces/msg/ChassisIMU]
-  Subscribed: /tpc_chassis_sensors [msgs_ifaces/msg/ChassisSensors]
+Waiting for 1 topic(s) to appear on the DDS bus...
+  Subscribed: /tpc_chassis_imu  [msgs_ifaces/msg/ChassisIMU]
 All topics subscribed. Collecting...
 ```
 
-Wait 30 seconds, then press **Ctrl-C** to stop the collector.
+Wait 30 seconds, then **Ctrl-C** Terminal 2 first, then Terminal 1.
 
-**Verify the CSV on RPi:**
+**Verify the CSV:**
 ```bash
-# Check it has rows
 wc -l ~/ros2_traces/smoke_test.csv
+# Expected: ~31 lines (1 header + ~30 messages at 10 Hz over 30 s)
 
-# Preview the data
-head -5 ~/ros2_traces/smoke_test.csv
-# Expected header: topic,recv_time_s,header_stamp_s,latency_ms,interval_ms
-# interval_ms filled for all rows; latency_ms only for /tpc_telemetry_relay
+head -4 ~/ros2_traces/smoke_test.csv
+# Expected:
+# topic,recv_time_s,header_stamp_s,latency_ms,interval_ms
+# /tpc_chassis_imu,1775224309.123,...,,
+# /tpc_chassis_imu,1775224309.223,...,,100.1
+# /tpc_chassis_imu,1775224309.323,...,,99.8
 ```
 
-**Quick analysis on base PC** — pull and check:
+**Quick analysis on base PC:**
 ```bash
 scp curry@192.168.1.1:~/ros2_traces/smoke_test.csv /tmp/
 
@@ -144,17 +150,10 @@ for topic, vals in sorted(intervals.items()):
     print(f"  n={len(vals)}  mean={statistics.mean(vals):.1f}ms  "
           f"std={statistics.stdev(vals):.2f}ms  max={max(vals):.1f}ms")
 EOF
+# Expected: /tpc_chassis_imu  n=~29  mean=~100ms  std=<5ms
 ```
 
-Expected (approximate, from STM32 STM32 publishing at 10 Hz):
-```
-/tpc_chassis_imu      n=29  mean=100.3ms  std=1.2ms  max=103.5ms
-/tpc_chassis_sensors  n=11  mean=252.1ms  std=2.1ms  max=256.0ms
-/tpc_telemetry_relay  n=14  mean=200.5ms  std=3.4ms  max=210.2ms
-```
-
-If `n=0` for a topic: the STM32 board is not publishing yet (normal if not powered on).  
-If the collector shows "Waiting..." and never subscribes: confirm `ROS_DOMAIN_ID=5` is set in both terminals.
+If `interval_ms` column is empty for all rows: confirm `ROS_DOMAIN_ID=5` is set in both terminals.
 
 ---
 
