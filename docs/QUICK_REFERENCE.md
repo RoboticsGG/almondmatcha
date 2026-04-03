@@ -132,7 +132,7 @@ ros2 multicast receive # On another - should see messages
 
 ## Documentation
 
-- **Memory fix details:** [docs/STM32_MEMORY_POOL_FIX.md](STM32_MEMORY_POOL_FIX.md)
+- **Memory configuration:** [docs/STM32_RTPS_MEMORY_CALCULATION.md](STM32_RTPS_MEMORY_CALCULATION.md)
 - **Launch guide:** [docs/LAUNCH_INSTRUCTIONS.md](LAUNCH_INSTRUCTIONS.md)
 - **Architecture:** [docs/ARCHITECTURE.md](ARCHITECTURE.md)
 - **Domains:** [docs/DOMAINS.md](DOMAINS.md)

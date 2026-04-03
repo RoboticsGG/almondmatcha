@@ -238,7 +238,7 @@ ros2 node info /rover_kinematic_control  # Confirm D5 subscription
 export ROS_DOMAIN_ID=5
 ros2 node list | wc -l  # Should be 9–11
 ```
-See [STM32_MEMORY_POOL_FIX.md](STM32_MEMORY_POOL_FIX.md) for config details.
+See [STM32_RTPS_MEMORY_CALCULATION.md](STM32_RTPS_MEMORY_CALCULATION.md) for config details.
 
 ### Topics Not Visible
 ```bash

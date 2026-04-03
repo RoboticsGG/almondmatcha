@@ -5,7 +5,6 @@
 **Hardware:** STM32 Nucleo-F767ZI (2 MB flash, 512 KB SRAM)
 
 > **Related docs:**
-> - `docs/STM32_MEMORY_POOL_FIX.md` — history of the original baseline pool fix (Nov 2025)
 > - `POC_SINGLE_DOMAIN.md` — single-domain POC experiment guide
 >
 > **TL;DR of the crash (April 2026):** `MAX_NUM_PARTICIPANTS` was bumped from 15 → 20 to
@@ -294,3 +293,61 @@ If the domain participant count changes (new nodes added, topology changed), rec
 > **Do not copy ws_base or ws_rpi node endpoint counts into the STM32 config.**
 > `NUM_STATEFUL_WRITERS` and `NUM_STATEFUL_READERS` describe **this board's own** publishers
 > and subscribers — not the total across the domain.
+
+---
+
+## 8. Change history
+
+### Nov 2025 — Original memory pool fix
+
+**Symptom:** `[Memory pool] resource limit exceed` in the serial log, causing intermittent
+topic failures on one or both STM32 boards. Required a full system reset to recover.
+
+**Root cause:** `MAX_NUM_PARTICIPANTS=16` with `SPDP_WRITER_STACKSIZE=8192` allocated
+16 × 8 KB = 131 KB just for SPDP discovery threads, leaving insufficient heap under Mbed OS + lwIP.
+
+**Changes made:**
+
+| Constant | Before | After | Reason |
+|---|---|---|---|
+| `MAX_NUM_PARTICIPANTS` | 16 | 15 | 11 actual nodes + 4 margin; freed 8 KB SPDP stack |
+| `SPDP_WRITER_STACKSIZE` | 8192 | 4096 | Halved; sufficient for embeddedRTPS discovery task |
+| `HEARTBEAT_STACKSIZE` | 8192 | 4096 | Same |
+| `THREAD_POOL_WRITER_STACKSIZE` | 8192 | 4096 | Same |
+| `THREAD_POOL_READER_STACKSIZE` | 8192 | 4096 | Same |
+| `NUM_WRITERS_PER_PARTICIPANT` | 6 | 20 | Raised to accommodate ws_base (heavy publisher) |
+| `NUM_READERS_PER_PARTICIPANT` | 6 | 20 | Same |
+| Discovery wait (`osDelay`) | 6 s | 8 s | 8 s = 16 SPDP cycles @ 500 ms; ensures full propagation |
+
+**Result:** SPDP thread heap reduced from ~131 KB → ~61 KB. No further `[Memory pool]` errors.
+
+---
+
+### Apr 2026 — Single-domain OOM crash and fix
+
+**Symptom:** Both STM32 boards crashed during RTPS init with `unable to allocate thread stack`.
+No subscriber data received.
+
+**Root cause:** `MAX_NUM_PARTICIPANTS` raised 15 → 20 (Jetson nodes joining D5 in the
+single-domain topology) while `NUM_STATEFUL_WRITERS` remained at 28:
+
+```
+(1+1+20+28) × 4096 = 204,800 B  ← exceeded available heap
+```
+
+Also discovered: `NUM_STATEFUL_WRITERS=2` on the sensors board caused `createWriter()` to
+return `nullptr` silently — embeddedRTPS always reserves 2 stateful writer slots for SEDP
+(`sedpPubWriter`, `sedpSubWriter`) before any application publisher. With only 2 slots,
+`tpc_chassis_sensors` was never actually advertised. No crash, no error log — just silent
+topic absence.
+
+**Changes made:**
+
+| Board | `NUM_STATEFUL_WRITERS` | `NUM_STATEFUL_READERS` |
+|---|---|---|
+| Chassis | 28 → 3 | 32 → 3 |
+| Sensors | 28 → 3 | 32 → 2 |
+
+Rule applied: `NUM_STATEFUL_WRITERS = 2 (SEDP) + app publishers`.
+
+**Result:** `OVERALL_HEAP_SIZE` reduced to ~100 KB on both boards. Verified working on hardware.
