@@ -36,7 +36,6 @@ echo "=== Starting latency collector on ${TARGET_HOST:-localhost} (label=${TARGE
 run_remote "
 set -e
 source /opt/ros/humble/setup.bash
-source ~/almondmatcha/common_ifaces/install/setup.bash 2>/dev/null || true
 source ~/almondmatcha/ws_rpi/install/setup.bash 2>/dev/null || \
     source ~/almondmatcha/ws_jetson/install/setup.bash 2>/dev/null || true
 export ROS_DOMAIN_ID=5

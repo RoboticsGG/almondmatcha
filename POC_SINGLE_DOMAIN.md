@@ -89,7 +89,6 @@ You need at least one ROS2 node running so there are messages to record.
 **Terminal 1 on RPi** — start a node that publishes to a D5 topic:
 ```bash
 source /opt/ros/humble/setup.bash
-source ~/almondmatcha/common_ifaces/install/setup.bash
 source ~/almondmatcha/ws_rpi/install/setup.bash
 export ROS_DOMAIN_ID=5
 ros2 run rover_monitoring rover_monitoring_node
@@ -98,7 +97,6 @@ ros2 run rover_monitoring rover_monitoring_node
 **Terminal 2 on RPi** (or SSH from base PC) — run the collector:
 ```bash
 source /opt/ros/humble/setup.bash
-source ~/almondmatcha/common_ifaces/install/setup.bash
 source ~/almondmatcha/ws_rpi/install/setup.bash
 export ROS_DOMAIN_ID=5
 
