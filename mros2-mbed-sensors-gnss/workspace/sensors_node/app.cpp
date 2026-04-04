@@ -241,9 +241,6 @@ int main()
     int32_t enc_B = sensor_data.encoder_B;
     float vbus = sensor_data.bus_voltage;
     float curr = sensor_data.current;
-    char gnss_data[GNSS_NMEA_BUFFER_SIZE];
-    strncpy(gnss_data, sensor_data.nmea_sentence, GNSS_NMEA_BUFFER_SIZE - 1);
-    gnss_data[GNSS_NMEA_BUFFER_SIZE - 1] = '\0';
     sensor_data_mutex.unlock();
 
     // Prepare and publish sensor data message
@@ -256,8 +253,8 @@ int main()
 
     // Print once on first publish to confirm sensors are alive, then stay silent
     if (!sensors_first_print_done) {
-      printf("\r\n[SENSORS] First sample — Enc(A:%ld B:%ld) Power(%.2fV %.2fA) GNSS:%s",
-         enc_A, enc_B, vbus, curr, gnss_data);
+      printf("\r\n[SENSORS] First sample — Enc(A:%ld B:%ld) Power(%.2fV %.2fA)",
+         enc_A, enc_B, vbus, curr);
       fflush(stdout);
       sensors_first_print_done = true;
     }
