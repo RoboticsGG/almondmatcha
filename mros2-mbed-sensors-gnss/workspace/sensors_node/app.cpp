@@ -227,7 +227,7 @@ int main()
 
   // Single-domain POC: start memory reporter (prints heap JSON to USB serial every 2 s)
   memory_reporter_start("sensors");
-  MROS2_INFO("Memory reporter started (250ms discovery / 2s steady) — look for {\"type\":\"STM32_MEM\"} on serial");
+  MROS2_INFO("Memory reporter started (200ms interval) — look for {\"type\":\"STM32_MEM\"} on serial");
 
   // ---- Main Sensor Publishing Loop ----
   // Main loop focuses on aggregating data from the three independent tasks
