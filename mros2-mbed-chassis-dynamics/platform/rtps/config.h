@@ -70,14 +70,14 @@ const uint8_t NUM_STATELESS_READERS = 4;
 const uint8_t NUM_STATEFUL_READERS = 3;               // SEDP: 2 internal + 1 app subscriber (tpc_chassis_cmd)
 const uint8_t NUM_STATEFUL_WRITERS = 3;               // SEDP: 2 internal + 1 app publisher (tpc_chassis_imu)
 const uint8_t MAX_NUM_PARTICIPANTS = 20;              // D5 single-domain: 15 actual + 5 margin
-const uint8_t NUM_WRITERS_PER_PARTICIPANT = 8;        // how many publishers each remote node may have
-const uint8_t NUM_READERS_PER_PARTICIPANT = 8;        // how many subscribers each remote node may have
-const uint8_t NUM_WRITER_PROXIES_PER_READER = 10;     // remote writers tracked per local reader
-const uint8_t NUM_READER_PROXIES_PER_WRITER = 15;     // remote readers tracked per local writer
+const uint8_t NUM_WRITERS_PER_PARTICIPANT = 20;       // how many publishers each remote node may have (match main)
+const uint8_t NUM_READERS_PER_PARTICIPANT = 20;       // how many subscribers each remote node may have (match main)
+const uint8_t NUM_WRITER_PROXIES_PER_READER = 28;     // remote writers tracked per local reader (match main)
+const uint8_t NUM_READER_PROXIES_PER_WRITER = 28;     // remote readers tracked per local writer (match main)
 
 // Discovery burst handling
-const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 20;  // simultaneous discovery burst
-const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 25;  // ws_base monitoring burst
+const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 60;  // simultaneous discovery burst (match main)
+const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 25;  // ws_base monitoring burst (match main)
 
 const uint8_t MAX_NUM_READER_CALLBACKS = 3;  // This board has 1 callback (tpc_chassis_cmd)
 
