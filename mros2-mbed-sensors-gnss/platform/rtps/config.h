@@ -69,14 +69,17 @@ const uint8_t NUM_STATELESS_READERS = 4;
 const uint8_t NUM_STATEFUL_READERS = 2;               // SEDP: 2 internal; 0 app subscribers = 2 minimum
 const uint8_t NUM_STATEFUL_WRITERS = 3;               // SEDP: 2 internal + 1 app publisher (tpc_chassis_sensors)
 const uint8_t MAX_NUM_PARTICIPANTS = 20;              // D5 single-domain: 15 actual + 5 margin
-const uint8_t NUM_WRITERS_PER_PARTICIPANT = 20;       // how many publishers each remote node may have (match main)
-const uint8_t NUM_READERS_PER_PARTICIPANT = 20;       // how many subscribers each remote node may have (match main)
-const uint8_t NUM_WRITER_PROXIES_PER_READER = 28;     // remote writers tracked per local reader (match main)
-const uint8_t NUM_READER_PROXIES_PER_WRITER = 28;     // remote readers tracked per local writer (match main)
+const uint8_t NUM_WRITERS_PER_PARTICIPANT = 8;        // max publishers per remote node
+const uint8_t NUM_READERS_PER_PARTICIPANT = 8;        // max subscribers per remote node
+const uint8_t NUM_WRITER_PROXIES_PER_READER = 22;     // must cover SPDP_MAX_NUMBER_FOUND_PARTICIPANTS (19); was 5 — root cause of RX failure
+const uint8_t NUM_READER_PROXIES_PER_WRITER = 15;     // tpc_chassis_sensors has ~8 subscribers
 
 // Discovery burst handling
-const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 60;  // simultaneous discovery burst (match main)
-const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 80;  // ws_base monitoring burst (match main)
+// WARNING: these pools are embedded in EVERY Participant slot (all 20) in static BSS.
+// MAX_NUM_UNMATCHED_REMOTE_* × 20 participants × sizeof(TopicDataCompressed) ≈ 60 B
+// → each +1 here costs 20×60=1.2 KB of BSS. Keep modest.
+const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 20;  // ≥ MAX_NUM_PARTICIPANTS (16 actual)
+const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 25;  // ≥ MAX_NUM_PARTICIPANTS + monitoring burst margin
 
 const uint8_t MAX_NUM_READER_CALLBACKS = 2;  // This board has no callbacks (publish-only)
 
