@@ -275,12 +275,23 @@ minicom -b 115200 -D /dev/ttyACM1
 # NOTE: USB enumeration order depends on plug-in sequence — verify before each run.
 ```
 
-Start the collector (it blocks, waiting for `{"type":"STM32_MEM",...}` JSON lines):
+Start the collector. It blocks, reading JSON lines from both ports. Each line is tagged with
+`"node":"chassis"` or `"node":"sensors"` — the collector writes both to the same CSV, which
+the analysis scripts split on that field:
 ```bash
 # Adjust /dev/ttyACM* to match the ports confirmed above
 python3 ws_base/tools/stm32_serial/collect_stm32_memory.py \
   --chassis /dev/ttyACM1 --sensors /dev/ttyACM0 \
   --out ~/ros2_traces/stm32_memory_poc.csv
+```
+
+Expected JSON on `--chassis` port:
+```
+{"type":"STM32_MEM","node":"chassis","ts_ms":200,"heap_used":...}
+```
+Expected JSON on `--sensors` port:
+```
+{"type":"STM32_MEM","node":"sensors","ts_ms":200,"heap_used":...}
 ```
 
 Leave this running in a dedicated terminal. **Now power-cycle both STM32 boards** — the
