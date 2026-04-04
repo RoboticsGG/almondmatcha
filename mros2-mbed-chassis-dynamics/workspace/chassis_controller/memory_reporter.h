@@ -3,7 +3,9 @@
  * @brief Periodic heap/stack memory reporter for STM32 — single-domain POC
  *
  * Spawns a low-priority background thread that prints a JSON line to the USB
- * serial port every MEM_REPORT_INTERVAL_MS milliseconds.  The line format is:
+ * serial port.  During the first MEM_REPORT_FAST_DURATION_MS milliseconds
+ * (discovery phase) it prints every MEM_REPORT_FAST_MS ms; thereafter every
+ * MEM_REPORT_SLOW_MS ms.  Line format:
  *
  *   {"type":"STM32_MEM","node":"<NODE_NAME>","ts_ms":<uptime>,"heap_used":<bytes>,
  *    "heap_max":<bytes>,"heap_free":<bytes>,"alloc_fail":<count>,
@@ -24,9 +26,17 @@
 #include "mbed.h"
 #include "mbed_stats.h"
 
-// Report interval — 2 s is enough resolution without flooding the serial link
-#ifndef MEM_REPORT_INTERVAL_MS
-#define MEM_REPORT_INTERVAL_MS 2000
+// Fast phase: sample every 250 ms for the first 15 s (covers RTPS discovery burst).
+// Slow phase: sample every 2000 ms thereafter (steady-state monitoring).
+// Discovery happens in the first 10 s; the extra 5 s margin catches late joiners.
+#ifndef MEM_REPORT_FAST_MS
+#define MEM_REPORT_FAST_MS 250
+#endif
+#ifndef MEM_REPORT_SLOW_MS
+#define MEM_REPORT_SLOW_MS 2000
+#endif
+#ifndef MEM_REPORT_FAST_DURATION_MS
+#define MEM_REPORT_FAST_DURATION_MS 15000
 #endif
 
 // Stack for the reporter thread — 1536 B required for printf with 7 format args
@@ -85,7 +95,11 @@ void _memory_reporter_task()
                (unsigned long)stack_free);
 
         fflush(stdout);
-        ThisThread::sleep_for(chrono::milliseconds(MEM_REPORT_INTERVAL_MS));
+        // Two-phase interval: fast during discovery, slow in steady state.
+        int interval_ms = (ts_ms < MEM_REPORT_FAST_DURATION_MS)
+                          ? MEM_REPORT_FAST_MS
+                          : MEM_REPORT_SLOW_MS;
+        ThisThread::sleep_for(chrono::milliseconds(interval_ms));
     }
 }
 

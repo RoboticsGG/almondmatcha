@@ -281,7 +281,7 @@ int main()
 
     // Single-domain POC: start memory reporter (prints heap JSON to USB serial every 2 s)
     memory_reporter_start("chassis");
-    MROS2_INFO("Memory reporter started (2 s interval) — look for {\"type\":\"STM32_MEM\"} on serial");
+    MROS2_INFO("Memory reporter started (250ms discovery / 2s steady) — look for {\"type\":\"STM32_MEM\"} on serial");
 
     // Main loop: Spin ROS2 communication
     mros2::spin();
