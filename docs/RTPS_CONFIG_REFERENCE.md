@@ -143,8 +143,7 @@ their topics never appear, no error. Set it to `(actual node count) + margin`.
 
 ### `NUM_WRITERS_PER_PARTICIPANT`
 ```cpp
-const uint8_t NUM_WRITERS_PER_PARTICIPANT = 8;   // single-domain
-// const uint8_t NUM_WRITERS_PER_PARTICIPANT = 20; // multi-domain
+const uint8_t NUM_WRITERS_PER_PARTICIPANT = 20;   // both branches (match main)
 ```
 **Maximum number of publishers (writers) each remote participant may have.**  
 Used to size the per-participant writer endpoint table:
@@ -160,33 +159,41 @@ heaviest remote node.
 | `ws_rpi` nodes | 1–4 | Most have 1–2 |
 | STM32 boards | 1 each | |
 
-Single-domain uses 8 (plenty of margin). Multi-domain uses 20 (original overly-conservative
-sizing that still works within heap budget at `MAX_NUM_PARTICIPANTS=15`).
+Both branches use 20, matching main. Ensures no remote publisher is silently dropped even
+if a node grows beyond the documented worst case.
 
 ### `NUM_READERS_PER_PARTICIPANT`
 ```cpp
-const uint8_t NUM_READERS_PER_PARTICIPANT = 8;   // single-domain
-// const uint8_t NUM_READERS_PER_PARTICIPANT = 20; // multi-domain
+const uint8_t NUM_READERS_PER_PARTICIPANT = 20;   // both branches (match main)
 ```
 Same structure as `NUM_WRITERS_PER_PARTICIPANT` but for subscribers. Set to the max
-subscriber count of the heaviest remote node (`ws_base` with ~6). Single-domain uses 8.
+subscriber count of the heaviest remote node (`ws_base` with ~6). Both branches use 20.
 
 ### `NUM_WRITER_PROXIES_PER_READER`
 ```cpp
-const uint8_t NUM_WRITER_PROXIES_PER_READER = 10;   // chassis
-const uint8_t NUM_WRITER_PROXIES_PER_READER = 5;    // sensors (no real local readers)
+const uint8_t NUM_WRITER_PROXIES_PER_READER = 28;   // both boards (match main)
 ```
 **For each local stateful reader, how many remote writers it can track simultaneously.**  
 This is the match table for a local subscriber — it records which remote publishers have
 matched with this subscription.
 
-For `tpc_chassis_cmd` on the chassis board, only 1 remote node publishes it
-(`rover_kinematic_control`). Using 10 is generous. For the sensors board with no real
-app subscribers, 5 covers only the SEDP readers.
+**Critical for discovery:** the 2 internal SEDP stateful readers use this table to track
+remote SEDP writers — one slot per remote domain participant. With `MAX_NUM_PARTICIPANTS=20`
+you need at least 20 writer proxies per SEDP reader.
+
+Setting this too small caused a silent publish-only failure (April 2026): the sensors board
+had `NUM_WRITER_PROXIES_PER_READER=5`, so its SEDP reader could only track 5 remote SEDP
+writers. With 16 participants in domain, 11 participants' endpoint advertisements were
+silently dropped — including the RPi subscriber for `tpc_chassis_sensors`. The publisher's
+reader-proxy list stayed empty and it sent data to no one. Chassis survived with 10 because
+its active subscriber (`tpc_chassis_cmd`) triggered bidirectional SEDP exchange that bypassed
+the proxy limit.
+
+Both boards now use 28, matching main branch values.
 
 ### `NUM_READER_PROXIES_PER_WRITER`
 ```cpp
-const uint8_t NUM_READER_PROXIES_PER_WRITER = 15;
+const uint8_t NUM_READER_PROXIES_PER_WRITER = 28;   // both boards (match main)
 ```
 **For each local stateful writer, how many remote readers it can track simultaneously.**  
 This is the match table for a local publisher — it records which remote subscribers have
@@ -194,11 +201,12 @@ matched with this publication and tracks their acknowledgment state for reliable
 
 `tpc_chassis_imu` and `tpc_chassis_sensors` are subscribed by: mission_monitoring,
 rover_monitoring, base PC monitoring nodes, and rover_kinematic_control — roughly 6–8
-nodes depending on configuration. 15 covers all single-domain D5 subscribers with margin.
+nodes depending on configuration. 28 matches main branch values and provides ample margin
+for any monitoring subscription growth.
 
 ### `MAX_NUM_UNMATCHED_REMOTE_WRITERS`
 ```cpp
-const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 20;
+const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 60;   // both boards (match main)
 ```
 **Ring-buffer depth for remote writer announcements that arrive before the local match
 table is ready.**  During the discovery window (first 8–10 seconds), all domain
@@ -214,11 +222,13 @@ Safe lower bound: `≥ MAX_NUM_PARTICIPANTS` (worst case: all arrive at once).
 
 ### `MAX_NUM_UNMATCHED_REMOTE_READERS`
 ```cpp
-const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 25;
+const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 80;   // sensors board (match main)
+const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 25;   // chassis board
 ```
-Equivalent queue for remote **reader** announcements. Set slightly higher than the writer
-queue because `ws_base` monitoring nodes subscribe to many topics and their announcements
-arrive in a burst. 25 ≥ 20 actual D5 participants with margin.
+Equivalent queue for remote **reader** announcements. Set higher than the writer queue
+because `ws_base` monitoring nodes subscribe to many topics and their announcements arrive
+in a burst. Sensors board uses 80 (matches main); chassis keeps 25 (receives fewer
+monitoring subscriptions in this topology).
 
 ### `MAX_NUM_READER_CALLBACKS`
 ```cpp

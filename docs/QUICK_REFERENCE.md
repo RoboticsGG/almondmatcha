@@ -1,6 +1,6 @@
 # Quick Reference: System Launch & Configuration
 
-**Last updated:** April 3, 2026  
+**Last updated:** April 4, 2026  
 **Configuration:** Single-domain POC — all nodes on D5; 16 participants + 4 margin  
 **Network:** All systems connected via Gigabit Ethernet switch (192.168.1.0/24)
 
@@ -14,8 +14,12 @@
 MAX_NUM_PARTICIPANTS     = 20   // 16 D5 nodes + 4 margin
 NUM_STATEFUL_WRITERS     = 3    // 2 SEDP + 1 app publisher (both boards)
 NUM_STATEFUL_READERS     = 3    // 2 SEDP + 1 app sub (chassis); 2 for sensors
-NUM_WRITERS_PER_PARTICIPANT = 8   // max publishers per remote node
-NUM_READERS_PER_PARTICIPANT = 8   // max subscribers per remote node
+NUM_WRITERS_PER_PARTICIPANT = 20  // max publishers per remote node; matches main
+NUM_READERS_PER_PARTICIPANT = 20  // max subscribers per remote node; matches main
+NUM_WRITER_PROXIES_PER_READER = 28 // SEDP reader needs 1 slot per participant; matches main
+NUM_READER_PROXIES_PER_WRITER = 28 // local publisher's match table; matches main
+MAX_NUM_UNMATCHED_REMOTE_WRITERS = 60  // discovery burst buffer; matches main
+MAX_NUM_UNMATCHED_REMOTE_READERS = 80  // sensors; 25 chassis; matches main
 SPDP_WRITER_STACKSIZE    = 4096 // halved from 8192
 ```
 

@@ -172,16 +172,16 @@ OVERALL_HEAP_SIZE =
 These are per-local-endpoint tables — size them based on what this board actually needs to track:
 
 **NUM_WRITERS_PER_PARTICIPANT** — how many publishers might each remote participant have?  
-The heaviest node is `ws_base` with ~5 publishers. Using 8 gives safe margin.
+The heaviest node is `ws_base` with ~5 publishers. Using 20 matches main branch values and ensures no remote publisher is silently dropped.
 
 **NUM_READERS_PER_PARTICIPANT** — how many subscribers might each remote participant have?  
-The heaviest node is `ws_base` with ~6 subscribers. Using 8 gives safe margin.
+The heaviest node is `ws_base` with ~6 subscribers. Using 20 matches main branch values.
 
-**NUM_WRITER_PROXIES_PER_READER** — for each local subscriber, how many remote publishers can match it?  
-`tpc_chassis_cmd` is published by exactly 1 node (rover_kinematic_control). Using 10 is generous.
+**NUM_WRITER_PROXIES_PER_READER** — for each local stateful reader, how many remote writers it can track simultaneously.  
+**Critical:** this is not just app subscribers — the 2 internal SEDP readers use this table to track remote SEDP writers, one per domain participant. With 20 participants you need ≥ 20 proxies. Using 28 matches main branch values. Setting it too small (e.g. 5) causes SEDP to miss participant endpoint advertisements — the local publisher never learns about remote subscribers and sends data to no one (root cause of the sensors board rx failure, April 2026).
 
 **NUM_READER_PROXIES_PER_WRITER** — for each local publisher, how many remote subscribers can match it?  
-`tpc_chassis_imu` / `tpc_chassis_sensors` are subscribed by ~8 nodes (mission_monitoring, rover_monitoring, ws_base monitors, etc.). Using 15 is safe.
+`tpc_chassis_imu` / `tpc_chassis_sensors` are subscribed by ~8 nodes (mission_monitoring, rover_monitoring, ws_base monitors, etc.). Using 28 matches main branch values.
 
 ### Step 5 — Size the unmatched discovery queues
 
@@ -194,8 +194,9 @@ MAX_NUM_UNMATCHED_REMOTE_WRITERS ≥ MAX_NUM_PARTICIPANTS    (worst case: all ar
 MAX_NUM_UNMATCHED_REMOTE_READERS ≥ MAX_NUM_PARTICIPANTS + a monitoring burst margin
 ```
 
-20 and 25 are used (≥ 16 actual participants). If `[MemoryPool] resource limit exceed`
-appears in the serial log at boot, increase these by 5 and rebuild.
+60 and 80 are used for the sensors board (chassis uses 60 and 25). These are well above
+the 20-participant limit and match main branch values. If `[MemoryPool] resource limit
+exceed` appears in the serial log at boot, increase these by 8 and rebuild.
 
 ---
 
@@ -208,11 +209,11 @@ appears in the serial log at boot, increase these by 5 and rebuild.
 | `NUM_STATEFUL_WRITERS` | 3 | 2 SEDP internal + 1 app publisher (tpc_chassis_imu) |
 | `NUM_STATEFUL_READERS` | 3 | 2 SEDP internal + 1 app subscriber (tpc_chassis_cmd) |
 | `MAX_NUM_PARTICIPANTS` | 20 | 16 actual D5 nodes + 4 margin |
-| `NUM_WRITERS_PER_PARTICIPANT` | 8 | ws_base publishes up to ~5 topics |
-| `NUM_READERS_PER_PARTICIPANT` | 8 | ws_base subscribes to up to ~6 topics |
-| `NUM_WRITER_PROXIES_PER_READER` | 10 | tpc_chassis_cmd has 1 publisher; 10 is generous |
-| `NUM_READER_PROXIES_PER_WRITER` | 15 | tpc_chassis_imu has ~8 subscribers |
-| `MAX_NUM_UNMATCHED_REMOTE_WRITERS` | 20 | ≥ 16 participants |
+| `NUM_WRITERS_PER_PARTICIPANT` | 20 | max publishers per remote node; matches main |
+| `NUM_READERS_PER_PARTICIPANT` | 20 | max subscribers per remote node; matches main |
+| `NUM_WRITER_PROXIES_PER_READER` | 28 | SEDP reader needs 1 proxy per participant (≥ 20); matches main |
+| `NUM_READER_PROXIES_PER_WRITER` | 28 | tpc_chassis_imu subscribers + margin; matches main |
+| `MAX_NUM_UNMATCHED_REMOTE_WRITERS` | 60 | 3× participants; matches main |
 | `MAX_NUM_UNMATCHED_REMOTE_READERS` | 25 | ≥ 16 participants + monitoring burst |
 | `HEARTBEAT_STACKSIZE` | 4096 | Halved from 8192; sufficient for embeddedRTPS heartbeat task |
 | `SPDP_WRITER_STACKSIZE` | 4096 | Halved from 8192; critical for keeping OVERALL_HEAP_SIZE in budget |
@@ -225,12 +226,12 @@ appears in the serial log at boot, increase these by 5 and rebuild.
 | `NUM_STATEFUL_WRITERS` | 3 | 2 SEDP internal + 1 app publisher (tpc_chassis_sensors) |
 | `NUM_STATEFUL_READERS` | 2 | 2 SEDP internal + 0 app subscribers = minimum |
 | `MAX_NUM_PARTICIPANTS` | 20 | Same as chassis |
-| `NUM_WRITERS_PER_PARTICIPANT` | 8 | Same as chassis |
-| `NUM_READERS_PER_PARTICIPANT` | 8 | Same as chassis |
-| `NUM_WRITER_PROXIES_PER_READER` | 5 | No real local readers; minimal |
-| `NUM_READER_PROXIES_PER_WRITER` | 15 | tpc_chassis_sensors has ~8 subscribers |
-| `MAX_NUM_UNMATCHED_REMOTE_WRITERS` | 20 | Same as chassis |
-| `MAX_NUM_UNMATCHED_REMOTE_READERS` | 25 | Same as chassis |
+| `NUM_WRITERS_PER_PARTICIPANT` | 20 | max publishers per remote node; matches main |
+| `NUM_READERS_PER_PARTICIPANT` | 20 | max subscribers per remote node; matches main |
+| `NUM_WRITER_PROXIES_PER_READER` | 28 | SEDP reader tracks 1 proxy per participant (≥ 20); was 5 — root cause of rx failure |
+| `NUM_READER_PROXIES_PER_WRITER` | 28 | tpc_chassis_sensors subscribers + margin; matches main |
+| `MAX_NUM_UNMATCHED_REMOTE_WRITERS` | 60 | 3× participants; matches main |
+| `MAX_NUM_UNMATCHED_REMOTE_READERS` | 80 | ws_base monitoring burst; matches main |
 | `OVERALL_HEAP_SIZE` (computed) | **100 KB** | Well within budget |
 
 ---
