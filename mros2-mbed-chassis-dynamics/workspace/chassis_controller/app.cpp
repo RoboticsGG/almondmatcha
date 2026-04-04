@@ -116,6 +116,7 @@ void imu_reader_task() {
     int32_t local_accel[3] = {0};
     int32_t local_gyro[3] = {0};
     uint32_t sample_count = 0;
+    bool imu_first_print_done = false;
     
     while (1) {
         // Read IMU sensor data
@@ -147,12 +148,15 @@ void imu_reader_task() {
             
             // Publish to ROS2
             imu_pub_ptr->publish(imu_msg);
-            
-            // Print IMU values in the same line (overwrite previous output)
-            printf("\r\n[imu_reader_task] Accel: X=%ld\tY=%ld\tZ=%ld\t| Gyro: X=%ld\tY=%ld\tZ=%ld",
-                   imu_msg.accel_x, imu_msg.accel_y, imu_msg.accel_z,
-                   imu_msg.gyro_x, imu_msg.gyro_y, imu_msg.gyro_z);
-            fflush(stdout);
+
+            // Print once on first publish to confirm sensor is alive, then stay silent
+            if (!imu_first_print_done) {
+                printf("\r\n[imu_reader_task] First sample — Accel: X=%ld\tY=%ld\tZ=%ld\t| Gyro: X=%ld\tY=%ld\tZ=%ld",
+                       imu_msg.accel_x, imu_msg.accel_y, imu_msg.accel_z,
+                       imu_msg.gyro_x, imu_msg.gyro_y, imu_msg.gyro_z);
+                fflush(stdout);
+                imu_first_print_done = true;
+            }
         }
         
         // IMU polling rate

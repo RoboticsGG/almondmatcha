@@ -232,7 +232,8 @@ int main()
   // ---- Main Sensor Publishing Loop ----
   // Main loop focuses on aggregating data from the three independent tasks
   // and publishing to ROS2 at 4 Hz (250ms interval).
-  
+  bool sensors_first_print_done = false;
+
   while (true) {
     // Read all sensor data from shared structure with mutex protection
     sensor_data_mutex.lock();
@@ -253,10 +254,13 @@ int main()
     msgs.sys_volt_msg = vbus;           // Bus voltage (V)
     PubSensData.publish(msgs);
 
-    // Print sensor status on its own line
-    printf("\r\n[SENSORS] Enc(A:%ld B:%ld) Power(%.2fV %.2fA) GNSS:%s",
-       enc_A, enc_B, vbus, curr, gnss_data);
-    fflush(stdout);
+    // Print once on first publish to confirm sensors are alive, then stay silent
+    if (!sensors_first_print_done) {
+      printf("\r\n[SENSORS] First sample — Enc(A:%ld B:%ld) Power(%.2fV %.2fA) GNSS:%s",
+         enc_A, enc_B, vbus, curr, gnss_data);
+      fflush(stdout);
+      sensors_first_print_done = true;
+    }
 
     // Main loop runs at MAIN_LOOP_PERIOD_MS (4 Hz)
     ThisThread::sleep_for(chrono::milliseconds(MAIN_LOOP_PERIOD_MS));
