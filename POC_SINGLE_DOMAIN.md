@@ -233,6 +233,30 @@ If `interval_ms` column is empty for all rows: confirm `ROS_DOMAIN_ID=5` is set 
 
 ## Running the POC Experiment
 
+### Launch Sequence at a Glance
+
+The hardest constraint is the **10-second STM32 discovery window**: the heap peak (the
+primary measurement) happens in that window and is missed if collectors or Linux nodes
+are late. Follow this order exactly.
+
+| # | Elapsed | Machine | Action |
+|---|---|---|---|
+| 1 | t − 30 s | Base PC | `python3 collect_stm32_memory.py ...` — start collector, leave running |
+| 2 | t = 0 | Base PC | Power-cycle **both** STM32 boards (unplug/replug USB-C power) |
+| 3 | t + 2 s | RPi | `bash launch_rover_single_domain.sh` |
+| 4 | t + 3 s | Jetson | `bash launch_jetson_single_domain.sh` |
+| 5 | t + 4 s | Base PC | `bash launch_base_single_domain.sh` |
+| 6 | t + 5 s | Base PC | `start_trace.sh` on RPi + Jetson (latency collectors) |
+| 7 | t + 6 s | Base PC | `collect_net_stats.py` on RPi + Jetson (SSH terminals) |
+| 8 | t + 10 s | — | STM32 discovery wait ends; boards begin publishing |
+| 9 | t + 5 min | — | Stop all collectors (Step 6 below); pull CSVs |
+
+> **Why Linux nodes at t+2–5 s?** They must be fully subscribed before the STM32 boards
+> finish their 10-second wait. DDS participant matching is bidirectional — the STM32 only
+> allocates proxy memory for participants it has already seen. Bringing Linux nodes up late
+> means fewer RPi/Jetson participants are matched during the discovery window, producing an
+> artificially low `heap_max`.
+
 ### Step 1 — Start STM32 memory collection on base PC
 
 > **Start this before powering the STM32 boards.** The most critical memory events happen
