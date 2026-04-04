@@ -46,7 +46,10 @@
 namespace {
 
 static char   _mem_reporter_node_name[MEM_REPORTER_NODE_NAME_MAX] = "stm32";
-static Thread _mem_reporter_thread(osPriorityLow, MEM_REPORTER_STACK_SIZE,
+// osPriorityNormal required on the sensors board: three Normal-priority tasks
+// (encoder 100ms, gnss 100ms, power 200ms) cycle with overlapping wakeups and
+// leave no simultaneous sleep window for a Low-priority thread.
+static Thread _mem_reporter_thread(osPriorityNormal, MEM_REPORTER_STACK_SIZE,
                                    nullptr, "mem_rpt");
 
 void _memory_reporter_task()
