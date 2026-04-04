@@ -14,12 +14,12 @@
 MAX_NUM_PARTICIPANTS     = 20   // 16 D5 nodes + 4 margin
 NUM_STATEFUL_WRITERS     = 3    // 2 SEDP + 1 app publisher (both boards)
 NUM_STATEFUL_READERS     = 3    // 2 SEDP + 1 app sub (chassis); 2 for sensors
-NUM_WRITERS_PER_PARTICIPANT = 20  // max publishers per remote node; matches main
-NUM_READERS_PER_PARTICIPANT = 20  // max subscribers per remote node; matches main
-NUM_WRITER_PROXIES_PER_READER = 28 // SEDP reader needs 1 slot per participant; matches main
-NUM_READER_PROXIES_PER_WRITER = 28 // local publisher's match table; matches main
-MAX_NUM_UNMATCHED_REMOTE_WRITERS = 60  // discovery burst buffer; matches main
-MAX_NUM_UNMATCHED_REMOTE_READERS = 80  // sensors; 25 chassis; matches main
+NUM_WRITERS_PER_PARTICIPANT = 8   // max publishers per remote node
+NUM_READERS_PER_PARTICIPANT = 8   // max subscribers per remote node
+NUM_WRITER_PROXIES_PER_READER = 22 // >= SPDP_MAX_NUMBER_FOUND_PARTICIPANTS (19)
+NUM_READER_PROXIES_PER_WRITER = 15 // covers ~8 subscribers per topic
+MAX_NUM_UNMATCHED_REMOTE_WRITERS = 20 // >= 16 actual participants
+MAX_NUM_UNMATCHED_REMOTE_READERS = 25 // >= 16 participants + burst margin
 SPDP_WRITER_STACKSIZE    = 4096 // halved from 8192
 ```
 

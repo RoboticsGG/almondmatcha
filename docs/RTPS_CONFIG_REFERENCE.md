@@ -143,7 +143,7 @@ their topics never appear, no error. Set it to `(actual node count) + margin`.
 
 ### `NUM_WRITERS_PER_PARTICIPANT`
 ```cpp
-const uint8_t NUM_WRITERS_PER_PARTICIPANT = 20;   // both branches (match main)
+const uint8_t NUM_WRITERS_PER_PARTICIPANT = 8;   // both branches
 ```
 **Maximum number of publishers (writers) each remote participant may have.**  
 Used to size the per-participant writer endpoint table:
@@ -159,41 +159,43 @@ heaviest remote node.
 | `ws_rpi` nodes | 1–4 | Most have 1–2 |
 | STM32 boards | 1 each | |
 
-Both branches use 20, matching main. Ensures no remote publisher is silently dropped even
-if a node grows beyond the documented worst case.
+Both branches use 8 (safe margin over worst case ~5). Note: this array is stored as
+`std::array<Writer*, 8>` (pointer array, 4 bytes each) in every Participant slot, so the
+BSS cost of increasing it is small. But with `MAX_NUM_PARTICIPANTS=20` keep it low.
 
 ### `NUM_READERS_PER_PARTICIPANT`
 ```cpp
-const uint8_t NUM_READERS_PER_PARTICIPANT = 20;   // both branches (match main)
+const uint8_t NUM_READERS_PER_PARTICIPANT = 8;   // both branches
 ```
 Same structure as `NUM_WRITERS_PER_PARTICIPANT` but for subscribers. Set to the max
-subscriber count of the heaviest remote node (`ws_base` with ~6). Both branches use 20.
+subscriber count of the heaviest remote node (`ws_base` with ~6). Both branches use 8.
 
 ### `NUM_WRITER_PROXIES_PER_READER`
 ```cpp
-const uint8_t NUM_WRITER_PROXIES_PER_READER = 28;   // both boards (match main)
+const uint8_t NUM_WRITER_PROXIES_PER_READER = 22;   // both boards
 ```
 **For each local stateful reader, how many remote writers it can track simultaneously.**  
 This is the match table for a local subscriber — it records which remote publishers have
 matched with this subscription.
 
 **Critical for discovery:** the 2 internal SEDP stateful readers use this table to track
-remote SEDP writers — one slot per remote domain participant. With `MAX_NUM_PARTICIPANTS=20`
-you need at least 20 writer proxies per SEDP reader.
+remote SEDP writers — one slot per remote domain participant. With
+`SPDP_MAX_NUMBER_FOUND_PARTICIPANTS=19`, at least 19 writer proxies per SEDP reader are
+needed. Set to 22 (= 19 + 3).
 
-Setting this too small caused a silent publish-only failure (April 2026): the sensors board
-had `NUM_WRITER_PROXIES_PER_READER=5`, so its SEDP reader could only track 5 remote SEDP
-writers. With 16 participants in domain, 11 participants' endpoint advertisements were
-silently dropped — including the RPi subscriber for `tpc_chassis_sensors`. The publisher's
-reader-proxy list stayed empty and it sent data to no one. Chassis survived with 10 because
-its active subscriber (`tpc_chassis_cmd`) triggered bidirectional SEDP exchange that bypassed
-the proxy limit.
+**This pool does NOT live per-Participant.** It lives in each `StatefulReader` which is
+stored in `Domain.m_statefulReaders[]` (a flat array sized by `NUM_STATEFUL_READERS=3`).
+Each +1 costs only `NUM_STATEFUL_READERS × sizeof(WriterProxy) ≈ 44` bytes total — safe
+to size generously.
 
-Both boards now use 28, matching main branch values.
+Setting this too small caused a silent publish failure (April 2026): sensors board had
+`NUM_WRITER_PROXIES_PER_READER=5` — SEDP readers could track only 5 remote SEDP writers.
+With 16 participants, 11 were missed including the RPi `tpc_chassis_sensors` subscriber.
+Publisher’s reader-proxy list stayed empty and sent data to no one.
 
 ### `NUM_READER_PROXIES_PER_WRITER`
 ```cpp
-const uint8_t NUM_READER_PROXIES_PER_WRITER = 28;   // both boards (match main)
+const uint8_t NUM_READER_PROXIES_PER_WRITER = 15;   // both boards
 ```
 **For each local stateful writer, how many remote readers it can track simultaneously.**  
 This is the match table for a local publisher — it records which remote subscribers have
@@ -201,12 +203,11 @@ matched with this publication and tracks their acknowledgment state for reliable
 
 `tpc_chassis_imu` and `tpc_chassis_sensors` are subscribed by: mission_monitoring,
 rover_monitoring, base PC monitoring nodes, and rover_kinematic_control — roughly 6–8
-nodes depending on configuration. 28 matches main branch values and provides ample margin
-for any monitoring subscription growth.
+nodes depending on configuration. 15 covers all expected single-domain D5 subscribers.
 
 ### `MAX_NUM_UNMATCHED_REMOTE_WRITERS`
 ```cpp
-const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 60;   // both boards (match main)
+const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 20;   // both boards
 ```
 **Ring-buffer depth for remote writer announcements that arrive before the local match
 table is ready.**  During the discovery window (first 8–10 seconds), all domain
@@ -218,17 +219,25 @@ If this is too small during a burst, the overflow is silently dropped — the su
 endpoint never matches and the topic stays invisible. Symptom: `[MemoryPool] resource limit
 exceed` in the serial log during boot.
 
-Safe lower bound: `≥ MAX_NUM_PARTICIPANTS` (worst case: all arrive at once).
+Safe lower bound: `≥ MAX_NUM_PARTICIPANTS` (worst case: all arrive at once) → use 20.
+
+> **BSS cost warning:** This pool is stored in `SEDPAgent`, which is embedded inline in
+> **every** `Participant` slot (all 20) in `Domain`'s static BSS. `sizeof(TopicDataCompressed)
+> ≈ 60 B`, so each +1 here costs `20 × 60 = 1.2 KB` of static SRAM. The main branch uses
+> 60 (at `MAX_NUM_PARTICIPANTS=15`, total = 54 KB). Copying that value to single-domain
+> (`MAX_NUM_PARTICIPANTS=20`) would add `20 × 40 × 60 = 48 KB` of extra BSS and causes
+> SRAM overflow.
 
 ### `MAX_NUM_UNMATCHED_REMOTE_READERS`
 ```cpp
-const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 80;   // sensors board (match main)
-const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 25;   // chassis board
+const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 25;   // both boards
 ```
-Equivalent queue for remote **reader** announcements. Set higher than the writer queue
-because `ws_base` monitoring nodes subscribe to many topics and their announcements arrive
-in a burst. Sensors board uses 80 (matches main); chassis keeps 25 (receives fewer
-monitoring subscriptions in this topology).
+Equivalent queue for remote **reader** announcements. 25 ≥ 16 actual D5 participants
+with margin for monitoring subscription bursts.
+
+> Same BSS cost warning as `MAX_NUM_UNMATCHED_REMOTE_WRITERS` above. Main branch uses
+> 80 at `MAX_NUM_PARTICIPANTS=15` (total 72 KB). At 20 participants that would add 66 KB
+> of extra BSS. Keep at 25.
 
 ### `MAX_NUM_READER_CALLBACKS`
 ```cpp
