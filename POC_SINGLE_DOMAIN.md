@@ -233,7 +233,73 @@ If `interval_ms` column is empty for all rows: confirm `ROS_DOMAIN_ID=5` is set 
 
 ## Running the POC Experiment
 
-### Launch Sequence at a Glance
+### Option A — Automated (recommended): `launch_poc_experiment.sh`
+
+A single script handles the entire sequence from the base PC — starting collectors,
+prompting for the power-cycle, launching all ROS2 nodes, waiting, and pulling CSVs.
+
+**Before running:** verify which `/dev/ttyACM*` port is which:
+```bash
+minicom -b 115200 -D /dev/ttyACM0   # check "app name:" line on boot
+minicom -b 115200 -D /dev/ttyACM1
+# ttyACM0 = sensors/GNSS board  (IP 192.168.1.6, "STM32 Sensors Node")
+# ttyACM1 = chassis board        (IP 192.168.1.2, "RoverWithIMU")
+# USB enumeration order depends on plug-in sequence — verify before each run.
+```
+
+**Run the experiment:**
+```bash
+cd ~/almondmatcha
+
+# Default: 5-minute run, /dev/ttyACM1=chassis, /dev/ttyACM0=sensors
+bash ws_base/launch_poc_experiment.sh
+
+# Override run duration (seconds)
+bash ws_base/launch_poc_experiment.sh --duration 600
+
+# If ttyACM order is reversed
+bash ws_base/launch_poc_experiment.sh --chassis /dev/ttyACM0 --sensors /dev/ttyACM1
+
+# Collectors only — skip ROS2 node launch (nodes already running)
+bash ws_base/launch_poc_experiment.sh --skip-launch
+```
+
+**What the script does:**
+
+| Step | Action |
+|---|---|
+| Pre-flight | Checks `tmux`, `ssh`, `pyserial`, both serial ports, SSH reachability |
+| Start STM32 collector | Starts `collect_stm32_memory.py` in background — **before boards power on** |
+| ⏸ Interactive pause | Waits for you to physically power-cycle both STM32 boards |
+| Launch ROS2 nodes | SSHes into RPi → Jetson → launches base PC nodes during STM32 discovery wait |
+| Start latency collectors | Runs `start_trace.sh` on RPi and Jetson via SSH |
+| Start net-stats collectors | Runs `collect_net_stats.py` on both SBCs via SSH background `nohup` |
+| Timed run | Prints elapsed/remaining every 10 s; Ctrl-C stops early and still collects CSVs |
+| Stop and pull | Stops all collectors, pulls all CSVs to base PC, prints analysis commands |
+
+**Output files (all on base PC after the script finishes):**
+```
+~/ros2_traces/stm32_memory_poc.csv
+ws_base/tools/tracing/data/poc_latency_rpi.csv
+ws_base/tools/tracing/data/poc_latency_jetson.csv
+ws_base/tools/monitoring/data/poc_net_stats_rpi.csv
+ws_base/tools/monitoring/data/poc_net_stats_jetson.csv
+```
+
+> **STM32 serial JSON format:** both boards write to the same CSV, tagged by board:
+> - Chassis port: `{"type":"STM32_MEM","node":"chassis","ts_ms":200,"heap_used":...}`
+> - Sensors port: `{"type":"STM32_MEM","node":"sensors","ts_ms":200,"heap_used":...}`
+>
+> Analysis scripts split on the `"node"` field automatically.
+
+---
+
+### Option B — Manual (step-by-step)
+
+Use this if you need to run only a subset of collectors, or if the automated script fails
+partway through and you want to resume from a specific step.
+
+#### Launch sequence overview
 
 The hardest constraint is the **10-second STM32 discovery window**: the heap peak (the
 primary measurement) happens in that window and is missed if collectors or Linux nodes
@@ -241,7 +307,7 @@ are late. Follow this order exactly.
 
 | # | Elapsed | Machine | Action |
 |---|---|---|---|
-| 1 | t − 30 s | Base PC | `python3 collect_stm32_memory.py ...` — start collector, leave running |
+| 1 | t − 30 s | Base PC | Start STM32 collector (Step 1 below) |
 | 2 | t = 0 | Base PC | Power-cycle **both** STM32 boards (unplug/replug USB-C power) |
 | 3 | t + 2 s | RPi | `bash launch_rover_single_domain.sh` |
 | 4 | t + 3 s | Jetson | `bash launch_jetson_single_domain.sh` |
@@ -249,58 +315,24 @@ are late. Follow this order exactly.
 | 6 | t + 5 s | Base PC | `start_trace.sh` on RPi + Jetson (latency collectors) |
 | 7 | t + 6 s | Base PC | `collect_net_stats.py` on RPi + Jetson (SSH terminals) |
 | 8 | t + 10 s | — | STM32 discovery wait ends; boards begin publishing |
-| 9 | t + 5 min | — | Stop all collectors (Step 6 below); pull CSVs |
+| 9 | t + 5 min | — | Stop all collectors; pull CSVs |
 
-> **Why Linux nodes at t+2–5 s?** They must be fully subscribed before the STM32 boards
-> finish their 10-second wait. DDS participant matching is bidirectional — the STM32 only
+> **Why Linux nodes at t+2–5 s?** DDS participant matching is bidirectional — the STM32 only
 > allocates proxy memory for participants it has already seen. Bringing Linux nodes up late
 > means fewer RPi/Jetson participants are matched during the discovery window, producing an
 > artificially low `heap_max`.
 
-### Step 1 — Start STM32 memory collection on base PC
+#### Step 1 — Start STM32 memory collection on base PC
 
-> **Start this before powering the STM32 boards.** The most critical memory events happen
-> during the 10-second RTPS participant-discovery window immediately after boot — the firmware
-> allocates endpoint proxy structs for all 15–20 participants at that point. Starting the
-> collector after boot gives you only the flat steady-state line and misses the heap peak.
-
-Verify USB serial device paths first:
 ```bash
-ls /dev/ttyACM*
-# Expect two devices — confirm which is which:
-minicom -b 115200 -D /dev/ttyACM0   # check "app name:" line on boot
-minicom -b 115200 -D /dev/ttyACM1
-# ttyACM0 = sensors/GNSS board  (IP 192.168.1.6, "STM32 Sensors Node")
-# ttyACM1 = chassis board        (IP 192.168.1.2, "RoverWithIMU")
-# NOTE: USB enumeration order depends on plug-in sequence — verify before each run.
-```
-
-Start the collector. It blocks, reading JSON lines from both ports. Each line is tagged with
-`"node":"chassis"` or `"node":"sensors"` — the collector writes both to the same CSV, which
-the analysis scripts split on that field:
-```bash
-# Adjust /dev/ttyACM* to match the ports confirmed above
 python3 ws_base/tools/stm32_serial/collect_stm32_memory.py \
   --chassis /dev/ttyACM1 --sensors /dev/ttyACM0 \
   --out ~/ros2_traces/stm32_memory_poc.csv
 ```
 
-Expected JSON on `--chassis` port:
-```
-{"type":"STM32_MEM","node":"chassis","ts_ms":200,"heap_used":...}
-```
-Expected JSON on `--sensors` port:
-```
-{"type":"STM32_MEM","node":"sensors","ts_ms":200,"heap_used":...}
-```
+Leave running. **Now power-cycle both STM32 boards.**
 
-Leave this running in a dedicated terminal. **Now power-cycle both STM32 boards** — the
-collector will immediately begin capturing the discovery-phase heap allocation ramp.
-
-### Step 2 — Start all nodes
-
-Launch on each machine in this order. The STM32 boards are already booting and running their
-10-second discovery wait, so bring Linux nodes up during that window:
+#### Step 2 — Start all nodes
 
 ```bash
 # RPi
@@ -313,57 +345,47 @@ ssh yupi@192.168.1.5 "bash ~/almondmatcha/ws_jetson/launch_jetson_single_domain.
 bash ws_base/launch_base_single_domain.sh
 ```
 
-The tmux session borders are **yellow/red** (vs blue/cyan in baseline) so you can tell at a glance which mode you are in.
+The tmux session borders are **yellow/red** (vs blue/cyan in baseline).
 
-### Step 3 — Start latency/jitter collection on RPi and Jetson
+#### Step 3 — Start latency/jitter collection on RPi and Jetson
 
 ```bash
-# From base PC — start collector on RPi (runs in background on SBC)
-TARGET_HOST=curry@192.168.1.1 TARGET_LABEL=rpi bash ws_base/tools/tracing/start_trace.sh
-
-# Start collector on Jetson
-TARGET_HOST=yupi@192.168.1.5 TARGET_LABEL=jetson bash ws_base/tools/tracing/start_trace.sh
+TARGET_HOST=curry@192.168.1.1 TARGET_LABEL=rpi    bash ws_base/tools/tracing/start_trace.sh
+TARGET_HOST=yupi@192.168.1.5  TARGET_LABEL=jetson bash ws_base/tools/tracing/start_trace.sh
 ```
 
-The collector (`collect_latency.py`) subscribes to all D5 topics and records per-message
-timestamps to `~/ros2_traces/latency_<label>.csv` on the SBC. Topics appear automatically
-as nodes come up — no manual topic registration needed.
-
-### Step 4 — Start network stats collection on each SBC
-
-Open two extra terminals on the base PC and SSH in:
+#### Step 4 — Start network stats collection on each SBC
 
 ```bash
-# Terminal A — RPi network stats
+# Terminal A — RPi
 ssh curry@192.168.1.1 \
   "python3 ~/almondmatcha/ws_base/tools/monitoring/collect_net_stats.py \
      --iface eth0 --out ~/ros2_traces/net_stats_rpi.csv"
 
-# Terminal B — Jetson network stats
+# Terminal B — Jetson
 ssh yupi@192.168.1.5 \
   "python3 ~/almondmatcha/ws_base/tools/monitoring/collect_net_stats.py \
      --iface eth0 --out ~/ros2_traces/net_stats_jetson.csv"
 ```
 
-### Step 5 — Let it run
+#### Step 5 — Let it run
 
 Run for **at least 5 minutes** under representative load (send a mission command, drive the rover).
 
-### Step 6 — Stop collection
+#### Step 6 — Stop collection
 
 ```bash
-# Stop latency collector and pull CSV to base PC
+# Stop latency collectors and pull CSVs to base PC
 TARGET_HOST=curry@192.168.1.1 TARGET_LABEL=rpi    bash ws_base/tools/tracing/stop_and_collect_trace.sh
 TARGET_HOST=yupi@192.168.1.5  TARGET_LABEL=jetson bash ws_base/tools/tracing/stop_and_collect_trace.sh
-# Pulls to: ws_base/tools/tracing/data/poc_latency_rpi.csv
-#           ws_base/tools/tracing/data/poc_latency_jetson.csv
+# → ws_base/tools/tracing/data/poc_latency_rpi.csv
+# → ws_base/tools/tracing/data/poc_latency_jetson.csv
 
-# Stop net stats (Ctrl-C in each SSH terminal)
+# Stop net-stats (Ctrl-C in each SSH terminal), then pull:
+scp curry@192.168.1.1:~/ros2_traces/net_stats_rpi.csv    ws_base/tools/monitoring/data/poc_net_stats_rpi.csv
+scp yupi@192.168.1.5:~/ros2_traces/net_stats_jetson.csv  ws_base/tools/monitoring/data/poc_net_stats_jetson.csv
+
 # Stop STM32 collector (Ctrl-C in the Step 1 terminal)
-
-# Pull net stats CSVs back
-scp curry@192.168.1.1:~/ros2_traces/net_stats_rpi.csv        ws_base/tools/monitoring/data/poc_net_stats_rpi.csv
-scp yupi@192.168.1.5:~/ros2_traces/net_stats_jetson.csv      ws_base/tools/monitoring/data/poc_net_stats_jetson.csv
 ```
 
 ---
