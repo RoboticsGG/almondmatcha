@@ -130,22 +130,26 @@ private:
 
     void parseGGA(const std::vector<std::string> &tokens) {
         // $GPGGA,time,lat,N/S,lon,E/W,quality,numSV,HDOP,alt,M,geoidal_sep,M,age,stnID
-        
-        if (tokens[2].empty() || tokens[4].empty()) return;
 
-        current_data_.time = parseTime(tokens[1]);
-        current_data_.latitude = parseLatitude(tokens[2], tokens[3]);
-        current_data_.longitude = parseLongitude(tokens[4], tokens[5]);
-        
+        if (!tokens[1].empty()) {
+            current_data_.time = parseTime(tokens[1]);
+        }
+
+        // lat/lon may be empty before fix — keep last known value (default 0.0)
+        if (!tokens[2].empty() && !tokens[4].empty()) {
+            current_data_.latitude  = parseLatitude(tokens[2], tokens[3]);
+            current_data_.longitude = parseLongitude(tokens[4], tokens[5]);
+        }
+
         if (!tokens[6].empty()) {
             int quality = std::stoi(tokens[6]);
             current_data_.fix_quality = getFixQuality(quality);
         }
-        
+
         if (!tokens[7].empty()) {
             current_data_.satellites_tracked = std::stoi(tokens[7]);
         }
-        
+
         if (!tokens[9].empty()) {
             current_data_.altitude = std::stod(tokens[9]);
         }
