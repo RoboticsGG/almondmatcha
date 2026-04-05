@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  fastdds_rover.xml — Fast-DDS profile for ws_rpi single-domain POC
+  Set via: export FASTRTPS_DEFAULT_PROFILES_FILE=~/almondmatcha/ws_rpi/fastdds_rover.xml
+
+  Problem solved:
+    The RPi has two active NICs: enp0s31f6 (192.168.1.4, rover Ethernet)
+    and wlp4s0 (172.30.81.x, WiFi).  WiFi has a lower routing metric so
+    Fast-DDS defaults to it when enumerating interfaces.  SPDP multicast
+    from the STM32 boards arrives on Ethernet but Fast-DDS listens on WiFi
+    → intermittent "ros2 topic list shows nothing" on a fresh shell.
+
+  Fix:
+    1. UDPv4 transport restricted to 192.168.1.4 (enp0s31f6 only).
+    2. initialPeersList adds the two STM32 board IPs as unicast peers so
+       discovery succeeds even if multicast is unreliable on the segment.
+-->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+
+  <!-- ── Transport: restrict to rover Ethernet interface only ── -->
+  <transport_descriptors>
+    <transport_descriptor>
+      <transport_id>rover_udp</transport_id>
+      <type>UDPv4</type>
+      <interfaceWhiteList>
+        <address>192.168.1.4</address>   <!-- enp0s31f6 — rover Ethernet -->
+      </interfaceWhiteList>
+    </transport_descriptor>
+  </transport_descriptors>
+
+  <!-- ── Participant: use rover transport + add STM32 unicast peers ── -->
+  <participant profile_name="default_participant" is_default_profile="true">
+    <rtps>
+      <userTransports>
+        <transport_id>rover_udp</transport_id>
+      </userTransports>
+      <useBuiltinTransports>false</useBuiltinTransports>
+
+      <builtin>
+        <initialPeersList>
+          <!-- Multicast SPDP well-known port for domain 5 -->
+          <locator>
+            <udpv4>
+              <address>239.255.0.1</address>
+              <port>8650</port>
+            </udpv4>
+          </locator>
+          <!-- STM32 chassis-dynamics board (192.168.1.2) unicast fallback -->
+          <locator>
+            <udpv4>
+              <address>192.168.1.2</address>
+            </udpv4>
+          </locator>
+          <!-- STM32 sensors-gnss board (192.168.1.6) unicast fallback -->
+          <locator>
+            <udpv4>
+              <address>192.168.1.6</address>
+            </udpv4>
+          </locator>
+        </initialPeersList>
+      </builtin>
+    </rtps>
+  </participant>
+
+</profiles>

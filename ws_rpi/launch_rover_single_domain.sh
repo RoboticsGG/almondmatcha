@@ -15,7 +15,10 @@
 
 SESSION_NAME="rover_poc"
 # D5 for every pane — same as baseline; kept explicit for clarity
-SRC="cd ~/almondmatcha/ws_rpi && source /opt/ros/humble/setup.bash && source install/setup.bash && export ROS_DOMAIN_ID=5"
+# FASTRTPS_DEFAULT_PROFILES_FILE pins Fast-DDS to the rover Ethernet interface
+# (192.168.1.4/enp0s31f6) and adds STM32 unicast peers, preventing the WiFi
+# interface (wlp4s0) from being chosen instead and causing topic discovery gaps.
+SRC="cd ~/almondmatcha/ws_rpi && source /opt/ros/humble/setup.bash && source install/setup.bash && export ROS_DOMAIN_ID=5 && export FASTRTPS_DEFAULT_PROFILES_FILE=~/almondmatcha/ws_rpi/fastdds_rover.xml"
 
 tmux kill-session -t $SESSION_NAME 2>/dev/null
 
