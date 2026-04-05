@@ -210,10 +210,10 @@ nodes depending on configuration. 15 covers all expected single-domain D5 subscr
 const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 20;   // both boards
 ```
 **Ring-buffer depth for remote writer announcements that arrive before the local match
-table is ready.**  During the discovery window (first 8–10 seconds), all domain
-participants broadcast their endpoint announcements simultaneously. Some arrive before this
-board has set up the corresponding local reader. `MAX_NUM_UNMATCHED_REMOTE_WRITERS` is the
-queue depth for those pending announcements.
+table is ready.**  When all domain participants start and send SPDP announcements,
+some endpoint announcements may arrive before this board has set up the corresponding
+local reader. `MAX_NUM_UNMATCHED_REMOTE_WRITERS` is the queue depth for those pending
+announcements.
 
 If this is too small during a burst, the overflow is silently dropped — the subscribing
 endpoint never matches and the topic stays invisible. Symptom: `[MemoryPool] resource limit
@@ -389,7 +389,7 @@ const uint16_t SPDP_RESEND_PERIOD_MS = 500;
 How often SPDP participant announcements are re-broadcast, in milliseconds. Lower values
 accelerate discovery (new participants are found faster) at the cost of more network
 traffic. 500 ms = 2 announcements/second during liveliness maintenance. The DDS spec
-default is 1000 ms; 500 ms was chosen to reduce the discovery window from ~8–10 s.
+default is 1000 ms; 500 ms was chosen for faster convergence when nodes join the network.
 
 ### `SPDP_CYCLECOUNT_HEARTBEAT`
 ```cpp

@@ -40,14 +40,15 @@ Ensure 5+ port Gigabit Ethernet switch is powered on
 Connect all systems: RPi, Jetson, 2×STM32, Base PC
 ```
 
-### 2. STM32 Boards (0-10s)
+### 2. STM32 Boards
 ```
-Connect to switch → Power on both boards → Wait for "Discovery complete"
-Expected: ~10 seconds (8s discovery + 2s init)
-Monitor serial consoles (115200 baud) for confirmation
+Connect to switch → Power on both boards
+Wait ~5 s for lwIP network stack init (not for discovery).
+Discovery happens automatically once RPi nodes start sending SPDP announcements.
+Monitor serial consoles (115200 baud) for confirmation.
 ```
 
-### 3. ws_rpi (10-15s)
+### 3. ws_rpi (after STM32 boards are on network)
 ```bash
 # On RPi or via SSH: ssh curry@192.168.1.1
 cd ~/almondmatcha/ws_rpi
@@ -93,9 +94,12 @@ cd ~/almondmatcha/ws_base
 
 ## Key Delays
 
-- **STM32 discovery:** 8 seconds (built-in)
+- **STM32 lwIP network init:** ~5 s (static IP assignment, UDP socket open)
+- **SPDP endpoint matching:** automatic after all nodes are on network; typically <5 s once RPi nodes start
 - **Between launch phases:** 3-5 seconds
 - **ws_jetson internal:** 2s → 3s (automatic)
+
+> **Note:** Starting STM32 before other nodes is not required for discovery correctness. SPDP is multicast — both sides announce periodically and converge regardless of order. Start STM32 early only to let its network stack initialize before RPi floods multicast.
 
 ---
 
