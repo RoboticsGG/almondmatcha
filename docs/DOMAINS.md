@@ -1,67 +1,45 @@
 # ROS2 Domain Architecture
 
-The rover implements a tri-domain architecture: Domain 4 (telemetry), Domain 5 (control), Domain 6 (vision). The design minimizes STM32 DDS participant count while isolating high-bandwidth vision traffic and unidirectional monitoring traffic from the control network.
+> **Branch: `single-domain`** — All workspaces run on **ROS_DOMAIN_ID=5**. This branch is a POC to evaluate the impact of collapsing D4+D5+D6 into a single domain. See the `main` branch for the original tri-domain architecture.
+
+The rover uses a **single-domain architecture**: Domain 5 for all nodes on all machines. The design maximises simplicity and measures overhead impact on STM32 memory and topic latency.
 
 ## Domain Assignment
 
 | Domain | Purpose | Network Scope | Participants | Key Characteristics |
 |--------|---------|---------------|--------------|---------------------|
-| **4** | Telemetry | Base + Jetson | **2 nodes:**<br>• mission_monitoring_node_pc (Base)<br>• rover_local_monitoring_node (Jetson) | • Subscribes to /tpc_telemetry_relay (5 Hz)<br>• No D5 participation (no STM32 RAM cost)<br>• Jetson logs CSV; future DB backend |
-| **5** | Control Network | All rover systems + base command | **11 nodes:**<br>• RPi: 7 nodes<br>• Base: 1 (mission_command_node)<br>• Jetson: 1 (rover_kinematic_control)<br>• STM32: 2 (chassis, sensors) | • Bidirectional command/control<br>• Action/service communication<br>• Real-time control loops (50 Hz)<br>• STM32 optimized (~60% free RAM) |
-| **6** | Vision Processing | Jetson localhost | **2 nodes:**<br>• camera_stream_node<br>• lane_detection_node | • RGB/Depth streams (30 FPS, 1280×720)<br>• Network isolated (not visible to other hosts)<br>• Lane params relayed to D5 via rover_kinematic_control |
+| **5** | All communication | All rover systems | **~16 nodes:**<br>• RPi: 8 nodes<br>• Base: 2 nodes<br>• Jetson: 3 nodes<br>• STM32: 2 (chassis, sensors) | • Bidirectional command/control<br>• Monitoring and logging on same domain<br>• Vision relay on same domain<br>• STM32 firmware: `MAX_NUM_PARTICIPANTS=20` |
 
 ## Architecture Overview
 
 ```mermaid
 flowchart TB
-    subgraph D6["Domain 6 — Jetson localhost only"]
-        CAM["camera_stream_node"] -->|tpc_rover_d415_rgb| LANE["lane_detection_node"]
-    end
-
-    subgraph D5["Domain 5 — Control Network (all systems via Ethernet)"]
-        CTRL["rover_kinematic_control (Jetson)\ndual-context: D6 sub / D5 pub\n→ tpc_rover_ctrl_cmd @ 50 Hz"]
+    subgraph D5["Domain 5 — All nodes (all systems via Ethernet)"]
+        CTRL["rover_kinematic_control (Jetson)\n→ tpc_rover_ctrl_cmd @ 50 Hz"]
         CC["chassis_controller_node (RPi)"]
         STM32C["chassis_controller (STM32)"]
         STM32S["sensors_node (STM32)"]
         GNSS["GNSS nodes (RPi)"]
         MON["mission_monitoring_node_rpi (RPi)\nAggregates all D5 topics\n→ CSV @ native rates"]
         CMD["mission_command_node (Base)\nactions/services → RPi"]
-    end
-
-    subgraph D4["Domain 4 — Telemetry (Base + Jetson, invisible to STM32)"]
         PC["mission_monitoring_node_pc (Base)\ntelemetry display"]
-        JLOG["rover_local_monitoring_node (Jetson)\nCSV @ 5 Hz · future DB"]
     end
 
-    LANE -->|tpc_rover_nav_lane| CTRL
     CTRL --> CC --> STM32C
     GNSS --> MON
     STM32C --> MON
     STM32S --> MON
     CTRL --> MON
-    MON -->|tpc_telemetry_relay 5 Hz| PC
-    MON -->|tpc_telemetry_relay 5 Hz| JLOG
 ```
 
 ## Design Rationale
 
-**Problem 1:** STM32 boards (512 KB SRAM) consume RAM per DDS participant for discovery and message tracking.  
-**Solution 1:** Isolate vision traffic to Domain 6 (Jetson localhost), reducing D5 participants from 13 to 11.  
-**Result:** ~60% free RAM on STM32 vs OOM without isolation.
+**Single-domain POC goal:** All D4+D5+D6 traffic collapsed to D5 to measure:
+- STM32 SRAM impact (`MAX_NUM_PARTICIPANTS` raised from 15 to 20)
+- Message latency and jitter vs multi-domain baseline
+- Socket buffer pressure on RPi and Jetson
 
-**Problem 2:** Base station telemetry node adds an unnecessary D5 participant.  
-**Solution 2:** Cross-domain relay — `mission_monitoring_node_rpi` aggregates D5 topics and publishes to D4 at 5 Hz.  
-**Result:** D5 count at 11; monitoring traffic completely isolated from control domain.
-
-**Problem 3:** Separate CSV logger (`rover_monitoring_node`) consumed a D5 participant slot.  
-**Solution 3:** CSV logging merged into `mission_monitoring_node_rpi`; secondary Jetson logger added on D4.  
-**Result:** One fewer D5 participant; dual-tier logging with no STM32 overhead.
-
-**Cross-domain links:**
-- Vision to control: `rover_kinematic_control` (D6 sub → D5 pub, dual-context single process)
-- Telemetry relay: `mission_monitoring_node_rpi` (D5 sub → D4 pub + CSV logging)
-
-**Benefits:** 11 D5 participants; STM32 memory stable; scalable vision/AI expansion without STM32 firmware changes; Jetson logger ready for database migration.
+**Key change from main branch:** `mission_monitoring_node_rpi` no longer uses a dual-context (D5 sub / D4 pub). It subscribes and publishes entirely on D5. `rover_local_monitoring_node` (Jetson) and `mission_monitoring_node_pc` (Base) also run on D5.
 
 
 ## Domain Configuration
@@ -76,22 +54,18 @@ source install/setup.bash
 ./launch_rover_tmux.sh
 ```
 
-**ws_base (Base Station - Dual Domain):**
+**ws_base (Base Station — D5):**
 ```bash
 cd ~/almondmatcha/ws_base
 source install/setup.bash
-# Script automatically handles both domains:
-# - mission_command_node: Domain 5 (commands/actions to RPi)
-# - mission_monitoring_node_pc: Domain 4 (telemetry display)
-./launch_base_tmux.sh
+./launch_base_single_domain.sh
 ```
 
-**ws_jetson (Multi-Domain):**
+**ws_jetson (D5):**
 ```bash
 cd ~/almondmatcha/ws_jetson
 source install/setup.bash
-# Script handles both Domain 6 (vision) and Domain 5 (control) automatically
-./launch_headless.sh
+./launch_jetson_single_domain.sh
 ```
 
 **STM32 Firmware:**

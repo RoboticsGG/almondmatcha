@@ -2,10 +2,8 @@
 
 Complete topic reference for Almondmatcha rover system.
 
-**Domain Architecture:**
-- **Domain 4 (Telemetry):** Base station + Jetson, subscribers to aggregated relay only
-- **Domain 5 (Control):** Network-wide control topics visible to all systems
-- **Domain 6 (Vision):** Jetson localhost vision topics (camera streams)
+**Domain Architecture (single-domain branch):**
+- **Domain 5 (All nodes):** All topics on all machines — control, monitoring, vision relay
 
 ## Topic Naming Convention
 
@@ -397,18 +395,18 @@ Commands from base station are sent directly via actions/services on Domain 5:
 
 ---
 
-## Domain 4 Topics
+## Telemetry Relay Topic
 
 ### `tpc_telemetry_relay`
 
 **Type:** `msgs_ifaces/msg/TelemetryRelay`  
-**Publisher:** `mission_monitoring_node_rpi` (RPi, internal D4 context)  
-**Subscribers:** `mission_monitoring_node_pc` (Base, display), `rover_local_monitoring_node` (Jetson, CSV)  
+**Publisher:** `mission_monitoring_node_rpi` (RPi, D5)  
+**Subscribers:** `mission_monitoring_node_pc` (Base, D5 display), `rover_local_monitoring_node` (Jetson, D5 CSV)  
 **Rate:** 5 Hz  
 **QoS:** Reliable, Depth 10  
-**Domain:** 4 (not visible from D5 or D6)
+**Domain:** 5 (single-domain branch — visible to all nodes including STM32)
 
-Aggregated rover state published from RPi to Domain 4. The RPi node subscribes to 10 Domain 5 topics and republishes aggregated data at 5 Hz to isolate monitoring traffic from the control network.
+Aggregated rover state published by RPi. Subscribes to all D5 sensor/command topics and republishes at 5 Hz.
 
 **Key Fields:**
 - Mission: `mission_active`, `distance_remaining_km`
@@ -428,29 +426,29 @@ See [msgs_ifaces/msg/TelemetryRelay.msg](../common_ifaces/msgs_ifaces/msg/) for 
 
 ## Topic Dependency Graph
 
-**Vision Processing (Domain 6 → Domain 5):**
+**Vision to Control (all D5):**
 ```mermaid
 flowchart LR
-    CS["camera_stream_node\n(D6)"] -->|tpc_rover_d415_rgb| LD["lane_detection_node\n(D6)"]
-    LD -->|tpc_rover_nav_lane| RKC["rover_kinematic_control\n(dual-ctx D6/D5)"]
+    CS["camera_stream_node\n(D5)"] -->|tpc_rover_d415_rgb| LD["lane_detection_node\n(D5)"]
+    LD -->|tpc_rover_nav_lane| RKC["rover_kinematic_control\n(D5)"]
     RKC -->|tpc_rover_ctrl_cmd| CC["chassis_controller_node\n(D5)"]
 ```
 
-**Chassis Control (Domain 5):**
+**Chassis Control (D5):**
 ```mermaid
 flowchart LR
     CC["chassis_controller_node\n(RPi, D5)"] -->|tpc_chassis_cmd| STM32["chassis_controller\n(STM32)"]
     STM32 -->|tpc_chassis_imu| CC
 ```
 
-**Sensor Data Flow (Domain 5 → D4 relay):**
+**Sensor Data Flow (all D5):**
 ```mermaid
 flowchart LR
-    SNS["sensors_node (STM32)"] -->|tpc_chassis_sensors| MON["mission_monitoring_node_rpi\n(RPi)"]
+    SNS["sensors_node (STM32)"] -->|tpc_chassis_sensors| MON["mission_monitoring_node_rpi\n(RPi, D5)"]
     SPRES["gnss_spresense_node (RPi)"] -->|tpc_gnss_spresense| MON
     UBLOX["gnss_ublox_node (RPi)"] -->|tpc_gnss_ublox| MON
-    MON -->|tpc_telemetry_relay 5Hz D4| PC["mission_monitoring_node_pc\n(Base, D4)"]
-    MON -->|tpc_telemetry_relay 5Hz D4| JL["rover_local_monitoring_node\n(Jetson, D4)"]
+    MON -->|tpc_telemetry_relay 5Hz D5| PC["mission_monitoring_node_pc\n(Base, D5)"]
+    MON -->|tpc_telemetry_relay 5Hz D5| JL["rover_local_monitoring_node\n(Jetson, D5)"]
 ```
 
 ---

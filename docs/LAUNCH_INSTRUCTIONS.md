@@ -4,39 +4,26 @@ Complete guide to launching the Almondmatcha rover system across all platforms.
 
 ## Quick Launch Summary
 
-**Recommended tmux-based launch (organized terminal sessions):**
+> **Branch: `single-domain`** — Use the `_single_domain` scripts on every machine. All nodes run on **ROS_DOMAIN_ID=5**.
 
-1. **Jetson (ws_jetson):** `./launch_jetson_tmux.sh` → 3 panes (camera, detection, control)
-2. **Raspberry Pi (ws_rpi):** `./launch_rover_tmux.sh` → 5 panes (GNSS, chassis nodes)
-3. **Base Station (ws_base):** Manual launch (optional)
+**Recommended launch order:**
 
-**Alternative background scripts:**
-- Jetson headless: `./launch_headless.sh`
-- Jetson with GUI: `./launch_gui.sh`
+1. **STM32 boards:** power on, wait ~10 s for DDS discovery
+2. **Raspberry Pi (ws_rpi):** `./launch_rover_single_domain.sh`
+3. **Jetson (ws_jetson):** `./launch_jetson_single_domain.sh`
+4. **Base Station (ws_base):** `./launch_base_single_domain.sh` (optional)
 
 ## System Overview
 
-- **Control Loop (Domain 5):** ws_rpi, ws_base, STM32 boards, ws_jetson control interface
-- **Vision Processing (Domain 6):** ws_jetson camera and lane detection (localhost only)
+- **All communication on Domain 5:** ws_rpi, ws_base, ws_jetson, STM32 boards
+- Total participants on D5: ~16 nodes
 
-### Domain 5 Participants (Network-Wide, visible to STM32)
+### Domain 5 Participants
 
-Total: 11 nodes
-
-- ws_rpi: 7 nodes (gnss_spresense_node, gnss_ublox_node, gnss_mission_monitor_node, chassis_controller_node, chassis_imu_node, chassis_sensors_node, mission_monitoring_node_rpi)
-- ws_base: 1 node (mission_command_node)
-- ws_jetson: 1 node (rover_kinematic_control)
+- ws_rpi: 8 nodes (gnss_spresense_node, gnss_ublox_node, gnss_mission_monitor_node, chassis_controller_node, chassis_imu_node, chassis_sensors_node, mission_monitoring_node_rpi, rover_monitoring_node)
+- ws_base: 2 nodes (mission_command_node, mission_monitoring_node_pc)
+- ws_jetson: 3 nodes (camera_stream_node, lane_detection_node, rover_kinematic_control)
 - STM32: 2 nodes (chassis_controller, sensors_node)
-
-### Domain 4 Participants (Telemetry, NOT visible to STM32)
-
-- ws_base: mission_monitoring_node_pc (telemetry display)
-- ws_jetson: rover_local_monitoring_node (CSV logging, future DB)
-
-### Domain 6 Participants (Jetson Localhost Only)
-
-- camera_stream_node
-- lane_detection_node
 
 Domain 6 nodes are invisible to STM32 boards and other systems.
 
@@ -147,51 +134,37 @@ This launches 7 nodes in a tmux session (`rover`):
 ```bash
 cd ~/almondmatcha/ws_base
 source install/setup.bash
-# Script automatically launches both nodes on correct domains:
-# - mission_command_node: Domain 5 (commands/actions)
-# - mission_monitoring_node_pc: Domain 4 (telemetry display)
-./launch_base_tmux.sh
+export ROS_DOMAIN_ID=5
+./launch_base_single_domain.sh
 ```
-
-This enables mission planning on Domain 5 and telemetry monitoring on Domain 4 from the base station.
 
 ## Verification Checklist
 
-### Domain 6 (Vision) - On Jetson
-
-```bash
-export ROS_DOMAIN_ID=6
-ros2 node list
-# Expected: /camera_stream_node, /lane_detection_node
-
-ros2 topic list
-# Expected: /tpc_rover_d415_rgb, /tpc_rover_d415_depth, /tpc_rover_nav_lane
-
-ros2 topic hz /tpc_rover_nav_lane
-# Expected: ~30 Hz
-```
-
-### Domain 5 (Control) - On Any System
+### Domain 5 — On Any System
 
 ```bash
 export ROS_DOMAIN_ID=5
 ros2 node list
-# Expected: 11 nodes total (9 without ws_base, 11 with ws_base)
-# /rover_kinematic_control        (Jetson — dual-context D6 sub / D5 pub)
+# Expected: ~16 nodes total
+# /rover_kinematic_control        (Jetson)
+# /camera_stream_node             (Jetson)
+# /lane_detection_node            (Jetson)
 # /chassis_controller_node        (ws_rpi)
 # /gnss_mission_monitor_node      (ws_rpi)
 # /gnss_spresense_node            (ws_rpi)
 # /gnss_ublox_node                (ws_rpi)
 # /chassis_imu_node               (ws_rpi)
 # /chassis_sensors_node           (ws_rpi)
-# /mission_monitoring_node_rpi    (ws_rpi — D5 sub / D4 pub + CSV)
+# /mission_monitoring_node_rpi    (ws_rpi)
+# /rover_monitoring_node          (ws_rpi)
 # /chassis_controller             (STM32 chassis)
 # /sensors_node                   (STM32 sensors)
 # /mission_command_node           (ws_base, if launched)
+# /mission_monitoring_node_pc     (ws_base, if launched)
 
 ros2 topic list
-# Should see: tpc_rover_ctrl_cmd, tpc_chassis_cmd, tpc_chassis_imu, tpc_rover_nav_lane, etc.
-# Should NOT see camera topics like tpc_rover_d415_rgb (Domain 6 isolation)
+# Should see: tpc_rover_ctrl_cmd, tpc_chassis_cmd, tpc_chassis_imu,
+#             tpc_rover_nav_lane, tpc_rover_d415_rgb, tpc_telemetry_relay, etc.
 
 ros2 topic hz /tpc_rover_ctrl_cmd
 # Expected: ~50 Hz
@@ -199,11 +172,10 @@ ros2 topic hz /tpc_rover_ctrl_cmd
 
 ### STM32 Communication
 
-**Serial console (Domain 5 only, not Domain 6):**
 ```bash
+export ROS_DOMAIN_ID=5
 minicom -D /dev/ttyACM0
 # Should see motor commands being processed
-# Should NOT see camera-related messages
 ```
 
 ## Shutdown
@@ -226,17 +198,16 @@ minicom -D /dev/ttyACM0  # Check serial console
 
 ### Vision Data Not Reaching Control
 ```bash
-export ROS_DOMAIN_ID=6
-ros2 topic list | grep nav_lane       # Confirm D6 running
 export ROS_DOMAIN_ID=5
-ros2 node info /rover_kinematic_control  # Confirm D5 subscription
+ros2 topic list | grep nav_lane       # Confirm lane topic visible on D5
+ros2 topic hz /tpc_rover_nav_lane     # Confirm ~30 Hz
 ```
 
 ### High STM32 Memory Usage
 `[MemoryPool] RESSOURCE LIMIT EXCEEDED` — check D5 participant count:
 ```bash
 export ROS_DOMAIN_ID=5
-ros2 node list | wc -l  # Should be 9–11
+ros2 node list | wc -l  # Should be ~16 (all D5 nodes)
 ```
 See [STM32_RTPS_MEMORY_CALCULATION.md](STM32_RTPS_MEMORY_CALCULATION.md) for config details.
 

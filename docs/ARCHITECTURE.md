@@ -14,26 +14,24 @@ Almondmatcha rover system architecture: distributed heterogeneous computing with
 
 ## System Diagram
 
-The rover uses **three DDS domains**: D6 (Jetson vision, localhost only), D5 (control network, all systems), D4 (telemetry relay, Base + Jetson only, never visible to STM32).
+> **Branch: `single-domain`** — All workspaces (ws_rpi, ws_jetson, ws_base) run on **ROS_DOMAIN_ID=5**. D4 and D6 do not exist in this branch.
+
+The rover uses **one DDS domain (D5)**: all nodes on all machines communicate on the same domain.
 
 ```mermaid
 graph LR
     SW[["Gigabit Ethernet Switch\n192.168.1.0/24"]]
 
     subgraph RPi ["Raspberry Pi · 192.168.1.1"]
-        R1["D5 · 7 control nodes\nGNSS, chassis, mission"]
-        R2["D4 · mission_monitoring_node_rpi\ntelemetry relay + CSV"]
+        R1["D5 · 8 nodes\nGNSS, chassis, mission, monitoring"]
     end
 
     subgraph JET ["Jetson Orin · 192.168.1.5"]
-        J1["D6 · camera_stream_node + lane_detection_node\nlocalhost only · 30 FPS"]
-        J2["D5 · rover_kinematic_control\ndual-context: D6 sub / D5 pub"]
-        J3["D4 · rover_local_monitoring_node\nCSV + future DB"]
+        J2["D5 · rover_kinematic_control\nlane following @ 50 Hz"]
     end
 
     subgraph BASE ["Base Station · 192.168.1.10"]
-        B1["D5 · mission_command_node\nactions + services"]
-        B2["D4 · mission_monitoring_node_pc\ntelemetry display"]
+        B1["D5 · mission_command_node + monitoring\nactions + services"]
     end
 
     subgraph CHS ["STM32 Chassis · 192.168.1.2"]
@@ -84,58 +82,37 @@ graph LR
 
 ## Software Architecture
 
-### ROS2 Multi-Domain Strategy
+### Single-Domain Architecture (D5 only)
 
-**Domain 5 (Control Network):** Network-wide, 11 nodes
-- ws_rpi (7) + ws_base (1) + ws_jetson (1) + STM32 (2) = 11 nodes
-- Low-frequency control messages optimized for STM32 memory constraints
-- Native action/service support across all systems
+**Domain 5 (All nodes):** Network-wide, ~16 participants
+- ws_rpi (8) + ws_base (2) + ws_jetson (1) + STM32 (2) = 16 nodes on one domain
+- All monitoring, vision relay, and control traffic share D5
+- STM32 firmware configured for `MAX_NUM_PARTICIPANTS=20`
 
-**Domain 4 (Telemetry):** Base + Jetson, 2 participants
-- `mission_monitoring_node_pc` (Base): displays aggregated telemetry relay, no D5 participation
-- `rover_local_monitoring_node` (Jetson): logs TelemetryRelay CSV at 5 Hz, future DB backend
-
-**Domain 6 (Vision Processing):** Jetson localhost only, 2 participants
-- camera_stream_node, lane_detection_node nodes
-- High-bandwidth RGB/Depth streams (30 FPS, 1280×720) isolated from network
-- Invisible to STM32 boards
-
-**Dual-context nodes:** `rover_kinematic_control` subscribes D6 + publishes D5 in one process (no bridge); `mission_monitoring_node_rpi` subscribes D5 + publishes D4 in one process (no bridge).
-
-**Rationale:** Domain isolation reduces STM32 discovery overhead (11 vs 14+ participants), enables scalable vision/AI expansion without STM32 firmware changes, and completely isolates monitoring/logging traffic from the control network.
+**Rationale (POC):** Collapse D4+D5+D6 into D5 to measure latency, jitter, and STM32 memory impact of a flat topology versus the main-branch multi-domain architecture.
 
 ### Node Distribution
 
-**Raspberry Pi 4 (192.168.1.1 — Domain 5):**
+**Raspberry Pi 4 (192.168.1.1 — D5):**
 ```
-├── chassis_controller_node     - Motor command coordination (D5 sub/pub)
-├── chassis_imu_node            - IMU data relay (D5 sub)
-├── chassis_sensors_node        - Encoder/power relay (D5 sub)
-├── gnss_spresense_node         - Standard GPS position processing (D5 pub)
-├── gnss_ublox_node             - RTK GNSS centimeter-level processing (D5 pub)
-├── gnss_mission_monitor_node   - Waypoint navigation state machine (D5)
-└── mission_monitoring_node_rpi - Aggregates 10 D5 topics:
-                                    Sub: D5 (all sensor/command topics)
-                                    Pub: D4 /tpc_telemetry_relay (5 Hz)
-                                    CSV: 6 per-topic files, native rates (4–50 Hz)
+├── chassis_controller_node     - Motor command coordination
+├── chassis_imu_node            - IMU data relay (sub STM32)
+├── chassis_sensors_node        - Encoder/power relay (sub STM32)
+├── gnss_spresense_node         - Standard GPS position processing
+├── gnss_ublox_node             - RTK GNSS centimeter-level processing
+├── gnss_mission_monitor_node   - Waypoint navigation state machine
+├── mission_monitoring_node_rpi - Aggregates D5 topics + CSV logging
+└── rover_monitoring_node       - CSV data logger (all topics)
 ```
 
-**Jetson Orin Nano (192.168.1.5 — Multi-Domain):**
+**Jetson Orin Nano (192.168.1.5 — D5):**
 ```
-Domain 6 (Vision Processing — localhost):
-├── camera_stream_node       - D415 RGB/depth streaming @ 30 FPS
-└── lane_detection_node      - Lane feature extraction @ 30 FPS
-
-Domain 5 (Control Network):
+Domain 5 (all nodes):
+├── camera_stream_node      - D415 RGB/depth streaming @ 30 FPS (published to D5)
+├── lane_detection_node     - Lane feature extraction @ 30 FPS (published to D5)
 └── rover_kinematic_control - Bicycle-model PID: steering + speed @ 50 Hz
-    ├── Sub: tpc_rover_nav_lane (Domain 6)
-    └── Pub: tpc_rover_ctrl_cmd [steer_angle, speed_cmd, detected] (Domain 5)
-
-Domain 4 (Telemetry):
-└── rover_local_monitoring_node  - Telemetry CSV logger
-    ├── Sub: /tpc_telemetry_relay (Domain 4, 5 Hz)
-    └── CSV: telemetry_unified + categorical files in ws_jetson/runs/
-    (Future: DB backend replacing CSV)
+    ├── Sub: tpc_rover_nav_lane (D5)
+    └── Pub: tpc_rover_ctrl_cmd [steer_angle, speed_cmd, detected] (D5)
 ```
 
 **STM32 Chassis (192.168.1.2):**
@@ -197,9 +174,9 @@ flowchart LR
 
 | Device | IP | SSH | Domains | Role |
 |--------|-----|-----|---------|------|
-| Raspberry Pi | 192.168.1.1 | `curry@192.168.1.1` | D5 (7 nodes) + D4 (relay) | Coordination, sensing, mission |
-| Jetson Orin | 192.168.1.5 | `yupi@192.168.1.5` | D6 (vision) + D5 (control) + D4 (logging) | Vision processing, kinematic control |
-| Base Station | 192.168.1.10 | `yupi@192.168.1.10` | D5 (command) + D4 (display) | Mission command, telemetry monitoring |
+| Raspberry Pi | 192.168.1.1 | `curry@192.168.1.1` | D5 (8 nodes) | Coordination, sensing, mission, monitoring |
+| Jetson Orin | 192.168.1.5 | `yupi@192.168.1.5` | D5 (3 nodes) | Vision processing, kinematic control |
+| Base Station | 192.168.1.10 | `yupi@192.168.1.10` | D5 (2 nodes) | Mission command, telemetry monitoring |
 | STM32 Chassis | 192.168.1.2 | — (mROS2) | D5 only | Motor control, IMU |
 | STM32 Sensors | 192.168.1.6 | — (mROS2) | D5 only | GNSS, encoders, power |
 
