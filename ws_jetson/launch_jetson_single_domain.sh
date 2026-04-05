@@ -13,7 +13,7 @@
 # will receive RTPS announcements). That is exactly the stress being measured.
 
 SESSION_NAME="jetson_poc"
-ROS_SRC="source /opt/ros/humble/setup.bash && cd ~/almondmatcha/ws_jetson && source ~/almondmatcha/common_ifaces/install/setup.bash && source install/setup.bash && export ROS_DOMAIN_ID=5"
+ROS_SRC="source /opt/ros/humble/setup.bash && cd ~/almondmatcha/ws_jetson && source ~/almondmatcha/common_ifaces/install/setup.bash && source install/setup.bash && export ROS_DOMAIN_ID=5 && export FASTRTPS_DEFAULT_PROFILES_FILE=~/almondmatcha/ws_jetson/fastdds_jetson.xml"
 
 tmux kill-session -t $SESSION_NAME 2>/dev/null
 

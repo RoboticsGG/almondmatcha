@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!--
-  fastdds_rover.xml — Fast-DDS profile for ws_rpi single-domain POC
-  Set via: export FASTRTPS_DEFAULT_PROFILES_FILE=~/almondmatcha/ws_rpi/fastdds_rover.xml
+  fastdds_base.xml — Fast-DDS profile for ws_base single-domain POC
+  Set via: export FASTRTPS_DEFAULT_PROFILES_FILE=~/almondmatcha/ws_base/fastdds_base.xml
 
   Problem solved:
-    The RPi (thehive) may have multiple NICs (Ethernet 192.168.1.1 + optional WiFi).
-    Fast-DDS enumerates all interfaces and may join multicast on the wrong one.
-    SPDP multicast from the STM32 boards arrives on Ethernet but Fast-DDS
-    listens on WiFi → intermittent "ros2 topic list shows nothing" on a fresh shell.
+    ws_base has two active NICs: enp0s31f6 (192.168.1.4, rover Ethernet)
+    and wlp4s0 (172.30.81.x, WiFi).  Fast-DDS may pick WiFi as primary
+    interface, joining multicast on the wrong NIC and missing SPDP from
+    all rover participants on the 192.168.1.0/24 subnet.
 
   Fix:
-    1. UDPv4 transport restricted to 192.168.1.1 (rover Ethernet only).
-    2. initialPeersList adds all rover participants as unicast peers so
+    1. UDPv4 transport restricted to 192.168.1.4 (enp0s31f6 only).
+    2. initialPeersList adds unicast peers for RPi and STM32 boards so
        discovery succeeds even if multicast is unreliable on the segment.
 -->
 <profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
@@ -22,12 +22,12 @@
       <transport_id>rover_udp</transport_id>
       <type>UDPv4</type>
       <interfaceWhiteList>
-        <address>192.168.1.1</address>   <!-- RPi (thehive) rover Ethernet -->
+        <address>192.168.1.4</address>   <!-- enp0s31f6 — rover Ethernet -->
       </interfaceWhiteList>
     </transport_descriptor>
   </transport_descriptors>
 
-  <!-- ── Participant: use rover transport + add all rover unicast peers ── -->
+  <!-- ── Participant: use rover transport + add rover unicast peers ── -->
   <participant profile_name="default_participant" is_default_profile="true">
     <rtps>
       <userTransports>
@@ -44,16 +44,16 @@
               <port>8650</port>
             </udpv4>
           </locator>
+          <!-- RPi (thehive) -->
+          <locator>
+            <udpv4>
+              <address>192.168.1.1</address>
+            </udpv4>
+          </locator>
           <!-- STM32 chassis-dynamics board -->
           <locator>
             <udpv4>
               <address>192.168.1.2</address>
-            </udpv4>
-          </locator>
-          <!-- ws_base -->
-          <locator>
-            <udpv4>
-              <address>192.168.1.4</address>
             </udpv4>
           </locator>
           <!-- Jetson -->
