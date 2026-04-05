@@ -24,10 +24,10 @@
 #include "mbed.h"
 #include "mbed_stats.h"
 
-// 200 ms gives 2 samples per SPDP cycle (500 ms) — enough resolution to
-// track discovery-phase heap growth without flooding the serial link.
+// 1000 ms gives 1 sample per 2 SPDP cycles (500 ms) — sufficient resolution
+// for heap trending without contributing to serial/stdout mutex pressure.
 #ifndef MEM_REPORT_INTERVAL_MS
-#define MEM_REPORT_INTERVAL_MS 200
+#define MEM_REPORT_INTERVAL_MS 1000
 #endif
 
 // Stack for the reporter thread — 1536 B required for printf with 7 format args

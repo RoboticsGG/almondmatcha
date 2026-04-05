@@ -46,47 +46,47 @@ public:
         
         // Subscribe to chassis sensors (EXACT QoS from chassis_sensors_node)
         sub_chassis_sensors_ = this->create_subscription<msgs_ifaces::msg::ChassisSensors>(
-            "/tpc_chassis_sensors", qos_stm32,
+            "tpc_chassis_sensors", qos_stm32,
             std::bind(&RoverMonitoringNode::chassis_sensors_callback, this, std::placeholders::_1)
         );
         
         // Subscribe to chassis IMU (EXACT QoS from chassis_sensors_node)
         sub_chassis_imu_ = this->create_subscription<msgs_ifaces::msg::ChassisIMU>(
-            "/tpc_chassis_imu", qos_stm32,
+            "tpc_chassis_imu", qos_stm32,
             std::bind(&RoverMonitoringNode::chassis_imu_callback, this, std::placeholders::_1)
         );
         
         // Subscribe to mission control
         sub_cc_rcon_ = this->create_subscription<std_msgs::msg::Bool>(
-            "/tpc_gnss_mission_active", 10, 
+            "tpc_gnss_mission_active", 10, 
             std::bind(&RoverMonitoringNode::cc_rcon_callback, this, std::placeholders::_1)
         );
         
         sub_dis_remain_ = this->create_subscription<std_msgs::msg::Float64>(
-            "/tpc_gnss_mission_remain_dist", 10, 
+            "tpc_gnss_mission_remain_dist", 10, 
             std::bind(&RoverMonitoringNode::dis_remain_callback, this, std::placeholders::_1)
         );
         
         // Subscribe to GNSS data
         sub_gnss_data_ = this->create_subscription<msgs_ifaces::msg::SpresenseGNSS>(
-            "/tpc_gnss_spresense", 10, 
+            "tpc_gnss_spresense", 10, 
             std::bind(&RoverMonitoringNode::gnss_data_callback, this, std::placeholders::_1)
         );
         
         sub_rtk_position_ = this->create_subscription<msgs_ifaces::msg::UbloxGNSS>(
-            "/tpc_gnss_ublox", 10,
+            "tpc_gnss_ublox", 10,
             std::bind(&RoverMonitoringNode::rtk_gnss_callback, this, std::placeholders::_1)
         );
         
         // Subscribe to destination coordinate
         sub_pub_despose_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
-            "/tpc_rover_dest_coordinate", 10, 
+            "tpc_rover_dest_coordinate", 10, 
             std::bind(&RoverMonitoringNode::pub_despose_callback, this, std::placeholders::_1)
         );
         
         // Subscribe to rover control commands
         sub_pub_rovercontrol_d2_ = this->create_subscription<msgs_ifaces::msg::ChassisCtrl>(
-            "/tpc_chassis_cmd", 10, 
+            "tpc_chassis_cmd", 10, 
             std::bind(&RoverMonitoringNode::pub_rovercontrol_callback, this, std::placeholders::_1)
         );
 

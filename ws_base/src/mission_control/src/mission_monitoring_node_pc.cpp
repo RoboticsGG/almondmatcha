@@ -23,12 +23,12 @@ public:
     MissionMonitoringNodePc() : Node("mission_monitoring_node_pc") {
         // Subscribe to aggregated telemetry relay ONLY
         sub_telemetry_relay_ = this->create_subscription<msgs_ifaces::msg::TelemetryRelay>(
-            "/tpc_telemetry_relay", 10,
+            "tpc_telemetry_relay", 10,
             std::bind(&MissionMonitoringNodePc::telemetry_callback, this, std::placeholders::_1)
         );
 
         RCLCPP_INFO(this->get_logger(), "=== Mission Monitoring Node (Base Station) Initialized ===");
-        RCLCPP_INFO(this->get_logger(), "Subscribing to: /tpc_telemetry_relay (Domain 5)");
+        RCLCPP_INFO(this->get_logger(), "Subscribing to: tpc_telemetry_relay (Domain 5)");
         RCLCPP_INFO(this->get_logger(), "Architecture: Relay-only (no direct topic fallback)");
         RCLCPP_INFO(this->get_logger(), "=========================================================");
     }

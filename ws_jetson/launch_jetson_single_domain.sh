@@ -33,34 +33,41 @@ tmux set-option -g pane-border-format " [#{pane_index}] #{pane_title} "
 tmux set-option -g pane-border-style fg=colour220        # yellow = POC mode
 tmux set-option -g pane-active-border-style fg=colour196 # red = POC mode
 
+# ── Staggered launch ─────────────────────────────────────────────────────────
+# Script-level sleep between panes prevents a simultaneous SPDP burst on the
+# network that would overflow the STM32 discovery queues.
+# Vision pipeline ordering is preserved: camera → lane_detect → kinematic_ctrl.
+# local_monitoring depends on tpc_telemetry_relay from the RPi, so it starts last.
+# ─────────────────────────────────────────────────────────────────────────────
+
 # Pane 0 (left): Camera Stream — D5 (was D6)
 tmux select-pane -t 0 -T "Camera [D5 POC]"
 tmux send-keys -t $SESSION_NAME:0.0 "$ROS_SRC" C-m
-tmux send-keys -t $SESSION_NAME:0.0 "clear && echo -e '\\e[1;36m>>> [Domain 5 POC] CAMERA STREAM (was D6) <<<\\e[0m' && sleep 1" C-m
+tmux send-keys -t $SESSION_NAME:0.0 "clear && echo -e '\\e[1;36m>>> [Domain 5 POC] CAMERA STREAM (was D6) <<<\\e[0m'" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "ros2 run vision_navigation camera_stream_node --ros-args --params-file src/vision_navigation/config/vision_nav_headless.yaml" C-m
+sleep 3
 
 # Pane 1 (top-right): Lane Detection — D5 (was D6)
+# Starts after camera is up (3 s script delay above).
 tmux select-pane -t 1 -T "Lane_Detect [D5 POC]"
 tmux send-keys -t $SESSION_NAME:0.1 "$ROS_SRC" C-m
 tmux send-keys -t $SESSION_NAME:0.1 "clear && echo -e '\\e[1;32m>>> [Domain 5 POC] LANE DETECTION (was D6) <<<\\e[0m'" C-m
-tmux send-keys -t $SESSION_NAME:0.1 "echo 'Waiting for camera (3s)...' && sleep 3" C-m
 tmux send-keys -t $SESSION_NAME:0.1 "ros2 run vision_navigation lane_detection_node --ros-args --params-file src/vision_navigation/config/vision_nav_headless.yaml" C-m
+sleep 2
 
 # Pane 2 (mid-right): Rover Kinematic Control — D5 only (was D6 sub + D5 pub)
-# The node's two internal rclpy contexts will both resolve to D5 since
-# ROS_DOMAIN_ID=5 is set in the environment and there is no per-context override.
+# Starts after lane_detection is up (2 s script delay above).
 tmux select-pane -t 2 -T "Kinematic_Ctrl [D5 POC]"
 tmux send-keys -t $SESSION_NAME:0.2 "$ROS_SRC" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "clear && echo -e '\\e[1;33m>>> [Domain 5 POC] ROVER KINEMATIC CONTROL (all D5) <<<\\e[0m'" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "echo 'Waiting for lane detection (4s)...' && sleep 4" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "ros2 run vision_navigation rover_kinematic_control --ros-args --params-file src/vision_navigation/config/rover_kinematic_control_params.yaml" C-m
+sleep 2
 
 # Pane 3 (bot-right): Rover Local Monitoring — D5 (was D4)
-# tpc_telemetry_relay is now on D5 so this node still receives it.
+# tpc_telemetry_relay is now on D5; starts last as it depends on RPi telemetry.
 tmux select-pane -t 3 -T "Local_Monitor [D5 POC]"
 tmux send-keys -t $SESSION_NAME:0.3 "$ROS_SRC" C-m
 tmux send-keys -t $SESSION_NAME:0.3 "clear && echo -e '\\e[1;35m>>> [Domain 5 POC] ROVER LOCAL MONITORING (was D4) <<<\\e[0m'" C-m
-tmux send-keys -t $SESSION_NAME:0.3 "echo 'Waiting for telemetry relay (5s)...' && sleep 5" C-m
 tmux send-keys -t $SESSION_NAME:0.3 "ros2 run rover_monitoring rover_local_monitoring_node" C-m
 
 tmux select-pane -t 0
