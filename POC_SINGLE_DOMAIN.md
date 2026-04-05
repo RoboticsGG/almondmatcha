@@ -406,7 +406,7 @@ for `/tpc_telemetry_relay` — the only project message type that includes `head
 python3 ws_base/tools/tracing/analyze_latency.py \
   --csv ws_base/tools/tracing/data/poc_latency_rpi.csv
 
-# Side-by-side comparison (requires baseline CSV from multi-domain branch)
+# Side-by-side comparison (requires baseline CSV from main branch)
 python3 ws_base/tools/tracing/analyze_latency.py \
   --baseline ws_base/tools/tracing/data/baseline_latency_rpi.csv \
   --poc      ws_base/tools/tracing/data/poc_latency_rpi.csv \
@@ -492,18 +492,18 @@ Compare `heap_used` and `heap_max` between baseline and POC runs. An increase in
 
 ## Collecting Baseline Data for Comparison
 
-To get a proper before/after comparison, repeat **Steps 2–6** on the `multi-domain` branch,
+To get a proper before/after comparison, repeat **Steps 2–6** on the `main` branch,
 which runs the original multi-domain architecture with the same measurement tooling.
 Baseline CSVs will be saved as `baseline_latency_rpi.csv` / `baseline_latency_jetson.csv`.
 
 ```bash
-git checkout multi-domain
-# Rebuild and re-flash both STM32 boards from multi-domain firmware
-# Launch with multi-domain scripts, then:
+git checkout main
+# Rebuild and re-flash both STM32 boards from main branch firmware
+# Launch with main branch scripts, then:
 TARGET_HOST=curry@192.168.1.1 TARGET_LABEL=rpi bash ws_base/tools/tracing/start_trace.sh
 ```
 
-See `MULTI_DOMAIN_BASELINE.md` on the `multi-domain` branch for the full guide.
+See the `README.md` on the `main` branch for the baseline launch guide.
 
 ---
 
