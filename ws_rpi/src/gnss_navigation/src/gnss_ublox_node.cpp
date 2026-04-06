@@ -137,7 +137,6 @@ private:
         } else if (tokens[0].find("GGA") != std::string::npos) {
             RCLCPP_WARN(this->get_logger(), "[DBG] GGA skipped: only %zu tokens: %s", tokens.size(), sentence.c_str());
         }
-        }
         // GSA - GPS DOP and active satellites
         else if (tokens[0].find("GSA") != std::string::npos && tokens.size() >= 18) {
             parseGSA(tokens);
