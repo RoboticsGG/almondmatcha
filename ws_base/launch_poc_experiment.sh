@@ -17,7 +17,8 @@
 #   bash ws_base/launch_poc_experiment.sh --skip-launch    # skip ROS2 node launch (collectors only)
 #
 # Output files (all on base PC):
-#   ~/ros2_traces/stm32_memory_poc.csv
+#   ~/ros2_traces/stm32_memory_poc_chassis_YYYYMMDD_HHMMSS.csv
+#   ~/ros2_traces/stm32_memory_poc_sensors_YYYYMMDD_HHMMSS.csv
 #   ws_base/tools/tracing/data/poc_latency_rpi.csv
 #   ws_base/tools/tracing/data/poc_latency_jetson.csv
 #   ws_base/tools/monitoring/data/poc_net_stats_rpi.csv
@@ -35,7 +36,7 @@ JETSON_HOST="yupi@192.168.1.5"
 CHASSIS_PORT="/dev/ttyACM1"   # verify with: minicom -b 115200 -D /dev/ttyACM1
 SENSORS_PORT="/dev/ttyACM0"   # verify with: minicom -b 115200 -D /dev/ttyACM0
 
-STM32_OUT="$HOME/ros2_traces/stm32_memory_poc.csv"
+STM32_OUT_STEM="$HOME/ros2_traces/stm32_memory_poc"   # per-board files: <stem>_chassis/sensors_YYYYMMDD_HHMMSS.csv
 LATENCY_DATA_DIR="$HOME/almondmatcha/ws_base/tools/tracing/data"
 NET_DATA_DIR="$HOME/almondmatcha/ws_base/tools/monitoring/data"
 
@@ -130,12 +131,12 @@ start_stm32_collector() {
     log "Step 1 — Starting STM32 memory collector"
     log "  chassis port : $CHASSIS_PORT  (node=chassis)"
     log "  sensors port : $SENSORS_PORT  (node=sensors)"
-    log "  output CSV   : $STM32_OUT"
+    log "  output stem  : $STM32_OUT_STEM  →  <stem>_chassis/sensors_YYYYMMDD_HHMMSS.csv"
 
     python3 "$TOOLS_DIR/stm32_serial/collect_stm32_memory.py" \
         --chassis "$CHASSIS_PORT" \
         --sensors "$SENSORS_PORT" \
-        --out     "$STM32_OUT" &
+        --out     "$STM32_OUT_STEM" &
     STM32_COLLECTOR_PID=$!
 
     sleep 1
@@ -304,8 +305,9 @@ print_summary() {
     echo -e "${GREEN}  EXPERIMENT COMPLETE — CSV files collected${NC}"
     echo -e "${BOLD}======================================================${NC}"
     echo ""
-    echo "  STM32 heap/stack:"
-    echo "    $STM32_OUT"
+    echo "  STM32 heap/stack (per-board, timestamped):"
+    echo "    $(ls "${STM32_OUT_STEM}"_chassis_*.csv 2>/dev/null | tail -1 || echo "${STM32_OUT_STEM}_chassis_<timestamp>.csv")"
+    echo "    $(ls "${STM32_OUT_STEM}"_sensors_*.csv 2>/dev/null | tail -1 || echo "${STM32_OUT_STEM}_sensors_<timestamp>.csv")"
     echo ""
     echo "  Latency / jitter:"
     echo "    $LATENCY_DATA_DIR/poc_latency_rpi.csv"
@@ -322,10 +324,12 @@ print_summary() {
     echo "        --poc $LATENCY_DATA_DIR/poc_latency_rpi.csv"
     echo ""
     echo "    # Unified timeline (all sources)"
+    echo "    # Substitute actual timestamped filenames from ~/ros2_traces/:"
     echo "    python3 ws_base/tools/tracing/analyze_latency.py --merge \\"
     echo "        --latency-rpi    $LATENCY_DATA_DIR/poc_latency_rpi.csv \\"
     echo "        --latency-jetson $LATENCY_DATA_DIR/poc_latency_jetson.csv \\"
-    echo "        --stm32          $STM32_OUT \\"
+    echo "        --stm32          ${STM32_OUT_STEM}_chassis_<YYYYMMDD_HHMMSS>.csv \\"
+    echo "        --stm32-sensors  ${STM32_OUT_STEM}_sensors_<YYYYMMDD_HHMMSS>.csv \\"
     echo "        --net-rpi        $NET_DATA_DIR/poc_net_stats_rpi.csv \\"
     echo "        --net-jetson     $NET_DATA_DIR/poc_net_stats_jetson.csv \\"
     echo "        --out-dir        ws_base/tools/tracing/results/"

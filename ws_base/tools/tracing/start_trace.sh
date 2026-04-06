@@ -40,6 +40,13 @@ source ~/almondmatcha/ws_rpi/install/setup.bash 2>/dev/null || \
     source ~/almondmatcha/ws_jetson/install/setup.bash 2>/dev/null || true
 export ROS_DOMAIN_ID=5
 
+# Pin Fast-DDS to the rover Ethernet NIC (same as the launch scripts do)
+if [ -f ~/almondmatcha/ws_rpi/fastdds_rover.xml ]; then
+    export FASTRTPS_DEFAULT_PROFILES_FILE=~/almondmatcha/ws_rpi/fastdds_rover.xml
+elif [ -f ~/almondmatcha/ws_jetson/fastdds_jetson.xml ]; then
+    export FASTRTPS_DEFAULT_PROFILES_FILE=~/almondmatcha/ws_jetson/fastdds_jetson.xml
+fi
+
 mkdir -p ~/ros2_traces
 
 # Kill any stale collector for this label
