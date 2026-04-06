@@ -86,6 +86,7 @@ private:
         }
 
         buffer[bytes_read] = '\0';
+        RCLCPP_INFO(this->get_logger(), "[DBG] serial read: %d bytes", bytes_read);
         nmea_buffer_ += std::string(buffer);
 
         // Process complete NMEA sentences
@@ -112,7 +113,10 @@ private:
 
         // GGA - Global Positioning System Fix Data
         if (tokens[0].find("GGA") != std::string::npos && tokens.size() >= 15) {
+            RCLCPP_INFO(this->get_logger(), "[DBG] GGA tok=%zu: %s", tokens.size(), sentence.c_str());
             parseGGA(tokens);
+        } else if (tokens[0].find("GGA") != std::string::npos) {
+            RCLCPP_WARN(this->get_logger(), "[DBG] GGA skipped: only %zu tokens: %s", tokens.size(), sentence.c_str());
         }
         // GSA - GPS DOP and active satellites
         else if (tokens[0].find("GSA") != std::string::npos && tokens.size() >= 18) {
