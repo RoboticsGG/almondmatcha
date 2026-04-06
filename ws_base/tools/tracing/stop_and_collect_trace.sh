@@ -9,6 +9,7 @@ set -e
 
 TARGET_HOST="${TARGET_HOST:-}"
 TARGET_LABEL="${TARGET_LABEL:-unknown}"
+SSH_OPTS="${SSH_OPTS:-}"                 # ControlMaster opts passed from launch_poc_experiment.sh
 PID_FILE="\$HOME/ros2_traces/collector_${TARGET_LABEL}.pid"
 REMOTE_CSV="~/ros2_traces/latency_${TARGET_LABEL}.csv"
 
@@ -17,7 +18,7 @@ mkdir -p "$LOCAL_DATA_DIR"
 
 run_remote() {
     if [ -n "$TARGET_HOST" ]; then
-        ssh "$TARGET_HOST" "$@"
+        ssh $SSH_OPTS "$TARGET_HOST" "$@"
     else
         bash -c "$@"
     fi
@@ -42,7 +43,7 @@ fi
 
 if [ -n "$TARGET_HOST" ]; then
     echo "=== Pulling CSV from ${TARGET_HOST}:${REMOTE_CSV} ==="
-    scp "${TARGET_HOST}:${REMOTE_CSV}" \
+    scp $SSH_OPTS "${TARGET_HOST}:${REMOTE_CSV}" \
         "${LOCAL_DATA_DIR}/poc_latency_${TARGET_LABEL}.csv"
     echo "[OK] CSV saved to: ${LOCAL_DATA_DIR}/poc_latency_${TARGET_LABEL}.csv"
 else

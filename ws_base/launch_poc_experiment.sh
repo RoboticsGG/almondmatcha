@@ -46,6 +46,10 @@ WORKSPACE="$HOME/almondmatcha"
 RUN_DURATION=300   # seconds — default 5 minutes
 SKIP_LAUNCH=false
 
+# SSH ControlMaster: authenticate once, reuse connection for all background ssh calls
+SSH_CONTROL_DIR="$(mktemp -d /tmp/poc_ssh_ctl.XXXXXX)"
+SSH_OPTS="-o ControlMaster=auto -o ControlPath=${SSH_CONTROL_DIR}/%r@%h:%p -o ControlPersist=600"
+
 # ============================================================================
 # Colours
 # ============================================================================
@@ -87,11 +91,15 @@ cleanup() {
     [[ -n "$STM32_COLLECTOR_PID" ]] && kill "$STM32_COLLECTOR_PID" 2>/dev/null || true
     [[ -n "$NET_RPI_PID"         ]] && kill "$NET_RPI_PID"         2>/dev/null || true
     [[ -n "$NET_JETSON_PID"      ]] && kill "$NET_JETSON_PID"      2>/dev/null || true
-    # Stop remote latency collectors
-    TARGET_HOST="$RPI_HOST"    TARGET_LABEL=rpi    \
+    # Stop latency collectors (cleanup path)
+    TARGET_HOST="$RPI_HOST"    TARGET_LABEL=rpi    SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh" 2>/dev/null || true
-    TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson \
+    TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh" 2>/dev/null || true
+    # Close SSH control sockets
+    ssh $SSH_OPTS -O exit "$RPI_HOST"    2>/dev/null || true
+    ssh $SSH_OPTS -O exit "$JETSON_HOST" 2>/dev/null || true
+    rm -rf "$SSH_CONTROL_DIR"
     echo ""
     log "Cleanup complete. CSVs may be partial."
     exit 1
@@ -113,13 +121,17 @@ preflight() {
     [[ -e "$CHASSIS_PORT" ]] || die "Chassis serial port $CHASSIS_PORT not found. Is the board plugged in?"
     [[ -e "$SENSORS_PORT" ]] || die "Sensors serial port $SENSORS_PORT not found. Is the board plugged in?"
 
-    ssh -o ConnectTimeout=5 "$RPI_HOST" true 2>/dev/null \
-        || die "Cannot SSH to RPi ($RPI_HOST) — check connection and SSH keys"
-    ssh -o ConnectTimeout=5 "$JETSON_HOST" true 2>/dev/null \
-        || die "Cannot SSH to Jetson ($JETSON_HOST) — check connection and SSH keys"
+    # Open persistent SSH control sockets — prompts for password/passphrase once per host.
+    # All subsequent SSH calls in this script reuse these sockets without re-authenticating.
+    log "  Authenticating to RPi ($RPI_HOST) — enter password/passphrase if prompted:"
+    ssh $SSH_OPTS -o ConnectTimeout=10 "$RPI_HOST" true \
+        || die "Cannot SSH to RPi ($RPI_HOST) — check connection and credentials"
+    ok "  RPi authenticated"
 
-    # Background SSH steps in this script require non-interactive (passwordless) access.
-    # If your key has a passphrase, run: ssh-add ~/.ssh/id_rsa  before launching.
+    log "  Authenticating to Jetson ($JETSON_HOST) — enter password/passphrase if prompted:"
+    ssh $SSH_OPTS -o ConnectTimeout=10 "$JETSON_HOST" true \
+        || die "Cannot SSH to Jetson ($JETSON_HOST) — check connection and credentials"
+    ok "  Jetson authenticated"
 
     mkdir -p "$HOME/ros2_traces" "$LATENCY_DATA_DIR" "$NET_DATA_DIR"
 
@@ -175,12 +187,12 @@ launch_ros2_nodes() {
     log "Step 3 — Launching ROS2 nodes (boards are in 10s discovery wait)"
 
     log "  Launching rover nodes on RPi ($RPI_HOST)..."
-    ssh "$RPI_HOST" "bash ~/almondmatcha/ws_rpi/launch_rover_single_domain.sh" &
+    ssh $SSH_OPTS "$RPI_HOST" "bash ~/almondmatcha/ws_rpi/launch_rover_single_domain.sh" &
     sleep 1
     ok "  RPi launch sent"
 
     log "  Launching Jetson nodes ($JETSON_HOST)..."
-    ssh "$JETSON_HOST" "bash ~/almondmatcha/ws_jetson/launch_jetson_single_domain.sh" &
+    ssh $SSH_OPTS "$JETSON_HOST" "bash ~/almondmatcha/ws_jetson/launch_jetson_single_domain.sh" &
     sleep 1
     ok "  Jetson launch sent"
 
@@ -199,11 +211,11 @@ launch_ros2_nodes() {
 start_latency_collectors() {
     log "Step 4 — Starting latency/jitter collectors on RPi and Jetson"
 
-    TARGET_HOST="$RPI_HOST"    TARGET_LABEL=rpi \
+    TARGET_HOST="$RPI_HOST"    TARGET_LABEL=rpi    SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/start_trace.sh"
     ok "  RPi latency collector started"
 
-    TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson \
+    TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/start_trace.sh"
     ok "  Jetson latency collector started"
 }
@@ -215,7 +227,7 @@ start_latency_collectors() {
 start_net_collectors() {
     log "Step 5 — Starting network stats collectors on RPi and Jetson"
 
-    ssh "$RPI_HOST" \
+    ssh $SSH_OPTS "$RPI_HOST" \
         "mkdir -p ~/ros2_traces && nohup python3 ~/almondmatcha/ws_base/tools/monitoring/collect_net_stats.py \
             --iface eth0 --out ~/ros2_traces/net_stats_rpi.csv \
             </dev/null >~/ros2_traces/net_stats_rpi.log 2>&1 &
@@ -223,7 +235,7 @@ start_net_collectors() {
          echo [OK] net_stats collector PID: \$(cat ~/ros2_traces/net_stats_rpi.pid)" &
     NET_RPI_PID=$!
 
-    ssh "$JETSON_HOST" \
+    ssh $SSH_OPTS "$JETSON_HOST" \
         "mkdir -p ~/ros2_traces && nohup python3 ~/almondmatcha/ws_base/tools/monitoring/collect_net_stats.py \
             --iface eth0 --out ~/ros2_traces/net_stats_jetson.csv \
             </dev/null >~/ros2_traces/net_stats_jetson.log 2>&1 &
@@ -268,19 +280,19 @@ stop_and_collect() {
     log "Step 7 — Stopping all collectors and pulling CSVs"
 
     # Stop latency collectors
-    TARGET_HOST="$RPI_HOST"    TARGET_LABEL=rpi \
+    TARGET_HOST="$RPI_HOST"    TARGET_LABEL=rpi    SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh"
-    TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson \
+    TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh"
 
     # Stop net-stats collectors on SBCs
-    ssh "$RPI_HOST" \
+    ssh $SSH_OPTS "$RPI_HOST" \
         "if [ -f ~/ros2_traces/net_stats_rpi.pid ]; then
              kill \$(cat ~/ros2_traces/net_stats_rpi.pid) 2>/dev/null || true
              rm -f ~/ros2_traces/net_stats_rpi.pid
              echo '[OK] net_stats stopped on RPi'
          fi"
-    ssh "$JETSON_HOST" \
+    ssh $SSH_OPTS "$JETSON_HOST" \
         "if [ -f ~/ros2_traces/net_stats_jetson.pid ]; then
              kill \$(cat ~/ros2_traces/net_stats_jetson.pid) 2>/dev/null || true
              rm -f ~/ros2_traces/net_stats_jetson.pid
@@ -289,13 +301,18 @@ stop_and_collect() {
 
     # Pull net-stats CSVs
     log "  Pulling net-stats CSVs..."
-    scp "$RPI_HOST:~/ros2_traces/net_stats_rpi.csv"       "$NET_DATA_DIR/poc_net_stats_rpi.csv"
-    scp "$JETSON_HOST:~/ros2_traces/net_stats_jetson.csv" "$NET_DATA_DIR/poc_net_stats_jetson.csv"
+    scp $SSH_OPTS "$RPI_HOST:~/ros2_traces/net_stats_rpi.csv"       "$NET_DATA_DIR/poc_net_stats_rpi.csv"
+    scp $SSH_OPTS "$JETSON_HOST:~/ros2_traces/net_stats_jetson.csv" "$NET_DATA_DIR/poc_net_stats_jetson.csv"
     ok "  Net-stats CSVs pulled"
 
     # Stop STM32 collector
     [[ -n "$STM32_COLLECTOR_PID" ]] && kill "$STM32_COLLECTOR_PID" 2>/dev/null || true
     ok "  STM32 collector stopped"
+
+    # Close SSH control sockets
+    ssh $SSH_OPTS -O exit "$RPI_HOST"    2>/dev/null || true
+    ssh $SSH_OPTS -O exit "$JETSON_HOST" 2>/dev/null || true
+    rm -rf "$SSH_CONTROL_DIR"
 }
 
 # ============================================================================
