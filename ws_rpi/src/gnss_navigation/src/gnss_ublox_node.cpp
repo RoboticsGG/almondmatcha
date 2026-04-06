@@ -306,11 +306,19 @@ private:
         msg.centimeter_error = current_data_.centimeter_error;
 
         pub_gnss_ublox_->publish(msg);
-        
-        RCLCPP_INFO(this->get_logger(), 
+
+        // Format date YYYYMMDD → YYYY-MM-DD and time HHMMSS → HH:MM:SS for display
+        std::string disp_date = (msg.date.size() == 8)
+            ? msg.date.substr(0,4) + "-" + msg.date.substr(4,2) + "-" + msg.date.substr(6,2)
+            : msg.date;
+        std::string disp_time = (msg.time.size() >= 6)
+            ? msg.time.substr(0,2) + ":" + msg.time.substr(2,2) + ":" + msg.time.substr(4,2)
+            : msg.time;
+
+        RCLCPP_INFO(this->get_logger(),
             "u-blox RTK GNSS - Date=%s, Time=%s, Sats=%d, Fix=%s, Lat=%.6f, Lon=%.6f, Alt=%.2f, SNR=%.1f, Speed=%.2f m/s, Err=%.1f cm",
-            msg.date.c_str(), msg.time.c_str(), msg.satellites_tracked, msg.fix_quality.c_str(),
-            msg.latitude, msg.longitude, msg.altitude, 
+            disp_date.c_str(), disp_time.c_str(), msg.satellites_tracked, msg.fix_quality.c_str(),
+            msg.latitude, msg.longitude, msg.altitude,
             msg.snr, msg.speed, msg.centimeter_error);
     }
 
