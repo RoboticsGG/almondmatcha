@@ -117,6 +117,7 @@ def read_serial_thread(port: str, label: str, rows: list, lock: threading.Lock,
 def writer_thread(out_path: Path, rows: list, lock: threading.Lock,
                   stop_event: threading.Event):
     """Flush buffered rows to CSV every second."""
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w", newline="") as fout:
         writer = csv.DictWriter(fout, fieldnames=CSV_FIELDS)
         writer.writeheader()
