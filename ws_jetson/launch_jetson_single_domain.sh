@@ -71,4 +71,4 @@ tmux send-keys -t $SESSION_NAME:0.3 "clear && echo -e '\\e[1;35m>>> [Domain 5 PO
 tmux send-keys -t $SESSION_NAME:0.3 "ros2 run rover_monitoring rover_local_monitoring_node" C-m
 
 tmux select-pane -t 0
-tmux attach-session -t $SESSION_NAME
+[ -t 1 ] && tmux attach-session -t $SESSION_NAME

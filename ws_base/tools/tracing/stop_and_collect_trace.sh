@@ -27,15 +27,15 @@ run_remote() {
 echo "=== Stopping collector on ${TARGET_HOST:-localhost} (label=${TARGET_LABEL}) ==="
 
 run_remote "
-if [ -f '${PID_FILE}' ]; then
-    PID=\$(cat '${PID_FILE}')
+if [ -f ${PID_FILE} ]; then
+    PID=\$(cat ${PID_FILE})
     if kill -0 \"\$PID\" 2>/dev/null; then
         kill \"\$PID\"
         echo '[OK] Collector stopped (PID '\$PID')'
     else
         echo '[WARN] Collector PID '\$PID' was not running'
     fi
-    rm -f '${PID_FILE}'
+    rm -f ${PID_FILE}
 else
     echo '[WARN] No PID file found at ${PID_FILE} — collector may already be stopped'
 fi

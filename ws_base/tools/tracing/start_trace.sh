@@ -21,8 +21,7 @@ PID_FILE="\$HOME/ros2_traces/collector_${TARGET_LABEL}.pid"
 LOG_FILE="\$HOME/ros2_traces/collector_${TARGET_LABEL}.log"
 
 # All D5 topics for this project
-TOPICS="/tpc_chassis_imu /tpc_chassis_sensors /tpc_chassis_cmd
-/tpc_gnss_spresense /tpc_gnss_ublox /tpc_rover_ctrl_cmd /tpc_telemetry_relay"
+TOPICS="/tpc_chassis_imu /tpc_chassis_sensors /tpc_chassis_cmd /tpc_gnss_spresense /tpc_gnss_ublox /tpc_rover_ctrl_cmd /tpc_telemetry_relay"
 
 run_remote() {
     if [ -n "$TARGET_HOST" ]; then
@@ -51,18 +50,18 @@ fi
 mkdir -p ~/ros2_traces
 
 # Kill any stale collector for this label
-if [ -f '${PID_FILE}' ]; then
-    OLD_PID=\$(cat '${PID_FILE}')
+if [ -f ${PID_FILE} ]; then
+    OLD_PID=\$(cat ${PID_FILE})
     kill \"\$OLD_PID\" 2>/dev/null || true
 fi
 
 nohup python3 ~/almondmatcha/ws_base/tools/tracing/collect_latency.py \
     --topics ${TOPICS} \
-    --out '${OUT_CSV}' \
-    < /dev/null > '${LOG_FILE}' 2>&1 &
-echo \$! > '${PID_FILE}'
+    --out ${OUT_CSV} \
+    < /dev/null > ${LOG_FILE} 2>&1 &
+echo \$! > ${PID_FILE}
 
-echo '[OK] Collector PID: '\$(cat '${PID_FILE}')
+echo '[OK] Collector PID: '\$(cat ${PID_FILE})
 echo '[OK] Output CSV:    ${OUT_CSV}'
 echo '[OK] Log:           ${LOG_FILE}'
 "
