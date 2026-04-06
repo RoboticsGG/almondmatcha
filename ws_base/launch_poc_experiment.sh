@@ -113,10 +113,13 @@ preflight() {
     [[ -e "$CHASSIS_PORT" ]] || die "Chassis serial port $CHASSIS_PORT not found. Is the board plugged in?"
     [[ -e "$SENSORS_PORT" ]] || die "Sensors serial port $SENSORS_PORT not found. Is the board plugged in?"
 
-    ssh -o ConnectTimeout=5 -o BatchMode=yes "$RPI_HOST" true 2>/dev/null \
+    ssh -o ConnectTimeout=5 "$RPI_HOST" true 2>/dev/null \
         || die "Cannot SSH to RPi ($RPI_HOST) — check connection and SSH keys"
-    ssh -o ConnectTimeout=5 -o BatchMode=yes "$JETSON_HOST" true 2>/dev/null \
+    ssh -o ConnectTimeout=5 "$JETSON_HOST" true 2>/dev/null \
         || die "Cannot SSH to Jetson ($JETSON_HOST) — check connection and SSH keys"
+
+    # Background SSH steps in this script require non-interactive (passwordless) access.
+    # If your key has a passphrase, run: ssh-add ~/.ssh/id_rsa  before launching.
 
     mkdir -p "$HOME/ros2_traces" "$LATENCY_DATA_DIR" "$NET_DATA_DIR"
 
