@@ -86,43 +86,43 @@ private:
         }
 
         buffer[bytes_read] = '\0';
-        RCLCPP_INFO(this->get_logger(), "[DBG] serial read: %d bytes | buf_len=%zu | first6='%c%c%c%c%c%c'",
-            bytes_read, nmea_buffer_.size(),
-            bytes_read>0?buffer[0]:' ', bytes_read>1?buffer[1]:' ',
-            bytes_read>2?buffer[2]:' ', bytes_read>3?buffer[3]:' ',
-            bytes_read>4?buffer[4]:' ', bytes_read>5?buffer[5]:' ');
         nmea_buffer_ += std::string(buffer, bytes_read);
 
-        // Safety cap: if buffer grows beyond 4 KB without a sentence, reset
+        // Safety cap: binary UBX frames can bloat the buffer if no '$' arrives
         if (nmea_buffer_.size() > 4096) {
-            RCLCPP_WARN(this->get_logger(), "[DBG] buffer overflow (%zu bytes) — resetting", nmea_buffer_.size());
             nmea_buffer_.clear();
             return;
         }
 
-        // Process complete NMEA sentences (handle both \r\n and \r-only line endings)
-        size_t pos;
-        while ((pos = nmea_buffer_.find('\n')) != std::string::npos) {
-            std::string sentence = nmea_buffer_.substr(0, pos);
-            nmea_buffer_ = nmea_buffer_.substr(pos + 1);
-
-            // Strip trailing \r
-            if (!sentence.empty() && sentence.back() == '\r') {
-                sentence.pop_back();
+        // Scan for complete NMEA sentences anchored at '$'.
+        // Binary UBX frames (0xB5 0x62 ...) are silently skipped — they don't
+        // start with '$' so the find() below jumps past them automatically.
+        size_t search_from = 0;
+        while (true) {
+            size_t dollar = nmea_buffer_.find('$', search_from);
+            if (dollar == std::string::npos) {
+                nmea_buffer_.clear();
+                break;
             }
-
-            if (!sentence.empty() && sentence[0] == '$') {
+            // Find end of this sentence (\r or \n after the '$')
+            size_t end = nmea_buffer_.find_first_of("\r\n", dollar + 1);
+            if (end == std::string::npos) {
+                // Incomplete sentence — keep from '$' onwards for next read
+                nmea_buffer_ = nmea_buffer_.substr(dollar);
+                break;
+            }
+            std::string sentence = nmea_buffer_.substr(dollar, end - dollar);
+            // Advance past the line terminator (handle \r\n pair)
+            search_from = end + 1;
+            if (search_from < nmea_buffer_.size() && nmea_buffer_[search_from] == '\n') {
+                ++search_from;
+            }
+            if (sentence.size() > 5) {
                 processNMEASentence(sentence);
             }
         }
-        // Also handle \r-only (no \n) line endings
-        while ((pos = nmea_buffer_.find('\r')) != std::string::npos) {
-            std::string sentence = nmea_buffer_.substr(0, pos);
-            nmea_buffer_ = nmea_buffer_.substr(pos + 1);
-
-            if (!sentence.empty() && sentence[0] == '$') {
-                processNMEASentence(sentence);
-            }
+        if (search_from > 0 && search_from <= nmea_buffer_.size()) {
+            nmea_buffer_ = nmea_buffer_.substr(search_from);
         }
     }
 
@@ -133,10 +133,10 @@ private:
 
         // GGA - Global Positioning System Fix Data
         if (tokens[0].find("GGA") != std::string::npos && tokens.size() >= 15) {
-            RCLCPP_INFO(this->get_logger(), "[DBG] GGA tok=%zu: %s", tokens.size(), sentence.c_str());
             parseGGA(tokens);
         } else if (tokens[0].find("GGA") != std::string::npos) {
             RCLCPP_WARN(this->get_logger(), "[DBG] GGA skipped: only %zu tokens: %s", tokens.size(), sentence.c_str());
+        }
         }
         // GSA - GPS DOP and active satellites
         else if (tokens[0].find("GSA") != std::string::npos && tokens.size() >= 18) {
@@ -207,7 +207,9 @@ private:
         if (tokens.size() >= 16 && !tokens[15].empty()) {
             float hdop = std::stof(tokens[15]);
             // Rough conversion: HDOP * 5 meters = error in cm
-            current_data_.centimeter_error = hdop * 500.0f;
+            // Cap at 999.9 cm for invalid/placeholder HDOP values (e.g. 99.99)
+            float err = hdop * 500.0f;
+            current_data_.centimeter_error = (err > 9999.0f) ? 9999.0f : err;
         }
     }
 
