@@ -279,18 +279,18 @@ bash ws_base/launch_poc_experiment.sh --skip-launch
 
 **Output files (all on base PC after the script finishes):**
 ```
-~/ros2_traces/stm32_memory_poc.csv
+~/ros2_traces/stm32_memory_poc_chassis_YYYYMMDD_HHMMSS.csv
+~/ros2_traces/stm32_memory_poc_sensors_YYYYMMDD_HHMMSS.csv
 ws_base/tools/tracing/data/poc_latency_rpi.csv
 ws_base/tools/tracing/data/poc_latency_jetson.csv
 ws_base/tools/monitoring/data/poc_net_stats_rpi.csv
 ws_base/tools/monitoring/data/poc_net_stats_jetson.csv
 ```
 
-> **STM32 serial JSON format:** both boards write to the same CSV, tagged by board:
-> - Chassis port: `{"type":"STM32_MEM","node":"chassis","ts_ms":200,"heap_used":...}`
-> - Sensors port: `{"type":"STM32_MEM","node":"sensors","ts_ms":200,"heap_used":...}`
->
-> Analysis scripts split on the `"node"` field automatically.
+> **STM32 serial JSON format:** each board is saved to its own CSV file, named with the
+> run timestamp so successive runs never overwrite each other:
+> - `stm32_memory_poc_chassis_YYYYMMDD_HHMMSS.csv` — chassis board data
+> - `stm32_memory_poc_sensors_YYYYMMDD_HHMMSS.csv` — sensors board data
 
 ---
 
@@ -327,7 +327,7 @@ are late. Follow this order exactly.
 ```bash
 python3 ws_base/tools/stm32_serial/collect_stm32_memory.py \
   --chassis /dev/ttyACM1 --sensors /dev/ttyACM0 \
-  --out ~/ros2_traces/stm32_memory_poc.csv
+  --out ~/ros2_traces/stm32_memory_poc
 ```
 
 Leave running. **Now power-cycle both STM32 boards.**
@@ -435,7 +435,8 @@ All Linux clocks are NTP-synced (~1–10 ms accuracy). The STM32 has no RTC; its
 python3 ws_base/tools/tracing/analyze_latency.py --merge \
     --latency-rpi    ws_base/tools/tracing/data/poc_latency_rpi.csv \
     --latency-jetson ws_base/tools/tracing/data/poc_latency_jetson.csv \
-    --stm32          ~/ros2_traces/stm32_memory_poc.csv \
+    --stm32          ~/ros2_traces/stm32_memory_poc_chassis_YYYYMMDD_HHMMSS.csv \
+    --stm32-sensors  ~/ros2_traces/stm32_memory_poc_sensors_YYYYMMDD_HHMMSS.csv \
     --net-rpi        ws_base/tools/monitoring/data/poc_net_stats_rpi.csv \
     --net-jetson     ws_base/tools/monitoring/data/poc_net_stats_jetson.csv \
     --out-dir        ws_base/tools/tracing/results/
@@ -448,7 +449,7 @@ elapsed-seconds x-axis (x=0 = earliest event across all datasets):
 |---|---|---|
 | RPi jitter | `poc_latency_rpi.csv` | Spikes in `interval_ms` during discovery |
 | Jetson jitter | `poc_latency_jetson.csv` | Same, Jetson-side |
-| STM32 heap | `stm32_memory_poc.csv` | Rising ramp during 10 s boot window → flat steady-state |
+| STM32 heap | `stm32_memory_poc_chassis/sensors_*.csv` | Rising ramp during 10 s boot window → flat steady-state |
 | Network BW | `net_stats_*.csv` | Bandwidth spike when camera_stream@30fps joins D5 |
 
 All five `--*` arguments are optional — omit any source not collected.
@@ -477,9 +478,10 @@ Key columns:
 
 ```bash
 python3 - << 'EOF'
-import pandas as pd
-import os
-df = pd.read_csv(os.path.expanduser("~/ros2_traces/stm32_memory_poc.csv"))
+import pandas as pd, glob, os
+# Load both per-board CSVs and concatenate
+files = sorted(glob.glob(os.path.expanduser("~/ros2_traces/stm32_memory_poc_*.csv")))
+df = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
 for node, g in df.groupby("node"):
     print(f"\n=== {node} ===")
     print(g[["ts_ms","heap_used","heap_max","heap_free","alloc_fail"]].describe())

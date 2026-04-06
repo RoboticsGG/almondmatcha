@@ -9,14 +9,19 @@ The firmware's memory_reporter.h emits lines of the form:
 Every other line from the STM32 (MROS2_INFO, sensor printf) is discarded.
 No firmware change to output suppression is required.
 
+Each board is saved to a separate CSV file.  The creation timestamp is embedded
+in every filename so successive runs never overwrite each other:
+    <stem>_chassis_YYYYMMDD_HHMMSS.csv
+    <stem>_sensors_YYYYMMDD_HHMMSS.csv
+
 Usage:
     # Auto-detect both /dev/ttyACM* ports and collect:
-    python3 collect_stm32_memory.py --out /tmp/stm32_memory_poc.csv
+    python3 collect_stm32_memory.py --out ~/ros2_traces/stm32_memory_poc
 
     # Explicit ports:
     python3 collect_stm32_memory.py \
         --chassis /dev/ttyACM0 --sensors /dev/ttyACM1 \
-        --out /tmp/stm32_memory_poc.csv
+        --out ~/ros2_traces/stm32_memory_poc
 
     # Only one board connected:
     python3 collect_stm32_memory.py --chassis /dev/ttyACM0 --sensors none
@@ -63,9 +68,16 @@ def auto_detect_ports():
     return found[:2] if found else []
 
 
+def make_out_path(out_stem: Path, label: str, run_ts: str) -> Path:
+    """Build a per-label, datetime-stamped output path from the stem."""
+    # Strip .csv suffix if the user passed a full filename as stem
+    stem = out_stem.with_suffix("") if out_stem.suffix.lower() == ".csv" else out_stem
+    return stem.parent / f"{stem.name}_{label}_{run_ts}.csv"
+
+
 def read_serial_thread(port: str, label: str, rows: list, lock: threading.Lock,
                        stop_event: threading.Event):
-    """Background thread: read serial lines, filter JSON, append to shared rows list."""
+    """Background thread: read serial lines, filter JSON, append to per-label rows list."""
     try:
         ser = serial.Serial(port, BAUD_RATE, timeout=POLL_TIMEOUT)
     except serial.SerialException as e:
@@ -116,7 +128,7 @@ def read_serial_thread(port: str, label: str, rows: list, lock: threading.Lock,
 
 def writer_thread(out_path: Path, rows: list, lock: threading.Lock,
                   stop_event: threading.Event):
-    """Flush buffered rows to CSV every second."""
+    """Flush a single board's buffered rows to its own CSV every second."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w", newline="") as fout:
         writer = csv.DictWriter(fout, fieldnames=CSV_FIELDS)
@@ -149,10 +161,17 @@ def main():
     parser.add_argument("--sensors", default=None,
                         help="Serial port for sensors STM32 (e.g. /dev/ttyACM1), or 'none'")
     parser.add_argument("--out", type=Path,
-                        default=Path("/tmp/stm32_memory_poc.csv"))
+                        default=Path("~/ros2_traces/stm32_memory_poc"),
+                        help="Output path stem. Each board is saved as <stem>_<label>_YYYYMMDD_HHMMSS.csv")
     parser.add_argument("--duration", type=float, default=0,
                         help="Seconds to collect (0 = run until Ctrl-C)")
     args = parser.parse_args()
+
+    # Expand ~ in path
+    args.out = args.out.expanduser()
+
+    # Single datetime stamp shared across all output files for this run
+    run_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # Auto-detect if not specified
     if args.chassis is None and args.sensors is None:
@@ -172,26 +191,33 @@ def main():
     if not ports:
         sys.exit("[ERROR] No valid ports specified.")
 
-    print(f"[INFO] Output: {args.out}")
+    # Build per-label output paths
+    out_paths = {label: make_out_path(args.out, label, run_ts) for label in ports}
+
+    print("[INFO] Output files:")
+    for label, path in out_paths.items():
+        print(f"  [{label}] {path}")
     print("[INFO] Press Ctrl-C to stop.\n")
 
-    shared_rows = []
-    lock        = threading.Lock()
-    stop_event  = threading.Event()
+    stop_event = threading.Event()
+    threads    = []
 
-    threads = []
+    # Each board gets its own rows list, lock, and writer thread
     for label, port in ports.items():
-        t = threading.Thread(target=read_serial_thread,
-                             args=(port, label, shared_rows, lock, stop_event),
-                             daemon=True)
-        t.start()
-        threads.append(t)
+        rows = []
+        lock = threading.Lock()
 
-    wt = threading.Thread(target=writer_thread,
-                          args=(args.out, shared_rows, lock, stop_event),
-                          daemon=True)
-    wt.start()
-    threads.append(wt)
+        rt = threading.Thread(target=read_serial_thread,
+                              args=(port, label, rows, lock, stop_event),
+                              daemon=True)
+        rt.start()
+        threads.append(rt)
+
+        wt = threading.Thread(target=writer_thread,
+                              args=(out_paths[label], rows, lock, stop_event),
+                              daemon=True)
+        wt.start()
+        threads.append(wt)
 
     try:
         start = time.monotonic()
@@ -206,9 +232,10 @@ def main():
     stop_event.set()
     time.sleep(2.0)  # give threads a moment to flush
 
-    with lock:
-        total = len(shared_rows)
-    print(f"[OK] Collected {total} memory samples — saved to {args.out}")
+    print("[OK] Saved:")
+    for label, path in out_paths.items():
+        n = path.stat().st_size if path.exists() else 0
+        print(f"  [{label}] {path}  ({n} bytes)")
 
 
 if __name__ == "__main__":
