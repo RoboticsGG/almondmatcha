@@ -86,19 +86,39 @@ private:
         }
 
         buffer[bytes_read] = '\0';
-        RCLCPP_INFO(this->get_logger(), "[DBG] serial read: %d bytes", bytes_read);
-        nmea_buffer_ += std::string(buffer);
+        RCLCPP_INFO(this->get_logger(), "[DBG] serial read: %d bytes | buf_len=%zu | first6='%c%c%c%c%c%c'",
+            bytes_read, nmea_buffer_.size(),
+            bytes_read>0?buffer[0]:' ', bytes_read>1?buffer[1]:' ',
+            bytes_read>2?buffer[2]:' ', bytes_read>3?buffer[3]:' ',
+            bytes_read>4?buffer[4]:' ', bytes_read>5?buffer[5]:' ');
+        nmea_buffer_ += std::string(buffer, bytes_read);
 
-        // Process complete NMEA sentences
+        // Safety cap: if buffer grows beyond 4 KB without a sentence, reset
+        if (nmea_buffer_.size() > 4096) {
+            RCLCPP_WARN(this->get_logger(), "[DBG] buffer overflow (%zu bytes) — resetting", nmea_buffer_.size());
+            nmea_buffer_.clear();
+            return;
+        }
+
+        // Process complete NMEA sentences (handle both \r\n and \r-only line endings)
         size_t pos;
         while ((pos = nmea_buffer_.find('\n')) != std::string::npos) {
             std::string sentence = nmea_buffer_.substr(0, pos);
             nmea_buffer_ = nmea_buffer_.substr(pos + 1);
-            
-            // Remove \r if present
+
+            // Strip trailing \r
             if (!sentence.empty() && sentence.back() == '\r') {
                 sentence.pop_back();
             }
+
+            if (!sentence.empty() && sentence[0] == '$') {
+                processNMEASentence(sentence);
+            }
+        }
+        // Also handle \r-only (no \n) line endings
+        while ((pos = nmea_buffer_.find('\r')) != std::string::npos) {
+            std::string sentence = nmea_buffer_.substr(0, pos);
+            nmea_buffer_ = nmea_buffer_.substr(pos + 1);
 
             if (!sentence.empty() && sentence[0] == '$') {
                 processNMEASentence(sentence);
