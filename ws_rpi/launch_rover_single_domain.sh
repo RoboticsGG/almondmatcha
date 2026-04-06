@@ -116,4 +116,4 @@ tmux send-keys   -t $SESSION_NAME:0.8 "clear && echo -e '\\e[1;90m>>> [TRACE / S
 tmux send-keys   -t $SESSION_NAME:0.8 "echo 'Tip: ros2 topic hz /tpc_chassis_imu --window 50 | ros2 topic hz /tpc_chassis_sensors --window 50'" C-m
 
 tmux select-pane -t $SESSION_NAME:0.2
-[ -t 1 ] && tmux attach-session -t $SESSION_NAME
+[ -z "${SKIP_ATTACH:-}" ] && tmux attach-session -t $SESSION_NAME

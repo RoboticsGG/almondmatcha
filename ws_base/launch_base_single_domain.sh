@@ -59,7 +59,7 @@ main() {
     echo -e "${BLUE}Reconnect: tmux attach-session -t ${SESSION_NAME}${NC}"
     echo ""
 
-    [ -t 1 ] && tmux attach-session -t $SESSION_NAME
+    [ -z "${SKIP_ATTACH:-}" ] && tmux attach-session -t $SESSION_NAME
 }
 
 main

@@ -187,17 +187,17 @@ launch_ros2_nodes() {
     log "Step 3 — Launching ROS2 nodes (boards are in 10s discovery wait)"
 
     log "  Launching rover nodes on RPi ($RPI_HOST)..."
-    ssh $SSH_OPTS "$RPI_HOST" "bash ~/almondmatcha/ws_rpi/launch_rover_single_domain.sh" &
+    ssh $SSH_OPTS "$RPI_HOST" "SKIP_ATTACH=1 bash ~/almondmatcha/ws_rpi/launch_rover_single_domain.sh" &
     sleep 1
     ok "  RPi launch sent"
 
     log "  Launching Jetson nodes ($JETSON_HOST)..."
-    ssh $SSH_OPTS "$JETSON_HOST" "bash ~/almondmatcha/ws_jetson/launch_jetson_single_domain.sh" &
+    ssh $SSH_OPTS "$JETSON_HOST" "SKIP_ATTACH=1 bash ~/almondmatcha/ws_jetson/launch_jetson_single_domain.sh" &
     sleep 1
     ok "  Jetson launch sent"
 
     log "  Launching base PC nodes..."
-    bash "$WORKSPACE/ws_base/launch_base_single_domain.sh" &
+    SKIP_ATTACH=1 bash "$WORKSPACE/ws_base/launch_base_single_domain.sh" &
     sleep 2
     ok "  Base PC launch sent"
 
