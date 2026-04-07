@@ -129,6 +129,19 @@ preflight() {
     command -v python3 &>/dev/null || die "python3 not installed"
     python3 -c "import serial" 2>/dev/null || die "pyserial missing — run: pip3 install pyserial"
 
+    # Verify custom message types are importable by the base PC Python environment.
+    # collect_topic_bw.py silently skips topics whose types cannot be loaded; if
+    # msgs_ifaces is missing here every STM32/GNSS/chassis topic produces a WARN
+    # and is absent from topic_bw.csv for the entire run.
+    bash -c "
+        source /opt/ros/humble/setup.bash
+        source '$WORKSPACE/ws_base/install/setup.bash'
+        source '$WORKSPACE/common_ifaces/install/setup.bash'
+        python3 -c \"from rosidl_runtime_py.utilities import get_message; get_message('msgs_ifaces/msg/SpresenseGNSS')\"
+    " 2>/dev/null \
+        || die "msgs_ifaces not importable — rebuild common_ifaces: cd $WORKSPACE/common_ifaces && colcon build"
+    ok "  msgs_ifaces type support verified"
+
     [[ -e "$CHASSIS_PORT" ]] || die "Chassis serial port $CHASSIS_PORT not found. Is the board plugged in?"
     [[ -e "$SENSORS_PORT" ]] || die "Sensors serial port $SENSORS_PORT not found. Is the board plugged in?"
 
@@ -248,10 +261,12 @@ start_topic_bw_collector() {
 
     # Source ROS2 env and exec python3 directly (exec replaces bash → PID is python3).
     # FASTRTPS profile pins DDS to the base PC ethernet NIC (192.168.1.4).
+    # Source order: humble → ws_base → common_ifaces (last wins on AMENT_PREFIX_PATH)
+    # so msgs_ifaces from common_ifaces always overlays any stale ws_base copy.
     bash -c "
         source /opt/ros/humble/setup.bash
-        source '$WORKSPACE/common_ifaces/install/setup.bash' 2>/dev/null || true
         source '$WORKSPACE/ws_base/install/setup.bash'
+        source '$WORKSPACE/common_ifaces/install/setup.bash'
         export ROS_DOMAIN_ID=5
         export FASTRTPS_DEFAULT_PROFILES_FILE='$WORKSPACE/ws_base/fastdds_base.xml'
         exec python3 '$TOOLS_DIR/monitoring/collect_topic_bw.py' \
