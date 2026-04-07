@@ -5,14 +5,13 @@
 
   Problem solved:
     The RPi (thehive) may have multiple NICs (Ethernet 192.168.1.1 + optional WiFi).
-    Fast-DDS enumerates all interfaces and may join multicast on the wrong one.
-    SPDP multicast from the STM32 boards arrives on Ethernet but Fast-DDS
-    listens on WiFi → intermittent "ros2 topic list shows nothing" on a fresh shell.
+    Fast-DDS may pick the wrong interface and miss SPDP from rover participants.
 
   Fix:
     1. UDPv4 transport restricted to 192.168.1.1 (rover Ethernet only).
-    2. initialPeersList adds all rover participants as unicast peers so
-       discovery succeeds even if multicast is unreliable on the segment.
+    2. initialPeersList uses unicast-only (no multicast group entry).
+       All participant IPs are statically known so unicast SPDP is both
+       simpler and more predictable than multicast.
 -->
 <profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
 
@@ -37,13 +36,9 @@
 
       <builtin>
         <initialPeersList>
-          <!-- Multicast SPDP well-known port for domain 5 -->
-          <locator>
-            <udpv4>
-              <address>239.255.0.1</address>
-              <port>8650</port>
-            </udpv4>
-          </locator>
+          <!-- No multicast entry: all participant IPs are known statically.
+               Unicast-only SPDP is sufficient and deterministic when the STM32
+               mros2 stack spins immediately on boot. -->
           <!-- STM32 chassis-dynamics board -->
           <locator>
             <udpv4>

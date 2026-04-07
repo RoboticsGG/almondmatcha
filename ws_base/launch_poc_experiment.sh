@@ -402,61 +402,83 @@ wait_for_run() {
 stop_and_collect() {
     log "Step 7 — Stopping all collectors and pulling CSVs"
 
-    # Stop latency collectors and pull CSVs directly into the run directory
-    LOCAL_DEST_CSV="$RUN_DIR/latency_rpi.csv"    TARGET_HOST="$RPI_HOST"    TARGET_LABEL=rpi    SSH_OPTS="$SSH_OPTS" \
-        bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh"
-    LOCAL_DEST_CSV="$RUN_DIR/latency_jetson.csv" TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson SSH_OPTS="$SSH_OPTS" \
-        bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh"
-
-    # Stop net-stats collectors on SBCs
-    ssh $SSH_OPTS "$RPI_HOST" \
-        "if [ -f ~/ros2_traces/net_stats_rpi.pid ]; then
-             kill \$(cat ~/ros2_traces/net_stats_rpi.pid) 2>/dev/null || true
-             rm -f ~/ros2_traces/net_stats_rpi.pid
-             echo '[OK] net_stats stopped on RPi'
-         fi"
-    ssh $SSH_OPTS "$JETSON_HOST" \
-        "if [ -f ~/ros2_traces/net_stats_jetson.pid ]; then
-             kill \$(cat ~/ros2_traces/net_stats_jetson.pid) 2>/dev/null || true
-             rm -f ~/ros2_traces/net_stats_jetson.pid
-             echo '[OK] net_stats stopped on Jetson'
-         fi"
-
-    # Pull net-stats CSVs
-    log "  Pulling net-stats CSVs..."
-    scp $SSH_OPTS "$RPI_HOST:~/ros2_traces/net_stats_rpi.csv"       "$RUN_DIR/net_stats_rpi.csv"
-    scp $SSH_OPTS "$JETSON_HOST:~/ros2_traces/net_stats_jetson.csv" "$RUN_DIR/net_stats_jetson.csv"
-    ok "  Net-stats CSVs pulled"
-
-    # Pull per-node logs from RPi and Jetson (written by tee inside tmux panes)
-    log "  Pulling node logs from RPi..."
     mkdir -p "$LOG_DIR/rpi" "$LOG_DIR/jetson"
-    scp $SSH_OPTS "$RPI_HOST:~/ros2_traces/poc_*.log" "$LOG_DIR/rpi/" 2>/dev/null \
-        && ok "  RPi node logs pulled" \
-        || warn "  No RPi node logs found (nodes may not have started)"
-    log "  Pulling node logs from Jetson..."
-    scp $SSH_OPTS "$JETSON_HOST:~/ros2_traces/poc_*.log" "$LOG_DIR/jetson/" 2>/dev/null \
-        && ok "  Jetson node logs pulled" \
-        || warn "  No Jetson node logs found (nodes may not have started)"
 
-    # Stop STM32 collector and rename its timestamped files to predictable names
+    # ── Stop local collectors immediately (no network wait) ──────────────────
     [[ -n "$STM32_COLLECTOR_PID" ]] && kill "$STM32_COLLECTOR_PID" 2>/dev/null || true
-    sleep 0.5   # allow final flush before rename
+    [[ -n "$TOPIC_BW_PID"        ]] && kill "$TOPIC_BW_PID"        2>/dev/null || true
+    sleep 0.5   # allow final flush before STM32 CSV rename
     local f
     f=$(ls "$RUN_DIR"/stm32_chassis_*.csv 2>/dev/null | tail -1) && [[ -n "$f" ]] && mv "$f" "$RUN_DIR/stm32_chassis.csv" || true
     f=$(ls "$RUN_DIR"/stm32_sensors_*.csv 2>/dev/null | tail -1) && [[ -n "$f" ]] && mv "$f" "$RUN_DIR/stm32_sensors.csv" || true
-    ok "  STM32 collector stopped"
+    ok "  Local collectors stopped"
 
-    # Stop topic BW collector (local, output already at RUN_DIR)
-    [[ -n "$TOPIC_BW_PID" ]] && kill "$TOPIC_BW_PID" 2>/dev/null || true
-    ok "  Topic BW collector stopped"
+    # ── Stop + pull from RPi and Jetson in parallel ──────────────────────────
+    # Each sub-shell: (1) stops net-stats, (2) pulls net-stats CSV,
+    # (3) pulls node logs — all over the same ControlMaster socket.
+    # Latency stop+collect scripts run in parallel too.
+    log "  Stopping and pulling from RPi and Jetson in parallel..."
 
-    # Close SSH control sockets
+    (
+        # Stop latency collector and pull latency CSV
+        LOCAL_DEST_CSV="$RUN_DIR/latency_rpi.csv" TARGET_HOST="$RPI_HOST" \
+            TARGET_LABEL=rpi SSH_OPTS="$SSH_OPTS" \
+            bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh"
+
+        # Stop net-stats and pull CSV in one SSH round-trip
+        ssh -T $SSH_OPTS "$RPI_HOST" "
+            if [ -f ~/ros2_traces/net_stats_rpi.pid ]; then
+                kill \$(cat ~/ros2_traces/net_stats_rpi.pid) 2>/dev/null || true
+                rm -f ~/ros2_traces/net_stats_rpi.pid
+            fi
+        "
+        scp $SSH_OPTS "$RPI_HOST:~/ros2_traces/net_stats_rpi.csv" \
+            "$RUN_DIR/net_stats_rpi.csv" 2>/dev/null || true
+
+        # Pull node logs
+        scp $SSH_OPTS "$RPI_HOST:~/ros2_traces/poc_*.log" \
+            "$LOG_DIR/rpi/" 2>/dev/null || true
+
+        echo "[parallel-rpi] done"
+    ) &
+    RPI_PULL_PID=$!
+
+    (
+        # Stop latency collector and pull latency CSV
+        LOCAL_DEST_CSV="$RUN_DIR/latency_jetson.csv" TARGET_HOST="$JETSON_HOST" \
+            TARGET_LABEL=jetson SSH_OPTS="$SSH_OPTS" \
+            bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh"
+
+        # Stop net-stats and pull CSV in one SSH round-trip
+        ssh -T $SSH_OPTS "$JETSON_HOST" "
+            if [ -f ~/ros2_traces/net_stats_jetson.pid ]; then
+                kill \$(cat ~/ros2_traces/net_stats_jetson.pid) 2>/dev/null || true
+                rm -f ~/ros2_traces/net_stats_jetson.pid
+            fi
+        "
+        scp $SSH_OPTS "$JETSON_HOST:~/ros2_traces/net_stats_jetson.csv" \
+            "$RUN_DIR/net_stats_jetson.csv" 2>/dev/null || true
+
+        # Pull node logs
+        scp $SSH_OPTS "$JETSON_HOST:~/ros2_traces/poc_*.log" \
+            "$LOG_DIR/jetson/" 2>/dev/null || true
+
+        echo "[parallel-jetson] done"
+    ) &
+    JETSON_PULL_PID=$!
+
+    # Wait for both pulls to finish
+    wait "$RPI_PULL_PID"    && ok "  RPi:    net-stats + latency + logs pulled" \
+                            || warn "  RPi pull had errors — check files"
+    wait "$JETSON_PULL_PID" && ok "  Jetson: net-stats + latency + logs pulled" \
+                            || warn "  Jetson pull had errors — check files"
+
+    # ── Close SSH control sockets ────────────────────────────────────────────
     ssh $SSH_OPTS -O exit "$RPI_HOST"    2>/dev/null || true
     ssh $SSH_OPTS -O exit "$JETSON_HOST" 2>/dev/null || true
     rm -rf "$SSH_CONTROL_DIR"
 
-    # Build the time-bucketed merged CSV from all individual CSVs
+    # ── Build the time-bucketed merged CSV from all individual CSVs ──────────
     log "  Building merged_all.csv..."
     python3 "$TOOLS_DIR/poc_run/merge_run_csv.py" --run-dir "$RUN_DIR" \
         && ok "  merged_all.csv written" \

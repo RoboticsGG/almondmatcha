@@ -34,13 +34,9 @@
 
       <builtin>
         <initialPeersList>
-          <!-- Multicast SPDP well-known port for domain 5 -->
-          <locator>
-            <udpv4>
-              <address>239.255.0.1</address>
-              <port>8650</port>
-            </udpv4>
-          </locator>
+          <!-- No multicast entry: all participant IPs are known statically.
+               Unicast-only SPDP is sufficient and deterministic when the STM32
+               mros2 stack spins immediately on boot. -->
           <!-- RPi (thehive) -->
           <locator>
             <udpv4>

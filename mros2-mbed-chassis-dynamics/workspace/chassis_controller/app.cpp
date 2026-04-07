@@ -111,7 +111,18 @@ void imu_reader_task() {
         MROS2_ERROR("[imu_reader_task] Publisher not initialized!");
         return;
     }
-    
+
+    // ===== UNICAST DISCOVERY WAIT =====
+    // mros2::spin() is already running so the RTPS stack processes incoming
+    // SPDP unicast packets from FastDDS (sent via initialPeersList in fastdds_*.xml).
+    // 3 s is enough for bidirectional SPDP+SEDP exchange at 500 ms SPDP period.
+    // This replaces the former osDelay(10000) in main() which silenced RTPS for
+    // 10 s and forced reliance on multicast re-discovery.
+    MROS2_INFO("[imu_reader_task] Waiting 3 s for unicast SPDP exchange...");
+    ThisThread::sleep_for(chrono::milliseconds(3000));
+    MROS2_INFO("[imu_reader_task] Discovery wait done — starting IMU publish");
+    // ==================================
+
     // IMU variables for local buffering
     int32_t local_accel[3] = {0};
     int32_t local_gyro[3] = {0};
@@ -233,18 +244,14 @@ int main()
     
     MROS2_INFO("ROS2 Node initialized - Ready to publish/subscribe");
 
-    // ===== DDS DISCOVERY COORDINATION FIX =====
-    // Wait for DDS/RTPS participant discovery to complete
-    // SPDP announcements sent every 500ms (SPDP_RESEND_PERIOD_MS)
-    // Need at least 8-10 cycles for reliable discovery across all nodes
-    // Single-domain POC: ws_rpi(8) + ws_jetson(4) + ws_base(2) + STM32(2) = 16 participants
-    // MAX_NUM_PARTICIPANTS = 20 (16 actual + 4 margin)
-    // 10 s = 20 SPDP cycles @ 500 ms gives comfortable margin for all nodes to discover each other.
-    MROS2_INFO("Waiting 10 seconds for DDS participant discovery (16 participants, single-domain POC)...");
-    osDelay(10000);
-    MROS2_INFO("Discovery wait complete - initializing sensors");
-    // ==========================================
-    
+    // ===== DISCOVERY NOTE =====
+    // mros2::spin() is called immediately below — the RTPS stack starts
+    // processing unicast SPDP packets from FastDDS as soon as spin runs.
+    // imu_reader_task() contains a 3 s internal wait before publishing.
+    // No osDelay() here: blocking here would silence mros2 and force reliance
+    // on multicast re-discovery (root cause of the 373 s chassis_imu gap in run_003).
+    // ==========================
+
     // Initialize IMU sensor
     lsm6dsv16x.begin();
     lsm6dsv16x.Enable_X();  // Enable accelerometer

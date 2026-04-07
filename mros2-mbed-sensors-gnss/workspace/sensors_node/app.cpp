@@ -183,17 +183,13 @@ int main()
   mros2::Publisher PubSensData = 
     node.create_publisher<msgs_ifaces::msg::ChassisSensors>("tpc_chassis_sensors", 10);
 
-  // ===== DDS DISCOVERY COORDINATION FIX =====
-  // Wait for DDS/RTPS participant discovery to complete
-  // SPDP announcements sent every 500ms (SPDP_RESEND_PERIOD_MS)
-  // Need at least 8-10 cycles for reliable discovery across all nodes
-  // Single-domain POC: ws_rpi(8) + ws_jetson(4) + ws_base(2) + STM32(2) = 16 participants
-  // MAX_NUM_PARTICIPANTS = 20 (16 actual + 4 margin)
-  // 10 s = 20 SPDP cycles @ 500 ms gives comfortable margin for all nodes to discover each other.
-  MROS2_INFO("Waiting 10 seconds for DDS participant discovery (16 participants, single-domain POC)...");
-  osDelay(10000);
-  MROS2_INFO("Discovery wait complete - initializing sensors");
-  // ==========================================
+  // ===== DISCOVERY NOTE =====
+  // mros2::spin() is NOT the main loop here — the publish while(true) below
+  // serves as the spin equivalent.  We start processing incoming SPDP from
+  // FastDDS as soon as the tasks are launched (no blocking osDelay before
+  // the first ThisThread::sleep_for).  A 3 s wait inside the publish loop
+  // gives SPDP+SEDP time to exchange before the first message is published.
+  // ==========================
 
   // ---- Initialize All Sensor Modules ----
   MROS2_INFO("Initializing sensor modules...");
@@ -233,6 +229,13 @@ int main()
   // Main loop focuses on aggregating data from the three independent tasks
   // and publishing to ROS2 at 4 Hz (250ms interval).
   bool sensors_first_print_done = false;
+
+  // Wait for unicast SPDP exchange before first publish.
+  // mros2 is already processing incoming packets from FastDDS (sent via
+  // initialPeersList in fastdds_*.xml).  3 s covers 6 SPDP cycles @ 500 ms.
+  MROS2_INFO("[sensors] Waiting 3 s for unicast SPDP exchange...");
+  ThisThread::sleep_for(chrono::milliseconds(3000));
+  MROS2_INFO("[sensors] Discovery wait done — starting publish");
 
   while (true) {
     // Read all sensor data from shared structure with mutex protection

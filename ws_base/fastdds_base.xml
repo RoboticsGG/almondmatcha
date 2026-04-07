@@ -6,13 +6,16 @@
   Problem solved:
     ws_base has two active NICs: enp0s31f6 (192.168.1.4, rover Ethernet)
     and wlp4s0 (172.30.81.x, WiFi).  Fast-DDS may pick WiFi as primary
-    interface, joining multicast on the wrong NIC and missing SPDP from
-    all rover participants on the 192.168.1.0/24 subnet.
+    interface and miss SPDP from all rover participants on 192.168.1.0/24.
 
   Fix:
     1. UDPv4 transport restricted to 192.168.1.4 (enp0s31f6 only).
-    2. initialPeersList adds unicast peers for RPi and STM32 boards so
-       discovery succeeds even if multicast is unreliable on the segment.
+    2. initialPeersList uses unicast-only (no multicast group entry).
+       All participant IPs are statically known so unicast SPDP is both
+       simpler and more predictable than multicast.
+       The STM32 mros2 stack now calls mros2::spin() before any osDelay,
+       so it receives FastDDS unicast SPDP on boot instead of waiting for
+       a multicast re-announce — eliminating the 373 s discovery gap.
 -->
 <profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
 
@@ -37,13 +40,11 @@
 
       <builtin>
         <initialPeersList>
-          <!-- Multicast SPDP well-known port for domain 5 -->
-          <locator>
-            <udpv4>
-              <address>239.255.0.1</address>
-              <port>8650</port>
-            </udpv4>
-          </locator>
+          <!-- No multicast entry: all participant IPs are known statically.
+               FastDDS sends SPDP unicast to each peer on startup; STM32 mros2
+               now calls mros2::spin() immediately so it receives these packets.
+               Multicast SPDP was the fallback that caused the 373 s chassis_imu
+               discovery gap observed in run_003. -->
           <!-- RPi (thehive) -->
           <locator>
             <udpv4>
