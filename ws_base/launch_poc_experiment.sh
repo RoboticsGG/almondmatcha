@@ -16,13 +16,16 @@
 #   bash ws_base/launch_poc_experiment.sh --duration 600   # 10-minute run (default: 300s)
 #   bash ws_base/launch_poc_experiment.sh --skip-launch    # skip ROS2 node launch (collectors only)
 #
-# Output files (all on base PC):
-#   ~/ros2_traces/stm32_memory_poc_chassis_YYYYMMDD_HHMMSS.csv
-#   ~/ros2_traces/stm32_memory_poc_sensors_YYYYMMDD_HHMMSS.csv
-#   ws_base/tools/tracing/data/poc_latency_rpi.csv
-#   ws_base/tools/tracing/data/poc_latency_jetson.csv
-#   ws_base/tools/monitoring/data/poc_net_stats_rpi.csv
-#   ws_base/tools/monitoring/data/poc_net_stats_jetson.csv
+# Output files (all on base PC under a single per-run directory):
+#   ws_base/tools/poc_run/run_NNN/latency_rpi.csv
+#   ws_base/tools/poc_run/run_NNN/latency_jetson.csv
+#   ws_base/tools/poc_run/run_NNN/net_stats_rpi.csv
+#   ws_base/tools/poc_run/run_NNN/net_stats_jetson.csv
+#   ws_base/tools/poc_run/run_NNN/topic_bw.csv
+#   ws_base/tools/poc_run/run_NNN/stm32_chassis.csv
+#   ws_base/tools/poc_run/run_NNN/stm32_sensors.csv
+#   ws_base/tools/poc_run/run_NNN/merged_all.csv    ← time-bucketed union of all above
+#   ws_base/tools/poc_run/run_NNN/logs/             ← all sub-process logs
 
 set -euo pipefail
 
@@ -36,13 +39,22 @@ JETSON_HOST="yupi@192.168.1.5"
 CHASSIS_PORT="/dev/ttyACM1"   # verify with: minicom -b 115200 -D /dev/ttyACM1
 SENSORS_PORT="/dev/ttyACM0"   # verify with: minicom -b 115200 -D /dev/ttyACM0
 
-STM32_OUT_STEM="$HOME/ros2_traces/stm32_memory_poc"   # per-board files: <stem>_chassis/sensors_YYYYMMDD_HHMMSS.csv
-LATENCY_DATA_DIR="$HOME/almondmatcha/ws_base/tools/tracing/data"
-NET_DATA_DIR="$HOME/almondmatcha/ws_base/tools/monitoring/data"
+# All experiment output lands in a single numbered run directory.
+# run_NNN is auto-incremented — each launch creates the next available number.
+POC_RUN_BASE="$WORKSPACE/ws_base/tools/poc_run"
+
+_next_run_dir() {
+    local last
+    last=$(ls -d "${POC_RUN_BASE}"/run_* 2>/dev/null \
+           | grep -oP 'run_\K[0-9]+' | sort -n | tail -1)
+    printf '%s/run_%03d' "$POC_RUN_BASE" "$(( ${last:-0} + 1 ))"
+}
+
+RUN_DIR="$(_next_run_dir)"
+LOG_DIR="$RUN_DIR/logs"
 
 TOOLS_DIR="$HOME/almondmatcha/ws_base/tools"
 WORKSPACE="$HOME/almondmatcha"
-LOG_DIR="$HOME/ros2_traces/poc_launch_logs"  # stderr/stdout from sub-launch scripts
 
 RUN_DURATION=300   # seconds — default 5 minutes
 SKIP_LAUNCH=false
@@ -90,10 +102,10 @@ cleanup() {
     warn "Interrupted — stopping all background collectors..."
     [[ -n "$STM32_COLLECTOR_PID" ]] && kill "$STM32_COLLECTOR_PID" 2>/dev/null || true
     [[ -n "$TOPIC_BW_PID"        ]] && kill "$TOPIC_BW_PID"        2>/dev/null || true
-    # Stop latency collectors (cleanup path)
-    TARGET_HOST="$RPI_HOST"    TARGET_LABEL=rpi    SSH_OPTS="$SSH_OPTS" \
+    # Stop latency collectors (cleanup path — best effort)
+    LOCAL_DEST_CSV="$RUN_DIR/latency_rpi.csv"    TARGET_HOST="$RPI_HOST"    TARGET_LABEL=rpi    SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh" 2>/dev/null || true
-    TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson SSH_OPTS="$SSH_OPTS" \
+    LOCAL_DEST_CSV="$RUN_DIR/latency_jetson.csv" TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh" 2>/dev/null || true
     # Close SSH control sockets
     ssh $SSH_OPTS -O exit "$RPI_HOST"    2>/dev/null || true
@@ -132,7 +144,9 @@ preflight() {
         || die "Cannot SSH to Jetson ($JETSON_HOST) — check connection and credentials"
     ok "  Jetson authenticated"
 
-    mkdir -p "$HOME/ros2_traces" "$LATENCY_DATA_DIR" "$NET_DATA_DIR" "$LOG_DIR"
+    mkdir -p "$RUN_DIR" "$LOG_DIR"
+
+    log "  Run directory   : $RUN_DIR"
 
     ok "All pre-flight checks passed"
 }
@@ -145,12 +159,12 @@ start_stm32_collector() {
     log "Step 1 — Starting STM32 memory collector"
     log "  chassis port : $CHASSIS_PORT  (node=chassis)"
     log "  sensors port : $SENSORS_PORT  (node=sensors)"
-    log "  output stem  : $STM32_OUT_STEM  →  <stem>_chassis/sensors_YYYYMMDD_HHMMSS.csv"
+    log "  output stem  : $RUN_DIR/stm32  →  stm32_chassis/sensors_YYYYMMDD_HHMMSS.csv"
 
     python3 "$TOOLS_DIR/stm32_serial/collect_stm32_memory.py" \
         --chassis "$CHASSIS_PORT" \
         --sensors "$SENSORS_PORT" \
-        --out     "$STM32_OUT_STEM" \
+        --out     "$RUN_DIR/stm32" \
         >"$LOG_DIR/stm32_collector.log" 2>&1 &
     STM32_COLLECTOR_PID=$!
 
@@ -230,7 +244,7 @@ start_latency_collectors() {
 
 start_topic_bw_collector() {
     log "Step 4b — Starting per-topic bandwidth collector (base PC)"
-    log "  output: $NET_DATA_DIR/poc_topic_bw.csv"
+    log "  output: $RUN_DIR/topic_bw.csv"
 
     # Source ROS2 env and exec python3 directly (exec replaces bash → PID is python3).
     # FASTRTPS profile pins DDS to the base PC ethernet NIC (192.168.1.4).
@@ -241,7 +255,7 @@ start_topic_bw_collector() {
         export ROS_DOMAIN_ID=5
         export FASTRTPS_DEFAULT_PROFILES_FILE='$WORKSPACE/ws_base/fastdds_base.xml'
         exec python3 '$TOOLS_DIR/monitoring/collect_topic_bw.py' \
-            --out '$NET_DATA_DIR/poc_topic_bw.csv' \
+            --out '$RUN_DIR/topic_bw.csv' \
             --interval 1
     " </dev/null >"$LOG_DIR/topic_bw.log" 2>&1 &
     TOPIC_BW_PID=$!
@@ -373,10 +387,10 @@ wait_for_run() {
 stop_and_collect() {
     log "Step 7 — Stopping all collectors and pulling CSVs"
 
-    # Stop latency collectors
-    TARGET_HOST="$RPI_HOST"    TARGET_LABEL=rpi    SSH_OPTS="$SSH_OPTS" \
+    # Stop latency collectors and pull CSVs directly into the run directory
+    LOCAL_DEST_CSV="$RUN_DIR/latency_rpi.csv"    TARGET_HOST="$RPI_HOST"    TARGET_LABEL=rpi    SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh"
-    TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson SSH_OPTS="$SSH_OPTS" \
+    LOCAL_DEST_CSV="$RUN_DIR/latency_jetson.csv" TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh"
 
     # Stop net-stats collectors on SBCs
@@ -395,15 +409,19 @@ stop_and_collect() {
 
     # Pull net-stats CSVs
     log "  Pulling net-stats CSVs..."
-    scp $SSH_OPTS "$RPI_HOST:~/ros2_traces/net_stats_rpi.csv"       "$NET_DATA_DIR/poc_net_stats_rpi.csv"
-    scp $SSH_OPTS "$JETSON_HOST:~/ros2_traces/net_stats_jetson.csv" "$NET_DATA_DIR/poc_net_stats_jetson.csv"
+    scp $SSH_OPTS "$RPI_HOST:~/ros2_traces/net_stats_rpi.csv"       "$RUN_DIR/net_stats_rpi.csv"
+    scp $SSH_OPTS "$JETSON_HOST:~/ros2_traces/net_stats_jetson.csv" "$RUN_DIR/net_stats_jetson.csv"
     ok "  Net-stats CSVs pulled"
 
-    # Stop STM32 collector
+    # Stop STM32 collector and rename its timestamped files to predictable names
     [[ -n "$STM32_COLLECTOR_PID" ]] && kill "$STM32_COLLECTOR_PID" 2>/dev/null || true
+    sleep 0.5   # allow final flush before rename
+    local f
+    f=$(ls "$RUN_DIR"/stm32_chassis_*.csv 2>/dev/null | tail -1) && [[ -n "$f" ]] && mv "$f" "$RUN_DIR/stm32_chassis.csv" || true
+    f=$(ls "$RUN_DIR"/stm32_sensors_*.csv 2>/dev/null | tail -1) && [[ -n "$f" ]] && mv "$f" "$RUN_DIR/stm32_sensors.csv" || true
     ok "  STM32 collector stopped"
 
-    # Stop topic BW collector (local, output already at NET_DATA_DIR)
+    # Stop topic BW collector (local, output already at RUN_DIR)
     [[ -n "$TOPIC_BW_PID" ]] && kill "$TOPIC_BW_PID" 2>/dev/null || true
     ok "  Topic BW collector stopped"
 
@@ -411,6 +429,12 @@ stop_and_collect() {
     ssh $SSH_OPTS -O exit "$RPI_HOST"    2>/dev/null || true
     ssh $SSH_OPTS -O exit "$JETSON_HOST" 2>/dev/null || true
     rm -rf "$SSH_CONTROL_DIR"
+
+    # Build the time-bucketed merged CSV from all individual CSVs
+    log "  Building merged_all.csv..."
+    python3 "$TOOLS_DIR/poc_run/merge_run_csv.py" --run-dir "$RUN_DIR" \
+        && ok "  merged_all.csv written" \
+        || warn "  merge_run_csv.py failed — individual CSVs are still intact"
 }
 
 # ============================================================================
@@ -420,47 +444,34 @@ stop_and_collect() {
 print_summary() {
     echo ""
     echo -e "${BOLD}======================================================${NC}"
-    echo -e "${GREEN}  EXPERIMENT COMPLETE — CSV files collected${NC}"
+    echo -e "${GREEN}  EXPERIMENT COMPLETE — all files in run directory${NC}"
     echo -e "${BOLD}======================================================${NC}"
     echo ""
-    echo "  STM32 heap/stack (per-board, timestamped):"
-    echo "    $(ls "${STM32_OUT_STEM}"_chassis_*.csv 2>/dev/null | tail -1 || echo "${STM32_OUT_STEM}_chassis_<timestamp>.csv")"
-    echo "    $(ls "${STM32_OUT_STEM}"_sensors_*.csv 2>/dev/null | tail -1 || echo "${STM32_OUT_STEM}_sensors_<timestamp>.csv")"
+    echo "  Run directory: $RUN_DIR"
     echo ""
-    echo "  Latency / jitter:"
-    echo "    $LATENCY_DATA_DIR/poc_latency_rpi.csv"
-    echo "    $LATENCY_DATA_DIR/poc_latency_jetson.csv"
+    echo "  Data files:"
+    echo "    $RUN_DIR/latency_rpi.csv"
+    echo "    $RUN_DIR/latency_jetson.csv"
+    echo "    $RUN_DIR/net_stats_rpi.csv"
+    echo "    $RUN_DIR/net_stats_jetson.csv"
+    echo "    $RUN_DIR/topic_bw.csv"
+    echo "    $RUN_DIR/stm32_chassis.csv"
+    echo "    $RUN_DIR/stm32_sensors.csv"
     echo ""
-    echo "  Network stats:"
-    echo "    $NET_DATA_DIR/poc_net_stats_rpi.csv"
-    echo "    $NET_DATA_DIR/poc_net_stats_jetson.csv"
+    echo "  Merged (time-bucketed union):"
+    echo "    $RUN_DIR/merged_all.csv"
     echo ""
-    echo "  Per-topic bandwidth:"
-    echo "    $NET_DATA_DIR/poc_topic_bw.csv"
+    echo "  Logs:"
+    echo "    $LOG_DIR/"
     echo ""
-    echo "  Launch logs (check here if a node failed to start):"
-    echo "    $LOG_DIR/launch_rpi.log"
-    echo "    $LOG_DIR/launch_jetson.log"
-    echo "    $LOG_DIR/launch_base.log"
-    echo "    $LOG_DIR/topic_bw.log"
-    echo ""
-    echo "  Next — analyze results:"
-    echo ""
-    echo "    # Jitter/latency summary"
+    echo "  Analyze — jitter/latency summary:"
     echo "    python3 ws_base/tools/tracing/analyze_latency.py \\"
-    echo "        --poc $LATENCY_DATA_DIR/poc_latency_rpi.csv"
+    echo "        --poc $RUN_DIR/latency_rpi.csv"
     echo ""
-    echo "    # Unified timeline (all sources)"
-    echo "    # Substitute actual timestamped filenames from ~/ros2_traces/:"
+    echo "  Analyze — unified timeline (all sources, one command):"
     echo "    python3 ws_base/tools/tracing/analyze_latency.py --merge \\"
-    echo "        --latency-rpi    $LATENCY_DATA_DIR/poc_latency_rpi.csv \\"
-    echo "        --latency-jetson $LATENCY_DATA_DIR/poc_latency_jetson.csv \\"
-    echo "        --stm32          ${STM32_OUT_STEM}_chassis_<YYYYMMDD_HHMMSS>.csv \\"
-    echo "        --stm32-sensors  ${STM32_OUT_STEM}_sensors_<YYYYMMDD_HHMMSS>.csv \\"
-    echo "        --net-rpi        $NET_DATA_DIR/poc_net_stats_rpi.csv \\"
-    echo "        --net-jetson     $NET_DATA_DIR/poc_net_stats_jetson.csv \\"
-    echo "        --topic-bw       $NET_DATA_DIR/poc_topic_bw.csv \\"
-    echo "        --out-dir        ws_base/tools/tracing/results/"
+    echo "        --run-dir $RUN_DIR \\"
+    echo "        --out-dir $RUN_DIR/"
     echo ""
 }
 

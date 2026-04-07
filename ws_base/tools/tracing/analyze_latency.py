@@ -553,10 +553,48 @@ def main():
                     help='Merge: collect_net_stats.py CSV from Jetson')
     ap.add_argument('--topic-bw',       type=Path,
                     help='Merge: collect_topic_bw.py CSV from base PC')
+    # ── Convenience shorthand — pass a run directory instead of 7 individual paths
+    ap.add_argument('--run-dir',         type=Path,
+                    help='Path to a poc_run/run_NNN directory; auto-finds all CSVs '
+                         'and implies --merge.  Individual --latency-*/--stm32/--net-*/'
+                         '--topic-bw flags are ignored when --run-dir is set.')
     args = ap.parse_args()
 
-    if not args.csv and not args.baseline and not args.poc and not args.merge:
-        ap.error('Provide --csv, --baseline/--poc, or --merge')
+    if not args.csv and not args.baseline and not args.poc and not args.merge \
+            and not args.run_dir:
+        ap.error('Provide --csv, --baseline/--poc, --merge, or --run-dir')
+
+    # ── --run-dir: auto-discover files and activate merge mode ────────────────
+    if args.run_dir:
+        rd = args.run_dir
+        if not rd.is_dir():
+            ap.error(f'--run-dir: {rd} is not a directory')
+
+        def _find(name):
+            p = rd / name
+            return p if p.exists() else None
+
+        args.merge          = True
+        args.latency_rpi    = _find('latency_rpi.csv')
+        args.latency_jetson = _find('latency_jetson.csv')
+        args.stm32          = _find('stm32_chassis.csv')
+        args.stm32_sensors  = _find('stm32_sensors.csv')
+        args.net_rpi        = _find('net_stats_rpi.csv')
+        args.net_jetson     = _find('net_stats_jetson.csv')
+        args.topic_bw       = _find('topic_bw.csv')
+        if args.out_dir == Path('.'):
+            args.out_dir = rd
+
+        found = [name for name, val in [
+            ('latency_rpi.csv', args.latency_rpi),
+            ('latency_jetson.csv', args.latency_jetson),
+            ('stm32_chassis.csv', args.stm32),
+            ('stm32_sensors.csv', args.stm32_sensors),
+            ('net_stats_rpi.csv', args.net_rpi),
+            ('net_stats_jetson.csv', args.net_jetson),
+            ('topic_bw.csv', args.topic_bw),
+        ] if val is not None]
+        print(f'[INFO] --run-dir: found {len(found)} CSV(s): {found}')
 
     topics_filter = set(args.topics) if args.topics else None
     out_dir = args.out_dir

@@ -13,6 +13,9 @@ SSH_OPTS="${SSH_OPTS:-}"                 # ControlMaster opts passed from launch
 PID_FILE="\$HOME/ros2_traces/collector_${TARGET_LABEL}.pid"
 REMOTE_CSV="~/ros2_traces/latency_${TARGET_LABEL}.csv"
 
+# LOCAL_DEST_CSV: if set by the caller, pull the CSV to this exact path.
+# Otherwise fall back to the legacy data directory (backward-compatible).
+LOCAL_DEST_CSV="${LOCAL_DEST_CSV:-}"
 LOCAL_DATA_DIR="$HOME/almondmatcha/ws_base/tools/tracing/data"
 mkdir -p "$LOCAL_DATA_DIR"
 
@@ -43,12 +46,19 @@ fi
 
 if [ -n "$TARGET_HOST" ]; then
     echo "=== Pulling CSV from ${TARGET_HOST}:${REMOTE_CSV} ==="
-    scp $SSH_OPTS "${TARGET_HOST}:${REMOTE_CSV}" \
-        "${LOCAL_DATA_DIR}/poc_latency_${TARGET_LABEL}.csv"
-    echo "[OK] CSV saved to: ${LOCAL_DATA_DIR}/poc_latency_${TARGET_LABEL}.csv"
+    if [ -n "$LOCAL_DEST_CSV" ]; then
+        mkdir -p "$(dirname "$LOCAL_DEST_CSV")"
+        scp $SSH_OPTS "${TARGET_HOST}:${REMOTE_CSV}" "$LOCAL_DEST_CSV"
+        echo "[OK] CSV saved to: ${LOCAL_DEST_CSV}"
+    else
+        scp $SSH_OPTS "${TARGET_HOST}:${REMOTE_CSV}" \
+            "${LOCAL_DATA_DIR}/poc_latency_${TARGET_LABEL}.csv"
+        echo "[OK] CSV saved to: ${LOCAL_DATA_DIR}/poc_latency_${TARGET_LABEL}.csv"
+    fi
 else
-    cp "$(eval echo $REMOTE_CSV)" \
-       "${LOCAL_DATA_DIR}/poc_latency_${TARGET_LABEL}.csv"
+    dst="${LOCAL_DEST_CSV:-${LOCAL_DATA_DIR}/poc_latency_${TARGET_LABEL}.csv}"
+    mkdir -p "$(dirname "$dst")"
+    cp "$(eval echo $REMOTE_CSV)" "$dst"
 fi
 
 echo ""

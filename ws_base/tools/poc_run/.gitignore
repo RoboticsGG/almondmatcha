@@ -1,0 +1,3 @@
+# Ignore all experiment run data directories — they are generated, not source.
+# The tools (merge_run_csv.py etc.) in this directory ARE tracked.
+run_*/
