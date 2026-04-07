@@ -44,7 +44,17 @@ public:
         // Reliable and transient_local QoS for all topics to ensure delivery and history.
         rclcpp::QoS qos_reliable(10);
         qos_reliable.reliable().transient_local();
-        
+
+        // no_gnss_mode: when true, skip GNSS position validity check so the rover
+        // can be driven by the Jetson vision pipeline without a GPS fix (indoor POC).
+        this->declare_parameter("no_gnss_mode", false);
+        no_gnss_mode_ = this->get_parameter("no_gnss_mode").as_bool();
+        if (no_gnss_mode_) {
+            RCLCPP_WARN(this->get_logger(),
+                "no_gnss_mode=true: GNSS position validity check BYPASSED. "
+                "Rover will drive on Jetson kinematic commands without a GPS fix.");
+        }
+
         // Action server for navigation goals (destination latitude/longitude)
         action_server_ = rclcpp_action::create_server<DesData>(
             this, "des_data",
@@ -83,6 +93,7 @@ private:
     float des_lat_;
     float des_long_;
     bool goal_reached_;
+    bool no_gnss_mode_ = false;
 
     // Constants
     static constexpr double DESTINATION_THRESHOLD_KM = 0.02;  // 20 meters arrival threshold
@@ -145,8 +156,10 @@ private:
         return EARTH_RADIUS_KM * c;
     }
 
-    // Helper: Check if position data is valid
+    // Helper: Check if position data is valid.
+    // Returns true unconditionally when no_gnss_mode_ is set (indoor/no-fix POC runs).
     bool is_position_valid() const {
+        if (no_gnss_mode_) return true;
         return !(current_position_.latitude == 0.0 && current_position_.longitude == 0.0);
     }
 

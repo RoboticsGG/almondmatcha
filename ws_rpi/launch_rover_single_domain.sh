@@ -75,7 +75,7 @@ sleep 1
 tmux select-pane -t $SESSION_NAME:0.4 -T "GNSS_Mission [D5]"
 tmux send-keys   -t $SESSION_NAME:0.4 "$SRC" C-m
 tmux send-keys   -t $SESSION_NAME:0.4 "clear && echo -e '\\e[1;33m>>> [3/8] GNSS MISSION MONITOR  [POC D5] <<<\\e[0m'" C-m
-tmux send-keys   -t $SESSION_NAME:0.4 "ros2 run gnss_navigation gnss_mission_monitor_node" C-m
+tmux send-keys   -t $SESSION_NAME:0.4 "ros2 run gnss_navigation gnss_mission_monitor_node --ros-args -p no_gnss_mode:=true" C-m
 sleep 1
 
 # ── MIDDLE column ─────────────────────────────────────────────────────────────

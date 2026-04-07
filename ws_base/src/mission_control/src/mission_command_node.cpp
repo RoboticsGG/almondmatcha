@@ -201,8 +201,11 @@ private:
         RCLCPP_INFO(this->get_logger(), "Sending destination goal: (%f, %f)",
             destination_latitude_, destination_longitude_);
         
-        if (!des_action_client_->wait_for_action_server(std::chrono::seconds(2))) {
-            RCLCPP_ERROR(this->get_logger(), "Destination action server not available.");
+        // Wait up to 15 s — the RPi action server starts after several staggered
+        // launch delays so 2 s is too short when base PC launches first.
+        if (!des_action_client_->wait_for_action_server(std::chrono::seconds(15))) {
+            RCLCPP_ERROR(this->get_logger(),
+                "Destination action server not available after 15 s — giving up.");
             return;
         }
 
