@@ -63,51 +63,51 @@ tmux set-option -g pane-active-border-style fg=colour196 # red = POC mode
 tmux select-pane -t $SESSION_NAME:0.0 -T "GNSS_Spresense [D5]"
 tmux send-keys   -t $SESSION_NAME:0.0 "$SRC" C-m
 tmux send-keys   -t $SESSION_NAME:0.0 "clear && echo -e '\\e[1;36m>>> [1/8] GNSS SPRESENSE  [POC D5] <<<\\e[0m'" C-m
-tmux send-keys   -t $SESSION_NAME:0.0 "ros2 run gnss_navigation gnss_spresense_node" C-m
+tmux send-keys   -t $SESSION_NAME:0.0 "ros2 run gnss_navigation gnss_spresense_node 2>&1 | tee ~/ros2_traces/poc_gnss_spresense.log" C-m
 sleep 1
 
 tmux select-pane -t $SESSION_NAME:0.3 -T "GNSS_Ublox_RTK [D5]"
 tmux send-keys   -t $SESSION_NAME:0.3 "$SRC" C-m
 tmux send-keys   -t $SESSION_NAME:0.3 "clear && echo -e '\\e[1;32m>>> [2/8] GNSS UBLOX RTK  [POC D5] <<<\\e[0m'" C-m
-tmux send-keys   -t $SESSION_NAME:0.3 "ros2 run gnss_navigation gnss_ublox_node" C-m
+tmux send-keys   -t $SESSION_NAME:0.3 "ros2 run gnss_navigation gnss_ublox_node 2>&1 | tee ~/ros2_traces/poc_gnss_ublox.log" C-m
 sleep 1
 
 tmux select-pane -t $SESSION_NAME:0.4 -T "GNSS_Mission [D5]"
 tmux send-keys   -t $SESSION_NAME:0.4 "$SRC" C-m
 tmux send-keys   -t $SESSION_NAME:0.4 "clear && echo -e '\\e[1;33m>>> [3/8] GNSS MISSION MONITOR  [POC D5] <<<\\e[0m'" C-m
-tmux send-keys   -t $SESSION_NAME:0.4 "ros2 run gnss_navigation gnss_mission_monitor_node --ros-args -p no_gnss_mode:=true" C-m
+tmux send-keys   -t $SESSION_NAME:0.4 "ros2 run gnss_navigation gnss_mission_monitor_node --ros-args -p no_gnss_mode:=true 2>&1 | tee ~/ros2_traces/poc_gnss_mission.log" C-m
 sleep 1
 
 # ── MIDDLE column ─────────────────────────────────────────────────────────────
 tmux select-pane -t $SESSION_NAME:0.1 -T "Chassis_Controller [D5]"
 tmux send-keys   -t $SESSION_NAME:0.1 "$SRC" C-m
 tmux send-keys   -t $SESSION_NAME:0.1 "clear && echo -e '\\e[1;35m>>> [4/8] CHASSIS CONTROLLER  [POC D5] <<<\\e[0m'" C-m
-tmux send-keys   -t $SESSION_NAME:0.1 "ros2 run chassis_control chassis_controller_node" C-m
+tmux send-keys   -t $SESSION_NAME:0.1 "ros2 run chassis_control chassis_controller_node 2>&1 | tee ~/ros2_traces/poc_chassis_ctrl.log" C-m
 sleep 1
 
 tmux select-pane -t $SESSION_NAME:0.5 -T "Chassis_IMU [D5]"
 tmux send-keys   -t $SESSION_NAME:0.5 "$SRC" C-m
 tmux send-keys   -t $SESSION_NAME:0.5 "clear && echo -e '\\e[1;34m>>> [5/8] CHASSIS IMU  [POC D5] <<<\\e[0m'" C-m
-tmux send-keys   -t $SESSION_NAME:0.5 "ros2 run chassis_sensors chassis_imu_node" C-m
+tmux send-keys   -t $SESSION_NAME:0.5 "ros2 run chassis_sensors chassis_imu_node 2>&1 | tee ~/ros2_traces/poc_chassis_imu.log" C-m
 sleep 1
 
 tmux select-pane -t $SESSION_NAME:0.6 -T "Chassis_Sensors [D5]"
 tmux send-keys   -t $SESSION_NAME:0.6 "$SRC" C-m
 tmux send-keys   -t $SESSION_NAME:0.6 "clear && echo -e '\\e[1;31m>>> [6/8] CHASSIS SENSORS  [POC D5] <<<\\e[0m'" C-m
-tmux send-keys   -t $SESSION_NAME:0.6 "ros2 run chassis_sensors chassis_sensors_node" C-m
+tmux send-keys   -t $SESSION_NAME:0.6 "ros2 run chassis_sensors chassis_sensors_node 2>&1 | tee ~/ros2_traces/poc_chassis_sensors.log" C-m
 sleep 1
 
 # ── RIGHT column ──────────────────────────────────────────────────────────────
 tmux select-pane -t $SESSION_NAME:0.2 -T "Mission_Monitor_RPi [D5]"
 tmux send-keys   -t $SESSION_NAME:0.2 "$SRC" C-m
 tmux send-keys   -t $SESSION_NAME:0.2 "clear && echo -e '\\e[1;93m>>> [7/8] MISSION MONITORING  [POC D5] <<<\\e[0m'" C-m
-tmux send-keys   -t $SESSION_NAME:0.2 "ros2 run rover_monitoring mission_monitoring_node_rpi" C-m
+tmux send-keys   -t $SESSION_NAME:0.2 "ros2 run rover_monitoring mission_monitoring_node_rpi 2>&1 | tee ~/ros2_traces/poc_mission_monitor.log" C-m
 sleep 1
 
 tmux select-pane -t $SESSION_NAME:0.7 -T "CSV_Logger [D5]"
 tmux send-keys   -t $SESSION_NAME:0.7 "$SRC" C-m
 tmux send-keys   -t $SESSION_NAME:0.7 "clear && echo -e '\\e[1;96m>>> [8/8] CSV DATA LOGGER  [POC D5] <<<\\e[0m'" C-m
-tmux send-keys   -t $SESSION_NAME:0.7 "ros2 run rover_monitoring rover_monitoring_node" C-m
+tmux send-keys   -t $SESSION_NAME:0.7 "ros2 run rover_monitoring rover_monitoring_node 2>&1 | tee ~/ros2_traces/poc_csv_logger.log" C-m
 
 # Pane 8 — spare / ad-hoc monitoring
 tmux select-pane -t $SESSION_NAME:0.8 -T "Trace_Monitor"

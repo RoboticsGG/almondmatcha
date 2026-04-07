@@ -413,6 +413,17 @@ stop_and_collect() {
     scp $SSH_OPTS "$JETSON_HOST:~/ros2_traces/net_stats_jetson.csv" "$RUN_DIR/net_stats_jetson.csv"
     ok "  Net-stats CSVs pulled"
 
+    # Pull per-node logs from RPi and Jetson (written by tee inside tmux panes)
+    log "  Pulling node logs from RPi..."
+    mkdir -p "$LOG_DIR/rpi" "$LOG_DIR/jetson"
+    scp $SSH_OPTS "$RPI_HOST:~/ros2_traces/poc_*.log" "$LOG_DIR/rpi/" 2>/dev/null \
+        && ok "  RPi node logs pulled" \
+        || warn "  No RPi node logs found (nodes may not have started)"
+    log "  Pulling node logs from Jetson..."
+    scp $SSH_OPTS "$JETSON_HOST:~/ros2_traces/poc_*.log" "$LOG_DIR/jetson/" 2>/dev/null \
+        && ok "  Jetson node logs pulled" \
+        || warn "  No Jetson node logs found (nodes may not have started)"
+
     # Stop STM32 collector and rename its timestamped files to predictable names
     [[ -n "$STM32_COLLECTOR_PID" ]] && kill "$STM32_COLLECTOR_PID" 2>/dev/null || true
     sleep 0.5   # allow final flush before rename
@@ -462,7 +473,10 @@ print_summary() {
     echo "    $RUN_DIR/merged_all.csv"
     echo ""
     echo "  Logs:"
-    echo "    $LOG_DIR/"
+    echo "    $LOG_DIR/stm32_collector.log"
+    echo "    $LOG_DIR/topic_bw.log"
+    echo "    $LOG_DIR/rpi/poc_*.log       ← per-node logs from RPi"
+    echo "    $LOG_DIR/jetson/poc_*.log    ← per-node logs from Jetson"
     echo ""
     echo "  Analyze — jitter/latency summary:"
     echo "    python3 ws_base/tools/tracing/analyze_latency.py \\"
