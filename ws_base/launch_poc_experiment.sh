@@ -39,6 +39,9 @@ JETSON_HOST="yupi@192.168.1.5"
 CHASSIS_PORT="/dev/ttyACM1"   # verify with: minicom -b 115200 -D /dev/ttyACM1
 SENSORS_PORT="/dev/ttyACM0"   # verify with: minicom -b 115200 -D /dev/ttyACM0
 
+TOOLS_DIR="$HOME/almondmatcha/ws_base/tools"
+WORKSPACE="$HOME/almondmatcha"
+
 # All experiment output lands in a single numbered run directory.
 # run_NNN is auto-incremented — each launch creates the next available number.
 POC_RUN_BASE="$WORKSPACE/ws_base/tools/poc_run"
@@ -52,9 +55,6 @@ _next_run_dir() {
 
 RUN_DIR="$(_next_run_dir)"
 LOG_DIR="$RUN_DIR/logs"
-
-TOOLS_DIR="$HOME/almondmatcha/ws_base/tools"
-WORKSPACE="$HOME/almondmatcha"
 
 RUN_DURATION=300   # seconds — default 5 minutes
 SKIP_LAUNCH=false
