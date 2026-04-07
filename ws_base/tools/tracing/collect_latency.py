@@ -40,6 +40,7 @@ import time
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from rosidl_runtime_py.utilities import get_message
 
 
@@ -86,7 +87,23 @@ class LatencyCollector(Node):
                 done.add(topic)
                 continue
 
-            self.create_subscription(msg_cls, topic, self._make_cb(topic), 10)
+            # Match publisher reliability so BEST_EFFORT publishers (e.g. camera_stream_node)
+            # are not silently dropped by a mismatched RELIABLE subscription.
+            try:
+                pub_infos = self.get_publishers_info_by_topic(topic)
+                rel = (pub_infos[0].qos_profile.reliability
+                       if pub_infos
+                       else QoSReliabilityPolicy.RELIABLE)
+            except Exception:
+                rel = QoSReliabilityPolicy.RELIABLE
+
+            qos = QoSProfile(
+                depth=10,
+                reliability=rel,
+                durability=QoSDurabilityPolicy.VOLATILE,
+            )
+
+            self.create_subscription(msg_cls, topic, self._make_cb(topic), qos)
             self.get_logger().info(f'  Subscribed: {topic}  [{msg_type_str}]')
             done.add(topic)
 

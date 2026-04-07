@@ -21,7 +21,11 @@ PID_FILE="\$HOME/ros2_traces/collector_${TARGET_LABEL}.pid"
 LOG_FILE="\$HOME/ros2_traces/collector_${TARGET_LABEL}.log"
 
 # All D5 topics for this project
-TOPICS="/tpc_chassis_imu /tpc_chassis_sensors /tpc_chassis_cmd /tpc_gnss_spresense /tpc_gnss_ublox /tpc_rover_ctrl_cmd /tpc_telemetry_relay"
+# Camera/vision topics (/tpc_rover_d415_rgb, /tpc_rover_d415_depth, /tpc_rover_nav_lane)
+# are included so the Jetson collector captures camera frame jitter and latency.
+# If these topics are not present on the DDS bus (e.g. vision nodes not launched),
+# collect_latency.py simply skips them — no error.
+TOPICS="/tpc_chassis_imu /tpc_chassis_sensors /tpc_chassis_cmd /tpc_gnss_spresense /tpc_gnss_ublox /tpc_rover_ctrl_cmd /tpc_telemetry_relay /tpc_rover_d415_rgb /tpc_rover_d415_depth /tpc_rover_nav_lane"
 
 run_remote() {
     if [ -n "$TARGET_HOST" ]; then
