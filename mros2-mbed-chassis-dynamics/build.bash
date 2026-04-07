@@ -93,3 +93,9 @@ elif [ ${MAKECMD} = "clean" ];
 then
   eval ${DOCKERCMD_PRE}cmake --build build --target clean${DOCKERCMD_SUF}
 fi
+
+# Docker runs as root → all generated files (mbed-os/, mros2/, build/) are owned by
+# root.  Fix ownership back to the invoking user so the next run works without sudo.
+if [ -n "${SUDO_USER:-}" ]; then
+  chown -R "${SUDO_USER}":"${SUDO_USER}" build/ mros2/ mbed-os/ 2>/dev/null || true
+fi
