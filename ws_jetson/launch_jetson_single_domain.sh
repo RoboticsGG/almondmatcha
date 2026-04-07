@@ -45,6 +45,7 @@ tmux select-pane -t 0 -T "Camera [D5 POC]"
 tmux send-keys -t $SESSION_NAME:0.0 "$ROS_SRC" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "clear && echo -e '\\e[1;36m>>> [Domain 5 POC] CAMERA STREAM (was D6) <<<\\e[0m'" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "ros2 run vision_navigation camera_stream_node --ros-args --params-file src/vision_navigation/config/vision_nav_headless.yaml 2>&1 | tee ~/ros2_traces/poc_camera_stream.log" C-m
+echo "[$(date +%H:%M:%S)] [1/4] camera_stream_node sent to pane 0"
 sleep 3
 
 # Pane 1 (top-right): Lane Detection — D5 (was D6)
@@ -53,6 +54,7 @@ tmux select-pane -t 1 -T "Lane_Detect [D5 POC]"
 tmux send-keys -t $SESSION_NAME:0.1 "$ROS_SRC" C-m
 tmux send-keys -t $SESSION_NAME:0.1 "clear && echo -e '\\e[1;32m>>> [Domain 5 POC] LANE DETECTION (was D6) <<<\\e[0m'" C-m
 tmux send-keys -t $SESSION_NAME:0.1 "ros2 run vision_navigation lane_detection_node --ros-args --params-file src/vision_navigation/config/vision_nav_headless.yaml 2>&1 | tee ~/ros2_traces/poc_lane_detection.log" C-m
+echo "[$(date +%H:%M:%S)] [2/4] lane_detection_node sent to pane 1"
 sleep 2
 
 # Pane 2 (mid-right): Rover Kinematic Control — D5 only (was D6 sub + D5 pub)
@@ -61,6 +63,7 @@ tmux select-pane -t 2 -T "Kinematic_Ctrl [D5 POC]"
 tmux send-keys -t $SESSION_NAME:0.2 "$ROS_SRC" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "clear && echo -e '\\e[1;33m>>> [Domain 5 POC] ROVER KINEMATIC CONTROL (all D5) <<<\\e[0m'" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "ros2 run vision_navigation rover_kinematic_control --ros-args --params-file src/vision_navigation/config/rover_kinematic_control_params.yaml 2>&1 | tee ~/ros2_traces/poc_kinematic_ctrl.log" C-m
+echo "[$(date +%H:%M:%S)] [3/4] rover_kinematic_control sent to pane 2"
 sleep 2
 
 # Pane 3 (bot-right): Rover Local Monitoring — D5 (was D4)
@@ -69,6 +72,7 @@ tmux select-pane -t 3 -T "Local_Monitor [D5 POC]"
 tmux send-keys -t $SESSION_NAME:0.3 "$ROS_SRC" C-m
 tmux send-keys -t $SESSION_NAME:0.3 "clear && echo -e '\\e[1;35m>>> [Domain 5 POC] ROVER LOCAL MONITORING (was D4) <<<\\e[0m'" C-m
 tmux send-keys -t $SESSION_NAME:0.3 "ros2 run rover_monitoring rover_local_monitoring_node 2>&1 | tee ~/ros2_traces/poc_local_monitor.log" C-m
+echo "[$(date +%H:%M:%S)] [4/4] rover_local_monitoring_node sent to pane 3"
 
 tmux select-pane -t 0
 [ -z "${SKIP_ATTACH:-}" ] && tmux attach-session -t $SESSION_NAME
