@@ -259,33 +259,67 @@ start_net_collectors() {
 
 wait_for_run() {
     local bar_width=40
+    local DASH=9  # lines in the live-refresh dashboard block
 
     echo ""
     echo -e "${BOLD}======================================================${NC}"
-    echo -e "${GREEN}  EXPERIMENT RUNNING \u2014 ${RUN_DURATION}s measurement window${NC}"
+    echo -e "${GREEN}  EXPERIMENT RUNNING — ${RUN_DURATION}s measurement window${NC}"
     echo -e "${BOLD}======================================================${NC}"
     echo ""
     echo "  Drive the rover / send mission commands now."
     echo "  Press Ctrl-C at any time to stop early and collect CSVs."
     echo ""
 
-    local elapsed=0
+    # Blank placeholder lines so the first cursor-up has something to overwrite
+    for (( i=0; i<DASH; i++ )); do echo ""; done
+
+    local elapsed=0 bar filled empty pct i
+    local ch_line se_line ch_used ch_free ch_n se_used se_free se_n stm32_status
+
     while (( elapsed < RUN_DURATION )); do
         sleep 1
         elapsed=$(( elapsed + 1 ))
-        local remaining=$(( RUN_DURATION - elapsed ))
-        local filled=$(( elapsed * bar_width / RUN_DURATION ))
-        local empty=$(( bar_width - filled ))
-        local bar=""
-        local i
+
+        # --- Progress bar ---
+        filled=$(( elapsed * bar_width / RUN_DURATION ))
+        empty=$(( bar_width - filled ))
+        bar=""
         for (( i=0; i<filled; i++ )); do bar+="█"; done
         for (( i=0; i<empty;  i++ )); do bar+="░"; done
-        local pct=$(( elapsed * 100 / RUN_DURATION ))
-        printf "\r  [%-${bar_width}s] %3d%%  %ds / %ds  " "$bar" "$pct" "$elapsed" "$RUN_DURATION"
+        pct=$(( elapsed * 100 / RUN_DURATION ))
+
+        # --- STM32 latest values parsed from collector log ---
+        ch_line=$(grep '\[chassis\]' "$LOG_DIR/stm32_collector.log" 2>/dev/null | tail -1) || ch_line=""
+        se_line=$(grep '\[sensors\]' "$LOG_DIR/stm32_collector.log" 2>/dev/null | tail -1) || se_line=""
+        ch_used=$(printf '%s' "$ch_line" | grep -oP 'used=\s*\K\S+') || ch_used="--"
+        ch_free=$(printf '%s' "$ch_line" | grep -oP 'free=\s*\K\S+') || ch_free="--"
+        ch_n=$(grep -c '\[chassis\]' "$LOG_DIR/stm32_collector.log" 2>/dev/null) || ch_n=0
+        se_used=$(printf '%s' "$se_line" | grep -oP 'used=\s*\K\S+') || se_used="--"
+        se_free=$(printf '%s' "$se_line" | grep -oP 'free=\s*\K\S+') || se_free="--"
+        se_n=$(grep -c '\[sensors\]' "$LOG_DIR/stm32_collector.log" 2>/dev/null) || se_n=0
+
+        # --- STM32 collector health ---
+        kill -0 "$STM32_COLLECTOR_PID" 2>/dev/null \
+            && stm32_status="\033[0;32m● running\033[0m" \
+            || stm32_status="\033[0;31m● DIED\033[0m"
+
+        # --- Overwrite dashboard in place (cursor up DASH lines, carriage return, rewrite) ---
+        printf "\033[%dA\r" "$DASH"
+        printf "  Progress:%-61s\n" ""
+        printf "  [%-${bar_width}s] %3d%%  %ds / %ds%-20s\n" "$bar" "$pct" "$elapsed" "$RUN_DURATION" ""
+        printf "%-70s\n" ""
+        printf "  STM32 memory (latest):%-48s\n" ""
+        printf "    chassis  used=%-8s  free=%-8s  (%4d samples)%-10s\n" \
+               "$ch_used" "$ch_free" "$ch_n" ""
+        printf "    sensors  used=%-8s  free=%-8s  (%4d samples)%-10s\n" \
+               "$se_used" "$se_free" "$se_n" ""
+        printf "%-70s\n" ""
+        printf "  Collectors:%-59s\n" ""
+        printf "    STM32 %b  RPi latency \033[0;32m● started\033[0m  Jetson latency \033[0;32m● started\033[0m   \n" \
+               "$stm32_status"
     done
 
-    printf "\r  [%s] 100%%  ${RUN_DURATION}s / ${RUN_DURATION}s  \n" \
-        "$(printf '%.0s█' $(seq 1 $bar_width))"
+    echo ""
     log "Run duration complete"
 }
 
