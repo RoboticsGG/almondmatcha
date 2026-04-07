@@ -163,8 +163,13 @@ def load_net_csv(path: Path, label: str):
     Returns: list of dicts with keys: t_epoch, rx_kbps, tx_kbps, label
     """
     rows = []
+    # Strip NUL bytes before parsing — they appear as zero-filled blocks when
+    # the collector process is killed mid-buffer-flush by the OS.
     with open(path, newline='') as f:
-        for row in csv.DictReader(f):
+        clean = (line.replace('\x00', '') for line in f)
+        for row in csv.DictReader(clean):
+            if not row.get('timestamp'):
+                continue
             try:
                 rows.append({
                     't_epoch':  _iso_to_epoch(row['timestamp']),
@@ -497,7 +502,9 @@ def main():
     ap.add_argument('--latency-jetson', type=Path,
                     help='Merge: collect_latency.py CSV from Jetson')
     ap.add_argument('--stm32',          type=Path,
-                    help='Merge: collect_stm32_memory.py CSV')
+                    help='Merge: collect_stm32_memory.py CSV (chassis board)')
+    ap.add_argument('--stm32-sensors',  type=Path,
+                    help='Merge: collect_stm32_memory.py CSV (sensors board)')
     ap.add_argument('--net-rpi',        type=Path,
                     help='Merge: collect_net_stats.py CSV from RPi')
     ap.add_argument('--net-jetson',     type=Path,
@@ -553,7 +560,9 @@ def main():
                       if args.latency_rpi    else None)
         lat_jetson = (load_latency_timeseries(args.latency_jetson, topics_filter)
                       if args.latency_jetson else None)
-        stm32      = load_stm32_csv(args.stm32)     if args.stm32      else None
+        stm32_chassis = load_stm32_csv(args.stm32)         if args.stm32         else []
+        stm32_sensors = load_stm32_csv(args.stm32_sensors) if args.stm32_sensors else []
+        stm32         = (stm32_chassis + stm32_sensors) or None
         net_rpi    = load_net_csv(args.net_rpi,    'RPi')    if args.net_rpi    else None
         net_jetson = load_net_csv(args.net_jetson, 'Jetson') if args.net_jetson else None
 
