@@ -152,7 +152,8 @@ start_stm32_collector() {
     python3 "$TOOLS_DIR/stm32_serial/collect_stm32_memory.py" \
         --chassis "$CHASSIS_PORT" \
         --sensors "$SENSORS_PORT" \
-        --out     "$STM32_OUT_STEM" &
+        --out     "$STM32_OUT_STEM" \
+        >"$LOG_DIR/stm32_collector.log" 2>&1 &
     STM32_COLLECTOR_PID=$!
 
     sleep 1
@@ -257,9 +258,11 @@ start_net_collectors() {
 # ============================================================================
 
 wait_for_run() {
+    local bar_width=40
+
     echo ""
     echo -e "${BOLD}======================================================${NC}"
-    echo -e "${GREEN}  EXPERIMENT RUNNING — ${RUN_DURATION}s measurement window${NC}"
+    echo -e "${GREEN}  EXPERIMENT RUNNING \u2014 ${RUN_DURATION}s measurement window${NC}"
     echo -e "${BOLD}======================================================${NC}"
     echo ""
     echo "  Drive the rover / send mission commands now."
@@ -268,12 +271,21 @@ wait_for_run() {
 
     local elapsed=0
     while (( elapsed < RUN_DURATION )); do
-        sleep 10
-        elapsed=$(( elapsed + 10 ))
+        sleep 1
+        elapsed=$(( elapsed + 1 ))
         local remaining=$(( RUN_DURATION - elapsed ))
-        log "  Running... ${elapsed}s elapsed, ${remaining}s remaining"
+        local filled=$(( elapsed * bar_width / RUN_DURATION ))
+        local empty=$(( bar_width - filled ))
+        local bar=""
+        local i
+        for (( i=0; i<filled; i++ )); do bar+="█"; done
+        for (( i=0; i<empty;  i++ )); do bar+="░"; done
+        local pct=$(( elapsed * 100 / RUN_DURATION ))
+        printf "\r  [%-${bar_width}s] %3d%%  %ds / %ds  " "$bar" "$pct" "$elapsed" "$RUN_DURATION"
     done
 
+    printf "\r  [%s] 100%%  ${RUN_DURATION}s / ${RUN_DURATION}s  \n" \
+        "$(printf '%.0s█' $(seq 1 $bar_width))"
     log "Run duration complete"
 }
 
