@@ -83,15 +83,11 @@ done
 # ============================================================================
 
 STM32_COLLECTOR_PID=""
-NET_RPI_PID=""
-NET_JETSON_PID=""
 
 cleanup() {
     echo ""
     warn "Interrupted — stopping all background collectors..."
     [[ -n "$STM32_COLLECTOR_PID" ]] && kill "$STM32_COLLECTOR_PID" 2>/dev/null || true
-    [[ -n "$NET_RPI_PID"         ]] && kill "$NET_RPI_PID"         2>/dev/null || true
-    [[ -n "$NET_JETSON_PID"      ]] && kill "$NET_JETSON_PID"      2>/dev/null || true
     # Stop latency collectors (cleanup path)
     TARGET_HOST="$RPI_HOST"    TARGET_LABEL=rpi    SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh" 2>/dev/null || true
@@ -233,23 +229,23 @@ start_latency_collectors() {
 start_net_collectors() {
     log "Step 5 — Starting network stats collectors on RPi and Jetson"
 
+    # Run synchronously — each SSH fires a remote nohup+& and returns in <1s.
+    # The &+wait pattern caused the SSH client to hang waiting for the remote
+    # PTY to close (it never does while the background python is running).
     ssh $SSH_OPTS "$RPI_HOST" \
         "mkdir -p ~/ros2_traces && nohup python3 ~/almondmatcha/ws_base/tools/monitoring/collect_net_stats.py \
             --iface eth0 --out ~/ros2_traces/net_stats_rpi.csv \
             </dev/null >~/ros2_traces/net_stats_rpi.log 2>&1 &
          echo \$! > ~/ros2_traces/net_stats_rpi.pid
-         echo [OK] net_stats collector PID: \$(cat ~/ros2_traces/net_stats_rpi.pid)" &
-    NET_RPI_PID=$!
+         echo [OK] net_stats collector PID: \$(cat ~/ros2_traces/net_stats_rpi.pid)"
 
     ssh $SSH_OPTS "$JETSON_HOST" \
         "mkdir -p ~/ros2_traces && nohup python3 ~/almondmatcha/ws_base/tools/monitoring/collect_net_stats.py \
             --iface eth0 --out ~/ros2_traces/net_stats_jetson.csv \
             </dev/null >~/ros2_traces/net_stats_jetson.log 2>&1 &
          echo \$! > ~/ros2_traces/net_stats_jetson.pid
-         echo [OK] net_stats collector PID: \$(cat ~/ros2_traces/net_stats_jetson.pid)" &
-    NET_JETSON_PID=$!
+         echo [OK] net_stats collector PID: \$(cat ~/ros2_traces/net_stats_jetson.pid)"
 
-    wait "$NET_RPI_PID" "$NET_JETSON_PID"
     ok "  Net-stats collectors started on both SBCs"
 }
 
