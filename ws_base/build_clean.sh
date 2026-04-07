@@ -15,9 +15,21 @@ if [ -f "/opt/ros/humble/setup.bash" ]; then
     source /opt/ros/humble/setup.bash
 fi
 
-# Step 1: Build interface packages first
-echo "Step 1/2: Building interface packages..."
-colcon build --symlink-install --packages-select action_ifaces msgs_ifaces services_ifaces
+# msgs_ifaces is NOT built in ws_base (COLCON_IGNORE present in ws_base/src/msgs_ifaces/).
+# It is built in common_ifaces/ and sourced from there so only one copy exists at runtime.
+# Building it here too creates duplicate .so files in PYTHONPATH/LD_LIBRARY_PATH, which
+# causes "Could not import rosidl_typesupport_c for package msgs_ifaces" at runtime.
+COMMON_IFACES="$(cd "$(dirname "$0")/.." && pwd)/common_ifaces/install/setup.bash"
+if [ ! -f "$COMMON_IFACES" ]; then
+    echo "ERROR: common_ifaces not built. Build msgs_ifaces there first:"
+    echo "  cd ../common_ifaces && colcon build --symlink-install --packages-select msgs_ifaces"
+    exit 1
+fi
+source "$COMMON_IFACES"
+
+# Step 1: Build action_ifaces and services_ifaces (only these two live in ws_base/src)
+echo "Step 1/2: Building interface packages (action_ifaces, services_ifaces)..."
+colcon build --symlink-install --packages-select action_ifaces services_ifaces
 
 # Source so CMake can find interface packages in step 2
 if [ -f "install/setup.bash" ]; then
@@ -40,10 +52,11 @@ echo "Clean build complete for ws_base"
 echo "======================================"
 echo ""
 echo "Packages built:"
-echo "  - msgs_ifaces (ChassisCtrl, ChassisIMU, ChassisSensors, SpresenseGNSS, UbloxGNSS, TelemetryRelay)"
-echo "  - action_ifaces (DesData)"
-echo "  - services_ifaces (SpdLimit)"
+echo "  - action_ifaces (DesData action)"
+echo "  - services_ifaces (SpdLimit service)"
 echo "  - mission_control (mission_command_node, mission_monitoring_node_pc)"
+echo ""
+echo "msgs_ifaces: sourced from common_ifaces/install (not rebuilt here)"
 echo ""
 echo "To run base station nodes:"
 echo "  # Mission monitoring (Domain 4 - telemetry display)"
