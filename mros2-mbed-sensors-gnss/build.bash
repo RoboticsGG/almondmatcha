@@ -44,7 +44,7 @@ fi
 
 DOCKERCMD_PRE="docker run --rm -it --mount type=bind,source=$(pwd),destination=/var/mbed \
   -w /var/mbed -e APPNAME=${APPNAME} ghcr.io/armmbed/mbed-os-env \
-  /bin/bash -c \""
+  /bin/bash -c \"git config --global --add safe.directory '*' && "
 DOCKERCMD_SUF="\""
 if [ $# == 4 ];
 then
