@@ -40,10 +40,14 @@ source ~/almondmatcha/ws_rpi/install/setup.bash 2>/dev/null || \
     source ~/almondmatcha/ws_jetson/install/setup.bash 2>/dev/null || true
 export ROS_DOMAIN_ID=5
 
-# Pin Fast-DDS to the rover Ethernet NIC (same as the launch scripts do)
-if [ -f ~/almondmatcha/ws_rpi/fastdds_rover.xml ]; then
+# Pin Fast-DDS to the correct NIC for this host.
+# Use TARGET_LABEL (set by the caller) — NOT file existence, because both
+# ws_rpi/ and ws_jetson/ exist on every machine (same git repo), so a
+# file-existence check always picks ws_rpi/fastdds_rover.xml first, which
+# whitelists 192.168.1.1 (RPi IP) and breaks DDS transport on the Jetson.
+if [ "${TARGET_LABEL}" = "rpi" ]; then
     export FASTRTPS_DEFAULT_PROFILES_FILE=~/almondmatcha/ws_rpi/fastdds_rover.xml
-elif [ -f ~/almondmatcha/ws_jetson/fastdds_jetson.xml ]; then
+elif [ "${TARGET_LABEL}" = "jetson" ]; then
     export FASTRTPS_DEFAULT_PROFILES_FILE=~/almondmatcha/ws_jetson/fastdds_jetson.xml
 fi
 
