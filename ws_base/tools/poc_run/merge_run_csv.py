@@ -276,12 +276,16 @@ def main():
 
     columns = ['elapsed_s']
 
+    # Column order must match row-building order below: all rpi first, then all jetson.
+    # (Inner loop over pfx would interleave rpi/jetson per topic — mismatching the rows.)
     for tp in all_lat_topics:
-        for pfx in ('interval_rpi', 'interval_jetson'):
-            columns += [_col(pfx, tp, 'mean_ms'), _col(pfx, tp, 'p95_ms')]
+        columns += [_col('interval_rpi', tp, 'mean_ms'), _col('interval_rpi', tp, 'p95_ms')]
     for tp in all_lat_topics:
-        for pfx in ('latency_rpi', 'latency_jetson'):
-            columns += [_col(pfx, tp, 'mean_ms'), _col(pfx, tp, 'p95_ms')]
+        columns += [_col('interval_jetson', tp, 'mean_ms'), _col('interval_jetson', tp, 'p95_ms')]
+    for tp in all_lat_topics:
+        columns += [_col('latency_rpi', tp, 'mean_ms'), _col('latency_rpi', tp, 'p95_ms')]
+    for tp in all_lat_topics:
+        columns += [_col('latency_jetson', tp, 'mean_ms'), _col('latency_jetson', tp, 'p95_ms')]
 
     columns += ['net_rpi__rx_kbps', 'net_rpi__tx_kbps',
                 'net_jetson__rx_kbps', 'net_jetson__tx_kbps']

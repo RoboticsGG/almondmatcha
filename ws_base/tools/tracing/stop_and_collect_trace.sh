@@ -63,5 +63,10 @@ fi
 
 echo ""
 echo "Next: analyze with:"
-echo "  python3 ws_base/tools/tracing/analyze_latency.py \\"
-echo "      --poc ${LOCAL_DATA_DIR}/poc_latency_${TARGET_LABEL}.csv"
+if [ -n "$LOCAL_DEST_CSV" ]; then
+    echo "  python3 ws_base/tools/tracing/analyze_latency.py \\"
+    echo "      --poc ${LOCAL_DEST_CSV}"
+else
+    echo "  python3 ws_base/tools/tracing/analyze_latency.py \\"
+    echo "      --poc ${LOCAL_DATA_DIR}/poc_latency_${TARGET_LABEL}.csv"
+fi

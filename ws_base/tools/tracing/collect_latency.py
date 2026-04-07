@@ -93,9 +93,9 @@ class LatencyCollector(Node):
                 pub_infos = self.get_publishers_info_by_topic(topic)
                 rel = (pub_infos[0].qos_profile.reliability
                        if pub_infos
-                       else QoSReliabilityPolicy.RELIABLE)
+                       else QoSReliabilityPolicy.BEST_EFFORT)
             except Exception:
-                rel = QoSReliabilityPolicy.RELIABLE
+                rel = QoSReliabilityPolicy.BEST_EFFORT
 
             qos = QoSProfile(
                 depth=10,
