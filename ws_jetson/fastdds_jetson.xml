@@ -34,9 +34,16 @@
 
       <builtin>
         <initialPeersList>
-          <!-- No multicast entry: all participant IPs are known statically.
-               Unicast-only SPDP is sufficient and deterministic when the STM32
-               mros2 stack spins immediately on boot. -->
+          <!-- Multicast entry retained so FastDDS joins the SPDP multicast group
+               and can receive announcements from STM32 boards that were already
+               running before the Linux nodes started (e.g. not power-cycled).
+               Port 8650 = DDS SPDP port for domain 5 (7400 + 250*5). -->
+          <locator>
+            <udpv4>
+              <address>239.255.0.1</address>
+              <port>8650</port>
+            </udpv4>
+          </locator>
           <!-- RPi (thehive) -->
           <locator>
             <udpv4>

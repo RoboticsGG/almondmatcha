@@ -10,12 +10,10 @@
 
   Fix:
     1. UDPv4 transport restricted to 192.168.1.4 (enp0s31f6 only).
-    2. initialPeersList uses unicast-only (no multicast group entry).
-       All participant IPs are statically known so unicast SPDP is both
-       simpler and more predictable than multicast.
-       The STM32 mros2 stack now calls mros2::spin() before any osDelay,
-       so it receives FastDDS unicast SPDP on boot instead of waiting for
-       a multicast re-announce — eliminating the 373 s discovery gap.
+    2. initialPeersList includes the SPDP multicast group (239.255.0.1:8650)
+       so FastDDS joins and receives STM32 announcements regardless of when
+       the boards booted. All unicast peer IPs are also listed for fast
+       discovery when boards boot at the same time as Linux nodes.
 -->
 <profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
 
@@ -40,11 +38,16 @@
 
       <builtin>
         <initialPeersList>
-          <!-- No multicast entry: all participant IPs are known statically.
-               FastDDS sends SPDP unicast to each peer on startup; STM32 mros2
-               now calls mros2::spin() immediately so it receives these packets.
-               Multicast SPDP was the fallback that caused the 373 s chassis_imu
-               discovery gap observed in run_003. -->
+          <!-- Multicast entry retained so FastDDS joins the SPDP multicast group
+               and can receive announcements from STM32 boards that were already
+               running before the Linux nodes started (e.g. not power-cycled).
+               Port 8650 = DDS SPDP port for domain 5 (7400 + 250*5). -->
+          <locator>
+            <udpv4>
+              <address>239.255.0.1</address>
+              <port>8650</port>
+            </udpv4>
+          </locator>
           <!-- RPi (thehive) -->
           <locator>
             <udpv4>

@@ -9,9 +9,10 @@
 
   Fix:
     1. UDPv4 transport restricted to 192.168.1.1 (rover Ethernet only).
-    2. initialPeersList uses unicast-only (no multicast group entry).
-       All participant IPs are statically known so unicast SPDP is both
-       simpler and more predictable than multicast.
+    2. initialPeersList includes the SPDP multicast group (239.255.0.1:8650)
+       so FastDDS joins and receives STM32 announcements regardless of when
+       the boards booted. All unicast peer IPs are also listed for fast
+       discovery when boards boot at the same time as Linux nodes.
 -->
 <profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
 
@@ -36,9 +37,16 @@
 
       <builtin>
         <initialPeersList>
-          <!-- No multicast entry: all participant IPs are known statically.
-               Unicast-only SPDP is sufficient and deterministic when the STM32
-               mros2 stack spins immediately on boot. -->
+          <!-- Multicast entry retained so FastDDS joins the SPDP multicast group
+               and can receive announcements from STM32 boards that were already
+               running before the Linux nodes started (e.g. not power-cycled).
+               Port 8650 = DDS SPDP port for domain 5 (7400 + 250*5). -->
+          <locator>
+            <udpv4>
+              <address>239.255.0.1</address>
+              <port>8650</port>
+            </udpv4>
+          </locator>
           <!-- STM32 chassis-dynamics board -->
           <locator>
             <udpv4>
