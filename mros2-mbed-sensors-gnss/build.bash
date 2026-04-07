@@ -73,8 +73,19 @@ echo "      APPNAME=${APPNAME}"
 
 
 ### build a project ###
-# deploy mbed environment by mbed-tools
-eval ${DOCKERCMD_PRE}mbed-tools deploy${DOCKERCMD_SUF}
+# Deploy libraries: clone mbed-os and mros2 directly from the refs in .lib files.
+# mbed-tools deploy fails on a clean directory (needs existing git repos to work).
+# Direct clone is idempotent — skips if directory already exists.
+DEPLOY_CMD='([ -d mbed-os ] || (git clone https://github.com/ARMmbed/mbed-os.git mbed-os && git -C mbed-os checkout d723bf9e55415433e108124ee6d36337feddf1b8)) && ([ -d mros2 ] || git clone --branch v0.5.4 https://github.com/mROS-base/mros2.git mros2)'
+eval ${DOCKERCMD_PRE}${DEPLOY_CMD}${DOCKERCMD_SUF}
+
+# Sync custom message headers into mros2/mros2_msgs/ (deploy re-clones mros2 from GitHub
+# which only has std msgs; our msgs_ifaces/ headers must be copied in before cmake runs)
+if [ -d "mros2/mros2_msgs" ] && [ -d "mros2_add_msgs/mros2_msgs/msgs_ifaces/msg" ]; then
+  mkdir -p mros2/mros2_msgs/msgs_ifaces/msg
+  cp -f mros2_add_msgs/mros2_msgs/msgs_ifaces/msg/*.hpp mros2/mros2_msgs/msgs_ifaces/msg/
+  echo "INFO: synced msgs_ifaces headers into mros2/mros2_msgs/"
+fi
 
 # configure mbed project by mbed-tools (output to build directory)
 eval ${DOCKERCMD_PRE}mbed-tools configure -m ${TARGET} -t GCC_ARM -o build${DOCKERCMD_SUF}
