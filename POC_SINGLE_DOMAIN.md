@@ -75,13 +75,30 @@ Source: `memory_reporter.h` firmware thread, emits one `{"type":"STM32_MEM",...}
 > more than the pool-size increase predicts, it indicates unexpected allocation elsewhere
 > (e.g. larger RTPS history caches under higher topic count).
 
-### Summary table
+### 4. Per-topic DDS bandwidth — `collect_topic_bw.py` (base PC)
 
-| Layer | Tool | Collector runs on | Primary POC question |
+Source: rclpy subscriber that auto-discovers every D5 topic, serializes each received
+message with `serialize_message()` (CDR encoding — same as the DDS wire format), and
+accumulates byte counts over 1-second intervals.
+
+| Metric | Column | Meaning |
+|---|---|---|
+| **Bytes/s per topic** | `bps` | CDR wire-format bytes per second observed at the base PC subscriber. Identifies which topics dominate bandwidth so the net-stats totals can be decomposed. |
+| Messages/s per topic | `msg_per_s` | Observed publish rate for each topic; cross-check against expected Hz. |
+| Interval accumulation | `msg_count`, `bytes` | Raw counts for the 1-second bucket — useful for detecting gaps (zero count = publisher stopped). |
+
+> **Why CDR size and not IP packet size?** `serialize_message()` returns the payload as
+> FastDDS would place it on the wire before RTPS framing. It is consistent across DDS
+> implementations and does not require packet capture. The `net_stats` rx/tx figures include
+> all UDP overhead (RTPS headers, DDS built-in topics, multicast join traffic); subtracting
+> the sum of per-topic `bps` from `net_stats.rx_bps` reveals the non-payload DDS overhead.
+
+
 |---|---|---|---|
 | ROS2 message timing | `collect_latency.py` | RPi, Jetson | Does single-domain increase jitter or latency? |
 | Linux NIC / socket buffers | `collect_net_stats.py` | RPi, Jetson | Do extra participants fill UDP buffers or drop packets? |
 | STM32 RTPS heap | `collect_stm32_memory.py` | Base PC (USB serial) | Does `MAX_NUM_PARTICIPANTS=20` leave enough heap headroom? |
+| Per-topic bandwidth | `collect_topic_bw.py` | Base PC (ROS2 subscriber) | How many KB/s does each DDS topic contribute on the wire? |
 
 ---
 
@@ -273,24 +290,36 @@ bash ws_base/launch_poc_experiment.sh --skip-launch
 | ⏸ Interactive pause | Waits for you to physically power-cycle both STM32 boards |
 | Launch ROS2 nodes | SSHes into RPi → Jetson → launches base PC nodes during STM32 discovery wait |
 | Start latency collectors | Runs `start_trace.sh` on RPi and Jetson via SSH |
+| Start topic-BW collector | Runs `collect_topic_bw.py` locally on base PC (auto-discovers all D5 topics) |
 | Start net-stats collectors | Runs `collect_net_stats.py` on both SBCs via SSH background `nohup` |
-| Timed run | Prints elapsed/remaining every 10 s; Ctrl-C stops early and still collects CSVs |
-| Stop and pull | Stops all collectors, pulls all CSVs to base PC, prints analysis commands |
+| Timed run | Live dashboard shows elapsed time, STM32 heap values, and collector health; Ctrl-C stops early and still collects CSVs |
+| Stop and pull | Stops all collectors, pulls CSVs to base PC, runs `merge_run_csv.py`, prints analysis commands |
 
-**Output files (all on base PC after the script finishes):**
+**Output files — all in one numbered run directory on the base PC:**
 ```
-~/ros2_traces/stm32_memory_poc_chassis_YYYYMMDD_HHMMSS.csv
-~/ros2_traces/stm32_memory_poc_sensors_YYYYMMDD_HHMMSS.csv
-ws_base/tools/tracing/data/poc_latency_rpi.csv
-ws_base/tools/tracing/data/poc_latency_jetson.csv
-ws_base/tools/monitoring/data/poc_net_stats_rpi.csv
-ws_base/tools/monitoring/data/poc_net_stats_jetson.csv
+ws_base/tools/poc_run/run_NNN/
+  latency_rpi.csv          # collect_latency.py — RPi inter-arrival + latency
+  latency_jetson.csv       # collect_latency.py — Jetson inter-arrival + latency
+  net_stats_rpi.csv        # collect_net_stats.py — RPi NIC counters
+  net_stats_jetson.csv     # collect_net_stats.py — Jetson NIC counters
+  topic_bw.csv             # collect_topic_bw.py — per-topic CDR bandwidth
+  stm32_chassis.csv        # collect_stm32_memory.py — chassis board heap
+  stm32_sensors.csv        # collect_stm32_memory.py — sensors board heap
+  merged_all.csv           # built automatically: 1s-bucketed union of all above
+  logs/                    # stdout/stderr from every sub-process
+    launch_rpi.log
+    launch_jetson.log
+    launch_base.log
+    stm32_collector.log
+    topic_bw.log
 ```
 
-> **STM32 serial JSON format:** each board is saved to its own CSV file, named with the
-> run timestamp so successive runs never overwrite each other:
-> - `stm32_memory_poc_chassis_YYYYMMDD_HHMMSS.csv` — chassis board data
-> - `stm32_memory_poc_sensors_YYYYMMDD_HHMMSS.csv` — sensors board data
+`run_NNN` is auto-incremented — each experiment launch creates the next available
+number. The `run_*/` directories are git-ignored; the tools are tracked.
+
+> **STM32 CSV naming:** the collector initially writes timestamped filenames
+> (`stm32_YYYYMMDD_HHMMSS.csv`). The launcher renames them to `stm32_chassis.csv` /
+> `stm32_sensors.csv` after stopping the collector so the merge step has predictable paths.
 
 ---
 
@@ -376,17 +405,25 @@ Run for **at least 5 minutes** under representative load (send a mission command
 
 ```bash
 # Stop latency collectors and pull CSVs to base PC
-TARGET_HOST=curry@192.168.1.1 TARGET_LABEL=rpi    bash ws_base/tools/tracing/stop_and_collect_trace.sh
-TARGET_HOST=yupi@192.168.1.5  TARGET_LABEL=jetson bash ws_base/tools/tracing/stop_and_collect_trace.sh
-# → ws_base/tools/tracing/data/poc_latency_rpi.csv
-# → ws_base/tools/tracing/data/poc_latency_jetson.csv
+TARGET_HOST=curry@192.168.1.1 TARGET_LABEL=rpi \
+    LOCAL_DEST_CSV=/tmp/latency_rpi.csv    bash ws_base/tools/tracing/stop_and_collect_trace.sh
+TARGET_HOST=yupi@192.168.1.5  TARGET_LABEL=jetson \
+    LOCAL_DEST_CSV=/tmp/latency_jetson.csv bash ws_base/tools/tracing/stop_and_collect_trace.sh
+# → /tmp/latency_rpi.csv   (or omit LOCAL_DEST_CSV to use legacy path)
+# → /tmp/latency_jetson.csv
 
 # Stop net-stats (Ctrl-C in each SSH terminal), then pull:
-scp curry@192.168.1.1:~/ros2_traces/net_stats_rpi.csv    ws_base/tools/monitoring/data/poc_net_stats_rpi.csv
-scp yupi@192.168.1.5:~/ros2_traces/net_stats_jetson.csv  ws_base/tools/monitoring/data/poc_net_stats_jetson.csv
+scp curry@192.168.1.1:~/ros2_traces/net_stats_rpi.csv    /tmp/net_stats_rpi.csv
+scp yupi@192.168.1.5:~/ros2_traces/net_stats_jetson.csv  /tmp/net_stats_jetson.csv
 
 # Stop STM32 collector (Ctrl-C in the Step 1 terminal)
+# Stop topic-BW collector (Ctrl-C if running)
 ```
+
+> **Tip:** the automated script (Option A) handles all of the above automatically,
+> including routing all files into `ws_base/tools/poc_run/run_NNN/` and calling
+> `merge_run_csv.py` at the end. The manual steps above write to `/tmp/` for brevity;
+> adjust destination paths as needed.
 
 ---
 
@@ -404,17 +441,17 @@ for `/tpc_telemetry_relay` — the only project message type that includes `head
 ```bash
 # Analyze POC run only (prints table to stdout + saves latency_summary.csv)
 python3 ws_base/tools/tracing/analyze_latency.py \
-  --csv ws_base/tools/tracing/data/poc_latency_rpi.csv
+  --csv ws_base/tools/poc_run/run_001/latency_rpi.csv
 
 # Side-by-side comparison (requires baseline CSV from main branch)
 python3 ws_base/tools/tracing/analyze_latency.py \
   --baseline ws_base/tools/tracing/data/baseline_latency_rpi.csv \
-  --poc      ws_base/tools/tracing/data/poc_latency_rpi.csv \
+  --poc      ws_base/tools/poc_run/run_001/latency_rpi.csv \
   --out-dir  ws_base/tools/tracing/results/
 
 # Filter to specific topics only
 python3 ws_base/tools/tracing/analyze_latency.py \
-  --poc ws_base/tools/tracing/data/poc_latency_rpi.csv \
+  --poc ws_base/tools/poc_run/run_001/latency_rpi.csv \
   --topics /tpc_chassis_imu /tpc_chassis_sensors /tpc_rover_ctrl_cmd
 ```
 
@@ -426,33 +463,80 @@ Output:
 
 ### Unified timeline — all sources on one NTP-aligned axis
 
-After pulling all CSVs to the base PC, merge them into a single multi-panel PNG.
-All Linux clocks are NTP-synced (~1–10 ms accuracy). The STM32 has no RTC; its
-`wall_clock` column (base PC receive time) is used directly as the sync anchor —
-`ts_ms` (board uptime) is kept in the CSV for reference only.
+After option A finishes, a `unified_timeline.png` can be generated from the run directory
+with a single command. All Linux clocks are NTP-synced (~1–10 ms accuracy). The STM32
+has no RTC; its `wall_clock` column (base PC receive time) is used as the sync anchor.
 
+**Recommended — using `--run-dir` (auto-discovers all CSVs):**
 ```bash
 python3 ws_base/tools/tracing/analyze_latency.py --merge \
-    --latency-rpi    ws_base/tools/tracing/data/poc_latency_rpi.csv \
-    --latency-jetson ws_base/tools/tracing/data/poc_latency_jetson.csv \
-    --stm32          ~/ros2_traces/stm32_memory_poc_chassis_YYYYMMDD_HHMMSS.csv \
-    --stm32-sensors  ~/ros2_traces/stm32_memory_poc_sensors_YYYYMMDD_HHMMSS.csv \
-    --net-rpi        ws_base/tools/monitoring/data/poc_net_stats_rpi.csv \
-    --net-jetson     ws_base/tools/monitoring/data/poc_net_stats_jetson.csv \
-    --out-dir        ws_base/tools/tracing/results/
+    --run-dir ws_base/tools/poc_run/run_001
+# Produces: ws_base/tools/poc_run/run_001/unified_timeline.png
 ```
 
-Outputs `results/unified_timeline.png` — up to 4 stacked panels sharing a common
-elapsed-seconds x-axis (x=0 = earliest event across all datasets):
+**Manual — specifying each file individually:**
+```bash
+python3 ws_base/tools/tracing/analyze_latency.py --merge \
+    --latency-rpi    ws_base/tools/poc_run/run_001/latency_rpi.csv \
+    --latency-jetson ws_base/tools/poc_run/run_001/latency_jetson.csv \
+    --stm32          ws_base/tools/poc_run/run_001/stm32_chassis.csv \
+    --stm32-sensors  ws_base/tools/poc_run/run_001/stm32_sensors.csv \
+    --net-rpi        ws_base/tools/poc_run/run_001/net_stats_rpi.csv \
+    --net-jetson     ws_base/tools/poc_run/run_001/net_stats_jetson.csv \
+    --topic-bw       ws_base/tools/poc_run/run_001/topic_bw.csv \
+    --out-dir        ws_base/tools/poc_run/run_001/
+```
+
+Outputs `unified_timeline.png` in the output directory — up to 5 stacked panels sharing
+a common elapsed-seconds x-axis (x=0 = earliest event across all datasets):
 
 | Panel | Source | What to look for |
 |---|---|---|
-| RPi jitter | `poc_latency_rpi.csv` | Spikes in `interval_ms` during discovery |
-| Jetson jitter | `poc_latency_jetson.csv` | Same, Jetson-side |
-| STM32 heap | `stm32_memory_poc_chassis/sensors_*.csv` | Rising ramp during 10 s boot window → flat steady-state |
+| RPi jitter | `latency_rpi.csv` | Spikes in `interval_ms` during discovery |
+| Jetson jitter | `latency_jetson.csv` | Same, Jetson-side |
+| STM32 heap | `stm32_chassis/sensors.csv` | Rising ramp during 10 s boot window → flat steady-state |
 | Network BW | `net_stats_*.csv` | Bandwidth spike when camera_stream@30fps joins D5 |
+| Per-topic BW | `topic_bw.csv` | Which topics drive bandwidth; gaps = publisher outage |
 
-All five `--*` arguments are optional — omit any source not collected.
+All `--*` arguments (and `--run-dir`) are optional — omit any source not collected.
+
+### Merged time-bucketed CSV — `merged_all.csv`
+
+The launcher builds this automatically at the end of every run. It can also be regenerated
+at any time:
+
+```bash
+python3 ws_base/tools/poc_run/merge_run_csv.py \
+    --run-dir ws_base/tools/poc_run/run_001
+
+# Finer time resolution (0.5-second buckets):
+python3 ws_base/tools/poc_run/merge_run_csv.py \
+    --run-dir ws_base/tools/poc_run/run_001 --bucket-s 0.5
+```
+
+`merged_all.csv` has one row per time bucket with all metrics as columns:
+
+| Column group | Example column | Content |
+|---|---|---|
+| Time | `elapsed_s` | Seconds since earliest event (NTP-aligned) |
+| Latency per topic per SBC | `interval_rpi__tpc_chassis_imu__mean_ms` | Mean inter-arrival interval in the bucket |
+| Latency p95 | `interval_rpi__tpc_chassis_imu__p95_ms` | 95th-percentile interval |
+| End-to-end latency | `latency_rpi__tpc_telemetry_relay__mean_ms` | Mean header.stamp → recv latency |
+| Network BW | `net_rpi__rx_kbps` | Mean RX KB/s in the bucket |
+| Topic BW | `bw__tpc_chassis_imu__kbps` | Mean CDR KB/s per topic |
+| STM32 heap | `stm32_chassis__heap_used_kb` | Mean heap used in the bucket |
+
+This is the most convenient file for loading into pandas or a spreadsheet for
+custom analysis, since all sources are already aligned to the same time axis.
+
+```bash
+python3 - << 'EOF'
+import pandas as pd
+df = pd.read_csv("ws_base/tools/poc_run/run_001/merged_all.csv")
+print(df.head())
+print(df.describe())
+EOF
+```
 
 ### Socket buffer and bandwidth (from net_stats CSV)
 
@@ -461,7 +545,7 @@ Open in any spreadsheet or:
 ```bash
 python3 - << 'EOF'
 import pandas as pd
-df = pd.read_csv("ws_base/tools/monitoring/data/net_stats_rpi.csv")
+df = pd.read_csv("ws_base/tools/poc_run/run_001/net_stats_rpi.csv")
 print(df[["elapsed_s","rx_bps","tx_bps","udp_sockets","max_rx_queue","rx_drop"]].describe())
 EOF
 ```
@@ -478,13 +562,16 @@ Key columns:
 
 ```bash
 python3 - << 'EOF'
-import pandas as pd, glob, os
-# Load both per-board CSVs and concatenate
-files = sorted(glob.glob(os.path.expanduser("~/ros2_traces/stm32_memory_poc_*.csv")))
-df = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
-for node, g in df.groupby("node"):
-    print(f"\n=== {node} ===")
-    print(g[["ts_ms","heap_used","heap_max","heap_free","alloc_fail"]].describe())
+import pandas as pd
+for f in ["ws_base/tools/poc_run/run_001/stm32_chassis.csv",
+          "ws_base/tools/poc_run/run_001/stm32_sensors.csv"]:
+    try:
+        df = pd.read_csv(f)
+        node = df["node"].iloc[0] if "node" in df.columns else f
+        print(f"\n=== {node} ===")
+        print(df[["ts_ms","heap_used","heap_max","heap_free","alloc_fail"]].describe())
+    except FileNotFoundError:
+        pass
 EOF
 ```
 
@@ -519,14 +606,20 @@ ws_jetson/
 ws_base/
   launch_base_single_domain.sh        # all D5 (monitoring was D4)
   tools/
+    poc_run/
+      .gitignore                      # ignores generated run_*/ directories
+      merge_run_csv.py                # 1s-bucketed union of all run CSVs → merged_all.csv
     tracing/
       setup_tracing.sh                # pre-flight environment check on SBC
       collect_latency.py              # rclpy subscriber → latency/jitter CSV
       start_trace.sh                  # SSH wrapper: launch collect_latency.py on SBC
       stop_and_collect_trace.sh       # SSH wrapper: stop collector + scp CSV to base PC
-      analyze_latency.py              # CSV → jitter/latency stats + boxplot
+                                      #   (accepts LOCAL_DEST_CSV env var for output path)
+      analyze_latency.py              # CSV → jitter/latency stats + boxplot + unified timeline
+                                      #   (--run-dir shorthand auto-discovers all CSVs)
     monitoring/
       collect_net_stats.py            # /proc/net/dev + udp queue → CSV
+      collect_topic_bw.py             # rclpy: auto-discovers topics, serialize_message() → bps CSV
     stm32_serial/
       collect_stm32_memory.py         # USB serial → STM32_MEM JSON → CSV
 mros2-mbed-chassis-dynamics/
