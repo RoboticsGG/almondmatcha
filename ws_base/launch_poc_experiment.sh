@@ -229,22 +229,36 @@ start_latency_collectors() {
 start_net_collectors() {
     log "Step 5 — Starting network stats collectors on RPi and Jetson"
 
-    # Run synchronously — each SSH fires a remote nohup+& and returns in <1s.
-    # The &+wait pattern caused the SSH client to hang waiting for the remote
-    # PTY to close (it never does while the background python is running).
-    ssh $SSH_OPTS "$RPI_HOST" \
-        "mkdir -p ~/ros2_traces && nohup python3 ~/almondmatcha/ws_base/tools/monitoring/collect_net_stats.py \
-            --iface eth0 --out ~/ros2_traces/net_stats_rpi.csv \
-            </dev/null >~/ros2_traces/net_stats_rpi.log 2>&1 &
-         echo \$! > ~/ros2_traces/net_stats_rpi.pid
-         echo [OK] net_stats collector PID: \$(cat ~/ros2_traces/net_stats_rpi.pid)"
+    # -T: disable PTY allocation — SSH exits as soon as the remote shell exits.
+    # Without -T, SSH holds the connection open waiting for the PTY to be fully
+    # released, which never happens while the backgrounded python is running.
+    # disown: removes the job from the shell's job table before exit, preventing
+    # the shell from waiting for or signalling the child on exit.
+    remote_start_net() {
+        local host="$1" out="$2" log_f="$3" pid_f="$4"
+        # -T: no PTY → SSH closes as soon as remote shell exits (no PTY to keep open)
+        # setsid: child gets its own session + no controlling terminal at all
+        # disown: removes job from shell table before exit (belt and suspenders)
+        ssh -T $SSH_OPTS "$host" "
+            mkdir -p ~/ros2_traces
+            setsid nohup python3 ~/almondmatcha/ws_base/tools/monitoring/collect_net_stats.py \
+                --iface eth0 --out $out \
+                </dev/null >$log_f 2>&1 &
+            disown
+            echo \$! > $pid_f
+            echo [OK] net_stats collector PID: \$(cat $pid_f)
+        "
+    }
 
-    ssh $SSH_OPTS "$JETSON_HOST" \
-        "mkdir -p ~/ros2_traces && nohup python3 ~/almondmatcha/ws_base/tools/monitoring/collect_net_stats.py \
-            --iface eth0 --out ~/ros2_traces/net_stats_jetson.csv \
-            </dev/null >~/ros2_traces/net_stats_jetson.log 2>&1 &
-         echo \$! > ~/ros2_traces/net_stats_jetson.pid
-         echo [OK] net_stats collector PID: \$(cat ~/ros2_traces/net_stats_jetson.pid)"
+    remote_start_net "$RPI_HOST" \
+        "~/ros2_traces/net_stats_rpi.csv" \
+        "~/ros2_traces/net_stats_rpi.log" \
+        "~/ros2_traces/net_stats_rpi.pid"
+
+    remote_start_net "$JETSON_HOST" \
+        "~/ros2_traces/net_stats_jetson.csv" \
+        "~/ros2_traces/net_stats_jetson.log" \
+        "~/ros2_traces/net_stats_jetson.pid"
 
     ok "  Net-stats collectors started on both SBCs"
 }
