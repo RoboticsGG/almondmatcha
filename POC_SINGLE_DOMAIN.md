@@ -596,6 +596,142 @@ See the `README.md` on the `main` branch for the baseline launch guide.
 
 ---
 
+## CSV Field Reference
+
+Each collector writes a CSV with a fixed schema. This section is the authoritative
+reference for every column in every output file.
+
+---
+
+### `latency_rpi.csv` / `latency_jetson.csv`
+
+Produced by `collect_latency.py` running on the respective SBC.
+One row per received message on any tracked topic.
+
+| Column | Type | Description |
+|---|---|---|
+| `topic` | string | ROS2 topic name (e.g. `/tpc_chassis_imu`) |
+| `recv_time_s` | float | Wall-clock time when the subscriber callback fired — `time.time()` (NTP-aligned UNIX epoch, seconds). This is the primary time anchor for cross-source alignment. |
+| `header_stamp_s` | float \| empty | `msg.header.stamp` expressed as a UNIX epoch float (sec + nanosec×10⁻⁹). Populated only for message types that carry `header.stamp`: `sensor_msgs/Image` (camera topics) and `/tpc_telemetry_relay`. Empty for all other message types. |
+| `latency_ms` | float \| empty | `(recv_time_s − header_stamp_s) × 1000`. End-to-end time from when the publisher stamped the message to when the subscriber received it. Populated whenever `header_stamp_s` is present. |
+| `interval_ms` | float \| empty | Time elapsed since the previous message on the same topic, in ms. Empty for the very first message on each topic. Standard deviation of this column is the primary **jitter** metric. |
+
+> **QoS note:** `collect_latency.py` reads the publisher's QoS reliability before
+> subscribing. Topics published as `BEST_EFFORT` (camera nodes) get a matching
+> `BEST_EFFORT` subscription; all others get `RELIABLE`. A mismatch would cause
+> zero messages to be received with no error.
+
+**Topics tracked (as of this branch):**
+
+| Topic | Jitter | Latency | Source node |
+|---|---|---|---|
+| `/tpc_chassis_imu` | ✓ | — | chassis STM32 |
+| `/tpc_chassis_sensors` | ✓ | — | chassis STM32 |
+| `/tpc_chassis_cmd` | ✓ | — | chassis STM32 |
+| `/tpc_gnss_spresense` | ✓ | — | sensors STM32 |
+| `/tpc_gnss_ublox` | ✓ | — | sensors STM32 |
+| `/tpc_rover_ctrl_cmd` | ✓ | — | Jetson kinematic control |
+| `/tpc_telemetry_relay` | ✓ | ✓ | RPi relay node |
+| `/tpc_rover_d415_rgb` | ✓ | ✓ | Jetson camera_stream_node (30 fps) |
+| `/tpc_rover_d415_depth` | ✓ | ✓ | Jetson camera_stream_node (30 fps) |
+| `/tpc_rover_nav_lane` | ✓ | — | Jetson lane_detection_node |
+
+---
+
+### `net_stats_rpi.csv` / `net_stats_jetson.csv`
+
+Produced by `collect_net_stats.py` on each SBC. One row per sample interval (default 0.5 s).
+
+| Column | Type | Description |
+|---|---|---|
+| `timestamp` | ISO 8601 UTC | Wall-clock at sample time (`datetime.utcnow().isoformat()`). NTP-aligned; used for cross-source time sync. |
+| `elapsed_s` | float | Seconds since the collector started (monotonic). |
+| `rx_bytes_delta` | int | Bytes received on `eth0` since the previous sample. |
+| `tx_bytes_delta` | int | Bytes transmitted on `eth0` since the previous sample. |
+| `rx_packets_delta` | int | Packets received since previous sample. |
+| `tx_packets_delta` | int | Packets transmitted since previous sample. |
+| `rx_errs` | int | Cumulative RX hardware errors (CRC, frame) at the NIC. Should stay 0. |
+| `tx_errs` | int | Cumulative TX hardware errors. Should stay 0. |
+| `rx_drop` | int | Cumulative RX packets dropped at the kernel NIC ring buffer. Non-zero = SBC falling behind at driver level. |
+| `tx_drop` | int | Cumulative TX drops. |
+| `rx_bps` | float | Receive bandwidth estimate: `rx_bytes_delta / interval_s` (bytes/s). |
+| `tx_bps` | float | Transmit bandwidth estimate (bytes/s). |
+| `udp_sockets` | int | Number of open UDP sockets (`/proc/net/udp`). DDS opens one socket per topic per participant; more participants → higher count. |
+| `total_rx_queue` | int | Sum of unread bytes across all UDP socket receive buffers (`/proc/net/udp`). |
+| `total_tx_queue` | int | Sum of pending bytes across all UDP socket send buffers. |
+| `max_rx_queue` | int | Largest single UDP socket receive buffer fill (bytes). Non-zero means the application is not draining the kernel buffer fast enough — a DDS back-pressure indicator. |
+| `max_tx_queue` | int | Largest single UDP socket send buffer fill (bytes). |
+| `ss_udp_total` | int | Total UDP socket count from `ss -s` (cross-check against `udp_sockets`). |
+
+---
+
+### `topic_bw.csv`
+
+Produced by `collect_topic_bw.py` on the base PC. One row per topic per 1-second interval.
+
+| Column | Type | Description |
+|---|---|---|
+| `timestamp` | ISO 8601 UTC | Wall-clock at the end of the aggregation interval (`datetime.now(timezone.utc).isoformat()`). |
+| `elapsed_s` | float | Seconds since the collector started. |
+| `topic` | string | ROS2 topic name. |
+| `msg_count` | int | Number of messages received in this interval. Zero indicates a gap (publisher stalled or dropped). |
+| `bytes` | int | Total CDR-serialized bytes received in this interval. Measured via `serialize_message()` — same encoding as the DDS wire format, before RTPS/UDP framing. |
+| `bps` | float | Bytes per second: `bytes / interval_s`. |
+| `msg_per_s` | float | Messages per second: `msg_count / interval_s`. Cross-check against expected publish rate. |
+
+> **Coverage:** auto-discovers all D5 topics every 3 s. Skips `/rosout`,
+> `/parameter_events`, `/tf`, `/tf_static`. QoS is matched per-publisher
+> (same mechanism as `collect_latency.py`).
+
+---
+
+### `stm32_chassis.csv` / `stm32_sensors.csv`
+
+Produced by `collect_stm32_memory.py` on the base PC via USB serial. One row per JSON
+telemetry line emitted by the STM32 firmware (~1 per second per board).
+
+| Column | Type | Description |
+|---|---|---|
+| `wall_clock` | ISO 8601 UTC | Base PC wall-clock when the JSON line was received (`datetime.utcnow().isoformat()`). NTP-aligned; used as the time anchor (the STM32 has no RTC). |
+| `type` | string | Always `STM32_MEM` — the firmware message type discriminator. |
+| `node` | string | Board identity: `chassis` or `sensors`. |
+| `ts_ms` | int | STM32 uptime in milliseconds since last reset. Useful for relative timing within a single board run; not suitable for cross-source alignment (use `wall_clock` for that). |
+| `heap_used` | int | Current mbed heap allocated (bytes). Rises during RTPS discovery as participant proxy structs are allocated, then plateaus. |
+| `heap_max` | int | Peak heap allocated since boot (bytes). Set during the 10-second discovery window and never decreases. **This is the primary POC comparison figure** — compare to baseline to see the cost of 20 vs 15 participants. |
+| `heap_free` | int | `total_heap − heap_used` (bytes). Negative trend indicates a memory leak. |
+| `alloc_fail` | int | Cumulative count of failed `malloc()` calls in the RTPS pool. Any non-zero value is a critical failure — the RTPS pool is exhausted. |
+| `stack_free` | int | Minimum free stack observed across all RTOS threads (bytes). Must stay positive; too-small headroom risks stack overflow under domain-consolidation load. |
+
+---
+
+### `merged_all.csv`
+
+Produced by `merge_run_csv.py`. One row per time bucket (default 1 second).
+All metrics from all sources are aligned to a common `elapsed_s` x-axis.
+
+Columns are grouped by type. `<topic>` in column names is the topic name with the
+leading `/` stripped and any inner `/` replaced by `__`.
+
+| Column group | Example column | Content |
+|---|---|---|
+| Time | `elapsed_s` | Seconds since the earliest event across all collectors (NTP-aligned). |
+| Inter-arrival jitter — RPi | `interval_rpi__tpc_chassis_imu__mean_ms` | Mean `interval_ms` across all messages in the bucket for this topic on RPi. |
+| Inter-arrival jitter p95 — RPi | `interval_rpi__tpc_chassis_imu__p95_ms` | 95th-percentile `interval_ms` in the bucket. |
+| Inter-arrival jitter — Jetson | `interval_jetson__tpc_rover_d415_rgb__mean_ms` | Same for Jetson-side subscriber. |
+| End-to-end latency — RPi | `latency_rpi__tpc_telemetry_relay__mean_ms` | Mean `latency_ms` in the bucket. Only populated for topics that carry `header.stamp`. |
+| End-to-end latency — Jetson | `latency_jetson__tpc_rover_d415_rgb__mean_ms` | Camera publish-to-receive latency. |
+| Network RX/TX — RPi | `net_rpi__rx_kbps` | Mean `rx_bps / 1024` across samples in the bucket. |
+| Network RX/TX — Jetson | `net_jetson__tx_kbps` | Mean `tx_bps / 1024` across samples in the bucket. |
+| Per-topic bandwidth | `bw__tpc_rover_d415_rgb__kbps` | Mean CDR KB/s for the topic in the bucket. |
+| STM32 chassis heap | `stm32_chassis__heap_used_kb` | Mean `heap_used / 1024` across samples in the bucket. |
+| STM32 chassis heap free | `stm32_chassis__heap_free_kb` | Mean `heap_free / 1024` across samples in the bucket. |
+| STM32 sensors heap | `stm32_sensors__heap_used_kb` | Same for the sensors board. |
+
+> Missing data (no samples in a bucket, or file not present) is represented as an
+> empty string — not zero. Filter for non-empty values before computing statistics.
+
+---
+
 ## Files Created in This Branch
 
 ```
