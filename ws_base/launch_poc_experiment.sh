@@ -83,11 +83,13 @@ done
 # ============================================================================
 
 STM32_COLLECTOR_PID=""
+TOPIC_BW_PID=""
 
 cleanup() {
     echo ""
     warn "Interrupted — stopping all background collectors..."
     [[ -n "$STM32_COLLECTOR_PID" ]] && kill "$STM32_COLLECTOR_PID" 2>/dev/null || true
+    [[ -n "$TOPIC_BW_PID"        ]] && kill "$TOPIC_BW_PID"        2>/dev/null || true
     # Stop latency collectors (cleanup path)
     TARGET_HOST="$RPI_HOST"    TARGET_LABEL=rpi    SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh" 2>/dev/null || true
@@ -223,6 +225,34 @@ start_latency_collectors() {
 }
 
 # ============================================================================
+# Step 4b — Start per-topic bandwidth collector (base PC, local)
+# ============================================================================
+
+start_topic_bw_collector() {
+    log "Step 4b — Starting per-topic bandwidth collector (base PC)"
+    log "  output: $NET_DATA_DIR/poc_topic_bw.csv"
+
+    # Source ROS2 env and exec python3 directly (exec replaces bash → PID is python3).
+    # FASTRTPS profile pins DDS to the base PC ethernet NIC (192.168.1.4).
+    bash -c "
+        source /opt/ros/humble/setup.bash
+        source '$WORKSPACE/common_ifaces/install/setup.bash' 2>/dev/null || true
+        source '$WORKSPACE/ws_base/install/setup.bash'
+        export ROS_DOMAIN_ID=5
+        export FASTRTPS_DEFAULT_PROFILES_FILE='$WORKSPACE/ws_base/fastdds_base.xml'
+        exec python3 '$TOOLS_DIR/monitoring/collect_topic_bw.py' \
+            --out '$NET_DATA_DIR/poc_topic_bw.csv' \
+            --interval 1
+    " </dev/null >"$LOG_DIR/topic_bw.log" 2>&1 &
+    TOPIC_BW_PID=$!
+
+    sleep 1
+    kill -0 "$TOPIC_BW_PID" 2>/dev/null \
+        || die "Topic BW collector exited immediately — check $LOG_DIR/topic_bw.log"
+    ok "  Topic BW collector running (PID $TOPIC_BW_PID)"
+}
+
+# ============================================================================
 # Step 5 — Start net-stats collectors on RPi and Jetson (SSH + background)
 # ============================================================================
 
@@ -308,10 +338,13 @@ wait_for_run() {
         se_free=$(printf '%s' "$se_line" | grep -oP 'free=\s*\K\S+') || se_free="--"
         se_n=$(grep -c '\[sensors\]' "$LOG_DIR/stm32_collector.log" 2>/dev/null) || se_n=0
 
-        # --- STM32 collector health ---
+        # --- Collector health ---
         kill -0 "$STM32_COLLECTOR_PID" 2>/dev/null \
             && stm32_status="\033[0;32m● running\033[0m" \
             || stm32_status="\033[0;31m● DIED\033[0m"
+        kill -0 "$TOPIC_BW_PID" 2>/dev/null \
+            && bw_status="\033[0;32m● running\033[0m" \
+            || bw_status="\033[0;31m● DIED\033[0m"
 
         # --- Overwrite dashboard in place (cursor up DASH lines, carriage return, rewrite) ---
         printf "\033[%dA\r" "$DASH"
@@ -325,8 +358,8 @@ wait_for_run() {
                "$se_used" "$se_free" "$se_n" ""
         printf "%-70s\n" ""
         printf "  Collectors:%-59s\n" ""
-        printf "    STM32 %b  RPi latency \033[0;32m● started\033[0m  Jetson latency \033[0;32m● started\033[0m   \n" \
-               "$stm32_status"
+        printf "    STM32 %b  Topic BW %b  RPi lat \033[0;32m●\033[0m  Jetson lat \033[0;32m●\033[0m   \n" \
+               "$stm32_status" "$bw_status"
     done
 
     echo ""
@@ -370,6 +403,10 @@ stop_and_collect() {
     [[ -n "$STM32_COLLECTOR_PID" ]] && kill "$STM32_COLLECTOR_PID" 2>/dev/null || true
     ok "  STM32 collector stopped"
 
+    # Stop topic BW collector (local, output already at NET_DATA_DIR)
+    [[ -n "$TOPIC_BW_PID" ]] && kill "$TOPIC_BW_PID" 2>/dev/null || true
+    ok "  Topic BW collector stopped"
+
     # Close SSH control sockets
     ssh $SSH_OPTS -O exit "$RPI_HOST"    2>/dev/null || true
     ssh $SSH_OPTS -O exit "$JETSON_HOST" 2>/dev/null || true
@@ -398,10 +435,14 @@ print_summary() {
     echo "    $NET_DATA_DIR/poc_net_stats_rpi.csv"
     echo "    $NET_DATA_DIR/poc_net_stats_jetson.csv"
     echo ""
+    echo "  Per-topic bandwidth:"
+    echo "    $NET_DATA_DIR/poc_topic_bw.csv"
+    echo ""
     echo "  Launch logs (check here if a node failed to start):"
     echo "    $LOG_DIR/launch_rpi.log"
     echo "    $LOG_DIR/launch_jetson.log"
     echo "    $LOG_DIR/launch_base.log"
+    echo "    $LOG_DIR/topic_bw.log"
     echo ""
     echo "  Next — analyze results:"
     echo ""
@@ -418,6 +459,7 @@ print_summary() {
     echo "        --stm32-sensors  ${STM32_OUT_STEM}_sensors_<YYYYMMDD_HHMMSS>.csv \\"
     echo "        --net-rpi        $NET_DATA_DIR/poc_net_stats_rpi.csv \\"
     echo "        --net-jetson     $NET_DATA_DIR/poc_net_stats_jetson.csv \\"
+    echo "        --topic-bw       $NET_DATA_DIR/poc_topic_bw.csv \\"
     echo "        --out-dir        ws_base/tools/tracing/results/"
     echo ""
 }
@@ -443,6 +485,7 @@ main() {
     fi
 
     start_latency_collectors
+    start_topic_bw_collector
     start_net_collectors
     wait_for_run
     stop_and_collect

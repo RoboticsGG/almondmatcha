@@ -182,6 +182,27 @@ def load_net_csv(path: Path, label: str):
     return rows
 
 
+def load_topic_bw_csv(path: Path):
+    """Load collect_topic_bw.py CSV.
+    Returns: {topic: [(t_epoch_s, bps), ...]}
+    """
+    from collections import defaultdict
+    result: dict = defaultdict(list)
+    with open(path, newline='') as f:
+        clean = (line.replace('\x00', '') for line in f)
+        for row in csv.DictReader(clean):
+            if not row.get('timestamp'):
+                continue
+            try:
+                result[row['topic']].append((
+                    _iso_to_epoch(row['timestamp']),
+                    float(row['bps']),
+                ))
+            except (ValueError, KeyError):
+                pass
+    return dict(result) if result else None
+
+
 # ---------------------------------------------------------------------------
 # Statistics helpers
 # ---------------------------------------------------------------------------
@@ -319,6 +340,7 @@ def plot_unified_timeline(
     stm32_rows=None,        # [{'t_epoch', 'node', 'heap_used_kb', 'heap_max_kb'}, ...]
     net_rpi=None,           # [{'t_epoch', 'rx_kbps', 'tx_kbps'}, ...]
     net_jetson=None,
+    topic_bw=None,          # {topic: [(t_epoch_s, bps), ...]}
     out_path=None,
 ):
     """Synchronise all collectors onto a common elapsed-seconds x-axis and
@@ -350,6 +372,8 @@ def plot_unified_timeline(
         panels.append('stm32_heap')
     if net_rpi or net_jetson:
         panels.append('net_bw')
+    if topic_bw:
+        panels.append('topic_bw')
 
     if not panels:
         print('[WARN] --merge: no data provided — nothing to plot')
@@ -364,6 +388,9 @@ def plot_unified_timeline(
     for src in (stm32_rows, net_rpi, net_jetson):
         if src:
             all_t.extend(r['t_epoch'] for r in src)
+    if topic_bw:
+        for pts in topic_bw.values():
+            all_t.extend(t for t, _ in pts)
     t_min = min(all_t)
 
     n = len(panels)
@@ -451,6 +478,21 @@ def plot_unified_timeline(
         ax.legend(fontsize=7, loc='upper right')
         ax.grid(True, alpha=0.25)
 
+    # ── Per-topic bandwidth ───────────────────────────────────────────────────
+    if 'topic_bw' in ax_map:
+        ax = ax_map['topic_bw']
+        for i, (topic, pts) in enumerate(sorted(topic_bw.items())):
+            if not pts:
+                continue
+            xs = [t - t_min for t, _ in pts]
+            ys = [bps / 1024 for _, bps in pts]   # bytes/s → KB/s
+            ax.plot(xs, ys, linewidth=1.0, color=cmap[i % len(cmap)],
+                    label=topic.lstrip('/'))
+        ax.set_ylabel('Bandwidth (KB/s)')
+        ax.set_title('Per-topic bandwidth (CDR wire size, base PC subscriber)')
+        ax.legend(fontsize=6, loc='upper right', ncol=2)
+        ax.grid(True, alpha=0.25)
+
     axes[-1].set_xlabel('Elapsed time (s) — NTP-aligned across all collectors')
     fig.suptitle('Unified Timeline — Single-Domain POC', fontsize=12)
     plt.tight_layout()
@@ -509,6 +551,8 @@ def main():
                     help='Merge: collect_net_stats.py CSV from RPi')
     ap.add_argument('--net-jetson',     type=Path,
                     help='Merge: collect_net_stats.py CSV from Jetson')
+    ap.add_argument('--topic-bw',       type=Path,
+                    help='Merge: collect_topic_bw.py CSV from base PC')
     args = ap.parse_args()
 
     if not args.csv and not args.baseline and not args.poc and not args.merge:
@@ -565,6 +609,7 @@ def main():
         stm32         = (stm32_chassis + stm32_sensors) or None
         net_rpi    = load_net_csv(args.net_rpi,    'RPi')    if args.net_rpi    else None
         net_jetson = load_net_csv(args.net_jetson, 'Jetson') if args.net_jetson else None
+        topic_bw   = load_topic_bw_csv(args.topic_bw)        if args.topic_bw   else None
 
         plot_unified_timeline(
             latency_rpi    = lat_rpi,
@@ -572,6 +617,7 @@ def main():
             stm32_rows     = stm32,
             net_rpi        = net_rpi,
             net_jetson     = net_jetson,
+            topic_bw       = topic_bw,
             out_path       = out_dir / 'unified_timeline.png',
         )
 
