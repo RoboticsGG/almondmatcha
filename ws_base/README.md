@@ -5,10 +5,17 @@ ROS2 workspace for ground station telemetry monitoring and rover command/control
 ## Quick Start
 
 ```bash
+# 1. Build common_ifaces first (provides msgs_ifaces)
+cd ~/almondmatcha/common_ifaces
+colcon build --symlink-install --packages-select msgs_ifaces
+
+# 2. Build ws_base (sources common_ifaces automatically)
 cd ~/almondmatcha/ws_base
-colcon build
+bash build_clean.sh
 source install/setup.bash
-./launch_base_screen.sh
+
+# 3. Launch (POC single-domain)
+bash launch_base_single_domain.sh
 ```
 
 ## Overview
@@ -16,7 +23,7 @@ source install/setup.bash
 - **Purpose:** Monitor rover telemetry and send commands from base station
 - **Platform:** Linux PC (Ubuntu 20.04/22.04)
 - **Network:** Connect to rover Ethernet switch (192.168.1.10 recommended)
-- **Domain:** ROS2 **Dual-domain**: 5 (mission_command_node — commands/actions) + 4 (mission_monitoring_node_pc — telemetry display)
+- **Domain:** ROS2 Domain **5** (single-domain POC — all participants on D5)
 - **Communication:** Gigabit Ethernet via switch - all systems on same LAN
 
 ## Nodes
@@ -28,15 +35,39 @@ source install/setup.bash
 
 ## Building
 
+`ws_base/src/msgs_ifaces` is a symlink to `common_ifaces/msgs_ifaces`. To avoid duplicate
+`.so` files in `LD_LIBRARY_PATH` (which causes a typesupport import failure at runtime),
+`msgs_ifaces` is **not** built inside ws_base. Instead, `build_clean.sh` sources it from
+`common_ifaces/install/` and builds only `action_ifaces`, `services_ifaces`, and
+`mission_control` locally.
+
+**Always build in this order:**
+
 ```bash
+# Step 1 — build msgs_ifaces in common_ifaces (single source of truth)
+cd ~/almondmatcha/common_ifaces
+colcon build --symlink-install --packages-select msgs_ifaces
+
+# Step 2 — build ws_base (sources common_ifaces, builds action_ifaces + services_ifaces + mission_control)
 cd ~/almondmatcha/ws_base
-colcon build
+bash build_clean.sh          # clean build
+# or: bash build_inc.sh     # incremental (after common_ifaces is already built)
 source install/setup.bash
 ```
 
+**If you change any .msg file in common_ifaces/msgs_ifaces/msg/:**
+```bash
+# Must do a clean rebuild of common_ifaces first to avoid stale .so artifacts
+cd ~/almondmatcha/common_ifaces && rm -rf build/ install/ log/
+colcon build --symlink-install --packages-select msgs_ifaces
+cd ~/almondmatcha/ws_base && bash build_clean.sh
+```
+
 **Build Output:**
-- Compiled nodes in `install/mission_control/lib/`
-- Launch files in `install/mission_control/share/`
+- `install/action_ifaces/` — DesData action typesupport
+- `install/services_ifaces/` — SpdLimit service typesupport
+- `install/mission_control/lib/` — compiled nodes
+- `install/mission_control/share/` — launch files and params
 
 ## Running
 
@@ -180,13 +211,7 @@ All systems on Domain 5 via Ethernet switch - direct DDS discovery:
 | `tpc_rover_nav_lane` | Float32MultiArray | Lane parameters (Jetson, D5) |
 | `tpc_rover_ctrl_cmd` | Float32MultiArray | Kinematic control commands (Jetson, D5) |
 
-**Note:** Camera topics (`tpc_rover_d415_rgb`, `tpc_rover_d415_depth`) run on Domain 6 (Jetson localhost only) and are NOT visible from the base station.
-
-**Domain 4 telemetry relay** (lower bandwidth, aggregated):
-
-| Topic | Type | Content |
-|-------|------|------|
-| `tpc_telemetry_relay` | TelemetryRelay | All rover state at 5 Hz (mission_monitoring_node_pc subscribes here) |
+**Note:** In the single-domain POC, camera topics (`tpc_rover_d415_rgb`, `tpc_rover_d415_depth`) are on D5 and visible from the base PC (stress-test traffic). In the baseline (main branch) they run on Domain 6 (Jetson localhost only).
 
 ### Commands to Rover (Domain 5)
 
@@ -272,18 +297,17 @@ ros2 daemon start
 
 ### Build Failures
 
-**Symptom:** `colcon build` errors
+**Symptom:** `colcon build` errors or `"Could not import rosidl_typesupport_c for package msgs_ifaces"` at runtime
 
 **Solutions:**
 ```bash
-# Clean rebuild
-rm -rf build install log
-colcon build
-source install/setup.bash
+# Always rebuild common_ifaces first (clean to avoid stale rover_status artifacts)
+cd ~/almondmatcha/common_ifaces && rm -rf build/ install/ log/
+colcon build --symlink-install --packages-select msgs_ifaces
 
-# Check ROS2 environment
-source /opt/ros/humble/setup.bash
-colcon build
+# Then clean rebuild ws_base
+cd ~/almondmatcha/ws_base && bash build_clean.sh
+source install/setup.bash
 ```
 
 ### Node Won't Start
@@ -326,29 +350,27 @@ ros2 node list
 
 ```
 ws_base/
-├── README.md                       # This file
-├── launch_base_screen.sh           # GNU Screen launcher
-├── launch_base_tmux.sh             # Tmux launcher
-- [DOMAIN_CONFIG_SUMMARY.md](DOMAIN_CONFIG_SUMMARY.md) - Domain architecture notes
-├── docs/                           # Detailed documentation
-│   ├── QUICK_START.md
-│   ├── ARCHITECTURE.md
-│   ├── LAUNCH.md
-│   ├── TOPICS.md
-│   └── SETUP.md
+├── README.md
+├── build_clean.sh              # Clean build (sources common_ifaces, skips msgs_ifaces rebuild)
+├── build_inc.sh                # Incremental build
+├── launch_base_single_domain.sh  # POC single-domain launch
+├── launch_base_tmux.sh
+├── launch_poc_experiment.sh    # Full automated POC run (collectors + nodes + CSV pull)
+├── fastdds_base.xml            # FastDDS profile pinned to 192.168.1.4
+├── tools/
+│   ├── monitoring/             # collect_topic_bw.py, collect_net_stats.py
+│   ├── stm32_serial/           # collect_stm32_memory.py
+│   ├── tracing/                # collect_latency.py, start_trace.sh, stop_and_collect_trace.sh
+│   └── poc_run/                # merge_run_csv.py; run_NNN/ output dirs (git-ignored)
 └── src/
-    ├── common_ifaces/              # Symlinks to shared interfaces
-    │   ├── action_ifaces/
-    │   ├── msgs_ifaces/
-    │   └── services_ifaces/
-    └── mission_control/            # Main package
-        ├── config/
-        │   └── params.yaml         # Configuration parameters
-        ├── launch/
-        │   └── mission_control.launch.py
+    ├── action_ifaces/          # DesData action (built here)
+    ├── msgs_ifaces  -> ../../common_ifaces/msgs_ifaces  # symlink — NOT built here
+    ├── services_ifaces/        # SpdLimit service (built here)
+    └── mission_control/
+        ├── config/params.yaml  # rover_spd, des_lat, des_long
         └── src/
-            ├── mission_command_node.cpp      # D5 command dispatcher
-            └── mission_monitoring_node_pc.cpp # D4 telemetry display
+            ├── mission_command_node.cpp       # D5: sends navigation goals + speed limit
+            └── mission_monitoring_node_pc.cpp # subscribes /tpc_telemetry_relay
 ```
 
 ## System Integration

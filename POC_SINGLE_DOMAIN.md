@@ -102,6 +102,128 @@ accumulates byte counts over 1-second intervals.
 
 ---
 
+## Building Each Workspace
+
+### Interface package architecture
+
+All three Linux workspaces share the same message definitions via symlinks into `common_ifaces/`:
+
+```
+common_ifaces/
+  msgs_ifaces/      ← source of truth for all custom message types
+  action_ifaces/    ← DesData action (used by ws_base and ws_rpi)
+  services_ifaces/  ← SpdLimit service (used by ws_base and ws_rpi)
+
+ws_base/src/
+  msgs_ifaces  →  ../../common_ifaces/msgs_ifaces   (symlink)
+  action_ifaces/          (real copy — built in ws_base)
+  services_ifaces/        (real copy — built in ws_base)
+
+ws_rpi/src/
+  msgs_ifaces      →  ../../common_ifaces/msgs_ifaces   (symlink)
+  action_ifaces    →  ../../common_ifaces/action_ifaces  (symlink)
+  services_ifaces  →  ../../common_ifaces/services_ifaces (symlink)
+
+ws_jetson/src/
+  (no interface packages — uses only std_msgs and sensor_msgs)
+```
+
+**Critical rule:** `msgs_ifaces` must be built in **exactly one install path per machine**.
+Building it in two workspaces simultaneously creates duplicate `.so` files in
+`LD_LIBRARY_PATH`, which causes `Could not import rosidl_typesupport_c for package
+msgs_ifaces` at runtime. The build scripts below enforce this.
+
+**When you change any `.msg` file** in `common_ifaces/msgs_ifaces/msg/`, rebuild
+`common_ifaces` cleanly first on every machine before rebuilding any workspace:
+```bash
+cd ~/almondmatcha/common_ifaces && rm -rf build/ install/ log/
+colcon build --symlink-install --packages-select msgs_ifaces
+```
+Also run `sync_stm32_interfaces.sh` to push the change to the STM32 firmware.
+
+---
+
+### ws_base (base PC — x86_64)
+
+`msgs_ifaces` is sourced from `common_ifaces/install/` and **not rebuilt** inside ws_base
+(a `COLCON_IGNORE` file in `ws_base/src/msgs_ifaces/` prevents colcon from picking it up).
+
+```bash
+# 1 — build common_ifaces (msgs_ifaces only; run once or after any .msg change)
+cd ~/almondmatcha/common_ifaces
+colcon build --symlink-install --packages-select msgs_ifaces
+
+# 2 — clean build ws_base (sources common_ifaces automatically)
+cd ~/almondmatcha/ws_base
+bash build_clean.sh
+source install/setup.bash
+```
+
+Packages built inside ws_base: `action_ifaces`, `services_ifaces`, `mission_control`.
+
+---
+
+### ws_rpi (Raspberry Pi — arm64)
+
+SSH into the RPi first. All three interface packages are symlinks to `common_ifaces/` and
+are built together inside `ws_rpi/install/` — there is no separate `common_ifaces` install
+on the RPi, so no duplicate risk.
+
+```bash
+ssh curry@192.168.1.1
+cd ~/almondmatcha/ws_rpi
+
+# Clean build (required after any .msg change or fresh clone)
+bash build_clean.sh
+source install/setup.bash
+
+# Incremental build (after changing only application code)
+bash build_inc.sh
+source install/setup.bash
+```
+
+Packages built: `msgs_ifaces`, `action_ifaces`, `services_ifaces`, `chassis_control`,
+`chassis_sensors`, `gnss_navigation`, `rover_monitoring`, `rover_bringup`.
+
+---
+
+### ws_jetson (Jetson — arm64)
+
+SSH into the Jetson first. No custom interface packages — only Python nodes using
+`std_msgs` and `sensor_msgs`.
+
+```bash
+ssh yupi@192.168.1.5
+cd ~/almondmatcha/ws_jetson
+
+# Clean build
+bash build_clean.sh
+source install/setup.bash
+
+# Incremental build
+bash build_inc.sh
+source install/setup.bash
+```
+
+Packages built: `vision_navigation`, `rover_monitoring`.
+
+---
+
+### Build order summary
+
+| Order | Machine | Command |
+|---|---|---|
+| 1st | Base PC | `cd common_ifaces && colcon build --symlink-install --packages-select msgs_ifaces` |
+| 2nd | Base PC | `cd ws_base && bash build_clean.sh` |
+| 3rd | RPi | `cd ws_rpi && bash build_clean.sh` |
+| 4th | Jetson | `cd ws_jetson && bash build_clean.sh` |
+
+Steps 2–4 are independent of each other and can proceed in parallel once step 1 is done
+on the base PC (the RPi and Jetson build their own `msgs_ifaces` from source and do not
+depend on the base PC's `common_ifaces/install/`).
+
+---
+
 ## Prerequisites
 
 ### 1. Flash STM32 firmware (both boards)
@@ -141,23 +263,23 @@ ssh curry@192.168.1.1 'bash ~/almondmatcha/ws_base/tools/tracing/setup_tracing.s
 ssh yupi@192.168.1.5  'bash ~/almondmatcha/ws_base/tools/tracing/setup_tracing.sh'
 ```
 
-All checks must say `[OK]`. If `ws_rpi` or `ws_jetson` is not built yet, build it now:
+All checks must say `[OK]`. If `ws_rpi` or `ws_jetson` is not built yet, build it now (see the **Building Each Workspace** section above for full details):
 
 ```bash
-# RPi (SSH in) — build.sh also compiles msgs_ifaces/action_ifaces/services_ifaces
+# RPi (SSH in)
 cd ~/almondmatcha/ws_rpi
-./build.sh
+bash build_clean.sh
 source install/setup.bash
 
 # Jetson (SSH in)
 cd ~/almondmatcha/ws_jetson
-./build_clean.sh
+bash build_clean.sh
 source install/setup.bash
 ```
 
-> **Note:** The interface packages (`msgs_ifaces`, `action_ifaces`, `services_ifaces`) are
-> symlinked into `ws_rpi/src/` from `common_ifaces/`, so `build.sh` builds them automatically.
-> There is **no need to build `common_ifaces/` separately.**
+> **Note:** On the RPi, `msgs_ifaces` is built directly inside `ws_rpi/install/` (no
+> separate `common_ifaces` step needed on the RPi). On the base PC, see the build order
+> in the **Building Each Workspace** section — `common_ifaces` must be built first.
 
 ### 3. Python dependencies on base PC
 
