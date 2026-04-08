@@ -23,6 +23,7 @@
 
 #include "mbed.h"
 #include "mbed_stats.h"
+#include "stm32f7xx_hal.h"  // direct USART3 register access
 
 // 1000 ms gives 1 sample per 2 SPDP cycles (500 ms) — sufficient resolution
 // for heap trending without contributing to serial/stdout mutex pressure.
@@ -93,20 +94,27 @@ void _memory_reporter_task()
                (unsigned long)stack_free);
 
         if (len > 0 && len < (int)sizeof(buf)) {
-            // Lock scheduler so the entire line is written without
-            // preemption.  At 115200 baud ~200 chars ≈ 17 ms — well
-            // within sensor-task slack (83 ms per 100 ms cycle).
-            // ISRs (Ethernet, SysTick) still fire normally.
-            int32_t lock = osKernelLock();
-            fwrite(buf, 1, len, stdout);
-            fflush(stdout);
-            osKernelRestoreLock(lock);
+            // Write directly to USART3 data register, bypassing all of:
+            //   fwrite -> _write -> serial_putc -> HAL_UART_Transmit
+            // Each of those layers can be preempted or have internal
+            // timeouts.  Direct register access is fully deterministic.
+            //
+            // USART3 = ST-Link VCP on NUCLEO_F767ZI (PD_8 TX, PD_9 RX).
+            // Disable IRQs for ~17 ms to prevent any ISR from delaying
+            // the tight polling loop.  Ethernet RX/SPDP packets queue in
+            // hardware and are serviced when IRQs re-enable.
+            __disable_irq();
+            for (int i = 0; i < len; i++) {
+                while (!(USART3->ISR & USART_ISR_TXE)) { /* wait */ }
+                USART3->TDR = (uint8_t)buf[i];
+            }
+            // Wait for last byte to fully shift out before re-enabling IRQs
+            while (!(USART3->ISR & USART_ISR_TC)) { /* wait */ }
+            __enable_irq();
         }
 
-        // Drain delay: at 115200 baud, 256 chars ≈ 22ms. Give USB CDC time
-        // to flush before sleeping — prevents back-pressure on next write.
-        ThisThread::sleep_for(chrono::milliseconds(30));
-        ThisThread::sleep_for(chrono::milliseconds(MEM_REPORT_INTERVAL_MS - 30));
+        // Direct register write already waits for full transmission.
+        ThisThread::sleep_for(chrono::milliseconds(MEM_REPORT_INTERVAL_MS));
     }
 }
 

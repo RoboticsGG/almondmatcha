@@ -23,6 +23,7 @@
 
 #include "mbed.h"
 #include "mbed_stats.h"
+#include "stm32f7xx_hal.h"  // direct USART3 register access
 
 // 1000 ms gives 1 sample per 2 SPDP cycles (500 ms) — sufficient resolution
 // for heap trending without contributing to serial/stdout mutex pressure.
@@ -91,16 +92,16 @@ void _memory_reporter_task()
                (unsigned long)stack_free);
 
         if (len > 0 && len < (int)sizeof(buf)) {
-            int32_t lock = osKernelLock();
-            fwrite(buf, 1, len, stdout);
-            fflush(stdout);
-            osKernelRestoreLock(lock);
+            __disable_irq();
+            for (int i = 0; i < len; i++) {
+                while (!(USART3->ISR & USART_ISR_TXE)) { /* wait */ }
+                USART3->TDR = (uint8_t)buf[i];
+            }
+            while (!(USART3->ISR & USART_ISR_TC)) { /* wait */ }
+            __enable_irq();
         }
 
-        // Drain delay: at 115200 baud, 256 chars ≈ 22ms. Give USB CDC time
-        // to flush before sleeping — prevents back-pressure on next write.
-        ThisThread::sleep_for(chrono::milliseconds(30));
-        ThisThread::sleep_for(chrono::milliseconds(MEM_REPORT_INTERVAL_MS - 30));
+        ThisThread::sleep_for(chrono::milliseconds(MEM_REPORT_INTERVAL_MS));
     }
 }
 
