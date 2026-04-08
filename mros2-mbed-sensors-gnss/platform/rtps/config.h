@@ -62,10 +62,10 @@ const uint8_t NUM_STATELESS_READERS = 4;
 // 2 (SEDP) + app publishers.  This board has 1 app publisher, so minimum = 3.
 //
 // OVERALL_HEAP_SIZE (thread stacks only):
-//   1×4096 +  1×4096  (thread pool writer+reader)
+//   1×4096 +  1×8192  (thread pool writer+reader)
 //  +20×4096            (SPDP writer per participant)
 //  + 3×4096            (heartbeat per stateful writer)
-//  = 4096+4096+81920+12288 = 100,400 B  ← fits in Nucleo-F767ZI heap
+//  = 4096+8192+81920+12288 = 106,496 B  ← fits in Nucleo-F767ZI heap
 const uint8_t NUM_STATEFUL_READERS = 2;               // SEDP: 2 internal; 0 app subscribers = 2 minimum
 const uint8_t NUM_STATEFUL_WRITERS = 3;               // SEDP: 2 internal + 1 app publisher (tpc_chassis_sensors)
 const uint8_t MAX_NUM_PARTICIPANTS = 20;              // D5 single-domain: 15 actual + 5 margin
@@ -92,7 +92,8 @@ const uint8_t MAX_TOPICNAME_LENGTH = 40;
 
 const int HEARTBEAT_STACKSIZE = 4096;              // byte - Halved from 8192, sufficient for mbed
 const int THREAD_POOL_WRITER_STACKSIZE = 4096;     // byte - Halved from 8192, sufficient for mbed
-const int THREAD_POOL_READER_STACKSIZE = 4096;     // byte - Halved from 8192, sufficient for mbed
+const int THREAD_POOL_READER_STACKSIZE = 8192;     // byte - Restored to 8192: 4096 causes HardFault
+                                                   // during SEDP burst (3+ Linux nodes joining)
 const uint16_t SPDP_WRITER_STACKSIZE = 4096;       // byte - Halved from 8192, critical memory savings
 
 const uint16_t SF_WRITER_HB_PERIOD_MS = 2000; // 2s heartbeat for writer detection
