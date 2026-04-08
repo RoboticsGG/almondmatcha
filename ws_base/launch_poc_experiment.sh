@@ -279,65 +279,6 @@ reset_stm32_boards() {
 }
 
 # ============================================================================
-# Step 2b — Verify STM32 boards booted and are freshly running
-# ============================================================================
-
-wait_stm32_boot() {
-    log "  Verifying STM32 boards are alive via serial..."
-
-    local timeout=30
-    local start_time
-    start_time=$(date +%s)
-
-    # Snapshot current line counts so we can detect NEW serial data after reset
-    local chassis_before sensors_before
-    chassis_before=$(grep -c '\[chassis\]' "$LOG_DIR/stm32_collector.log" 2>/dev/null) || chassis_before=0
-    sensors_before=$(grep -c '\[sensors\]' "$LOG_DIR/stm32_collector.log" 2>/dev/null) || sensors_before=0
-
-    local chassis_ok=false
-    local sensors_ok=false
-
-    while (( $(date +%s) - start_time < timeout )); do
-        local chassis_now sensors_now
-        chassis_now=$(grep -c '\[chassis\]' "$LOG_DIR/stm32_collector.log" 2>/dev/null) || chassis_now=0
-        sensors_now=$(grep -c '\[sensors\]' "$LOG_DIR/stm32_collector.log" 2>/dev/null) || sensors_now=0
-
-        if (( chassis_now > chassis_before )) && ! $chassis_ok; then
-            chassis_ok=true
-            local chassis_ts
-            chassis_ts=$(grep '\[chassis\]' "$LOG_DIR/stm32_collector.log" | tail -1 | grep -oP 'ts=\K[0-9]+' || echo "?")
-            ok "  Chassis board: alive (ts=${chassis_ts}ms)"
-            if [[ "$chassis_ts" != "?" ]] && (( chassis_ts > 60000 )); then
-                warn "  Chassis ts=${chassis_ts}ms > 60s — board may NOT be freshly reset!"
-            fi
-        fi
-
-        if (( sensors_now > sensors_before )) && ! $sensors_ok; then
-            sensors_ok=true
-            local sensors_ts
-            sensors_ts=$(grep '\[sensors\]' "$LOG_DIR/stm32_collector.log" | tail -1 | grep -oP 'ts=\K[0-9]+' || echo "?")
-            ok "  Sensors board: alive (ts=${sensors_ts}ms)"
-            if [[ "$sensors_ts" != "?" ]] && (( sensors_ts > 60000 )); then
-                warn "  Sensors ts=${sensors_ts}ms > 60s — board may NOT be freshly reset!"
-            fi
-        fi
-
-        if $chassis_ok && $sensors_ok; then
-            ok "  Both STM32 boards confirmed alive — proceeding to launch"
-            sleep 1
-            return 0
-        fi
-
-        sleep 0.5
-    done
-
-    # Timeout — report what's missing
-    $chassis_ok || warn "  Chassis board: NO serial data after ${timeout}s!"
-    $sensors_ok || warn "  Sensors board: NO serial data after ${timeout}s!"
-    die "  Could not confirm both STM32 boards — aborting experiment"
-}
-
-# ============================================================================
 # Step 3 — Launch ROS2 nodes on RPi, Jetson, then base PC
 # ============================================================================
 
@@ -772,7 +713,6 @@ main() {
     clean_stale_participants
     start_stm32_collector
     reset_stm32_boards
-    wait_stm32_boot
 
     if [[ "$SKIP_LAUNCH" == false ]]; then
         launch_ros2_nodes
