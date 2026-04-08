@@ -58,15 +58,6 @@ void _memory_reporter_task()
     Timer uptime;
     uptime.start();
 
-    // Bypass C stdio line-buffering: with line-buffered stdout the \r\n
-    // at the start of the JSON line triggers an early flush, splitting
-    // the write into multiple _write() syscalls.  Between those calls
-    // the RTOS round-robins to another Normal-priority thread, and
-    // stdout's internal state gets corrupted → dropped bytes mid-line.
-    // Unbuffered mode makes fwrite() go straight to the mutex-protected
-    // BufferedSerial::write() in a single call.
-    setvbuf(stdout, NULL, _IONBF, 0);
-
     while (true) {
         mbed_stats_heap_get(&heap_stats);
         mbed_stats_stack_get(&self_stack);  // reporter thread's own stack
@@ -103,6 +94,7 @@ void _memory_reporter_task()
 
         if (len > 0 && len < (int)sizeof(buf)) {
             fwrite(buf, 1, len, stdout);
+            fflush(stdout);
         }
 
         // Drain delay: at 115200 baud, 256 chars ≈ 22ms. Give USB CDC time
