@@ -289,16 +289,16 @@ wait_stm32_boot() {
 
     # Snapshot current line counts so we can detect NEW serial data after reset
     local chassis_before sensors_before
-    chassis_before=$(grep -c '\[chassis\]' "$LOG_DIR/stm32_collector.log" 2>/dev/null || echo 0)
-    sensors_before=$(grep -c '\[sensors\]' "$LOG_DIR/stm32_collector.log" 2>/dev/null || echo 0)
+    chassis_before=$(grep -c '\[chassis\]' "$LOG_DIR/stm32_collector.log" 2>/dev/null) || chassis_before=0
+    sensors_before=$(grep -c '\[sensors\]' "$LOG_DIR/stm32_collector.log" 2>/dev/null) || sensors_before=0
 
     local chassis_ok=false
     local sensors_ok=false
 
     while (( $(date +%s) - start_time < timeout )); do
         local chassis_now sensors_now
-        chassis_now=$(grep -c '\[chassis\]' "$LOG_DIR/stm32_collector.log" 2>/dev/null || echo 0)
-        sensors_now=$(grep -c '\[sensors\]' "$LOG_DIR/stm32_collector.log" 2>/dev/null || echo 0)
+        chassis_now=$(grep -c '\[chassis\]' "$LOG_DIR/stm32_collector.log" 2>/dev/null) || chassis_now=0
+        sensors_now=$(grep -c '\[sensors\]' "$LOG_DIR/stm32_collector.log" 2>/dev/null) || sensors_now=0
 
         if (( chassis_now > chassis_before )) && ! $chassis_ok; then
             chassis_ok=true
