@@ -200,8 +200,9 @@ int main()
   power_monitor_init();
   MROS2_INFO("Power monitor I2C initialized (400 kHz)");
   
-  gnss_reader_init();
-  MROS2_INFO("GNSS serial interface configured on USART6 (115200 baud)");
+  // GNSS temporarily disabled for serial debugging
+  // gnss_reader_init();
+  // MROS2_INFO("GNSS serial interface configured on USART6 (115200 baud)");
 
   // ---- Launch Independent Sensor Tasks ----
   MROS2_INFO("Launching independent sensor tasks...");
@@ -214,9 +215,10 @@ int main()
   power_thread.start(power_monitor_task);
   MROS2_INFO("Power monitor task launched (5 Hz)");
   
-  Thread gnss_thread(osPriorityNormal, 4096);     // 4KB stack
-  gnss_thread.start(gnss_reader_task);
-  MROS2_INFO("GNSS reader task launched (10 Hz)");
+  // GNSS temporarily disabled for serial debugging
+  // Thread gnss_thread(osPriorityNormal, 4096);     // 4KB stack
+  // gnss_thread.start(gnss_reader_task);
+  // MROS2_INFO("GNSS reader task launched (10 Hz)");
 
   osDelay(1000);  // Wait for initialization to complete
   MROS2_INFO("ready to pub/sub message\r\n---");
