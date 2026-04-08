@@ -23,7 +23,6 @@
 
 #include "mbed.h"
 #include "mbed_stats.h"
-#include "stm32f7xx_hal.h"  // direct USART3 register access
 
 // 1000 ms gives 1 sample per 2 SPDP cycles (500 ms) — sufficient resolution
 // for heap trending without contributing to serial/stdout mutex pressure.
@@ -94,23 +93,8 @@ void _memory_reporter_task()
                (unsigned long)stack_free);
 
         if (len > 0 && len < (int)sizeof(buf)) {
-            // Write directly to USART3 data register, bypassing all of:
-            //   fwrite -> _write -> serial_putc -> HAL_UART_Transmit
-            // Each of those layers can be preempted or have internal
-            // timeouts.  Direct register access is fully deterministic.
-            //
-            // USART3 = ST-Link VCP on NUCLEO_F767ZI (PD_8 TX, PD_9 RX).
-            // Disable IRQs for ~17 ms to prevent any ISR from delaying
-            // the tight polling loop.  Ethernet RX/SPDP packets queue in
-            // hardware and are serviced when IRQs re-enable.
-            __disable_irq();
-            for (int i = 0; i < len; i++) {
-                while (!(USART3->ISR & USART_ISR_TXE)) { /* wait */ }
-                USART3->TDR = (uint8_t)buf[i];
-            }
-            // Wait for last byte to fully shift out before re-enabling IRQs
-            while (!(USART3->ISR & USART_ISR_TC)) { /* wait */ }
-            __enable_irq();
+            fwrite(buf, 1, len, stdout);
+            fflush(stdout);
         }
 
         // Direct register write already waits for full transmission.

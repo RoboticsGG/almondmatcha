@@ -32,9 +32,9 @@
 // SAMPLING RATE CONSTANTS
 // ============================================================================
 
-const uint32_t ENCODER_SAMPLE_PERIOD_MS = 200;    // Encoder task @ 5 Hz
-const uint32_t POWER_SAMPLE_PERIOD_MS = 1000;     // Power monitor task @ 1 Hz
-const uint32_t GNSS_SAMPLE_PERIOD_MS = 100;       // GNSS reader task @ 10 Hz
+const uint32_t ENCODER_SAMPLE_PERIOD_MS = 100;    // Encoder task @ 10 Hz
+const uint32_t POWER_SAMPLE_PERIOD_MS = 200;      // Power monitor task @ 5 Hz
+const uint32_t GNSS_SAMPLE_PERIOD_MS = 500;       // GNSS reader task @ 2 Hz
 const uint32_t MAIN_LOOP_PERIOD_MS = 250;         // Main publishing loop @ 4 Hz
 const uint32_t GNSS_PRINT_INTERVAL = 4;           // Print GNSS every 4 main loops (1 second)
 
@@ -200,9 +200,8 @@ int main()
   power_monitor_init();
   MROS2_INFO("Power monitor I2C initialized (400 kHz)");
   
-  // GNSS temporarily disabled for serial debugging
-  // gnss_reader_init();
-  // MROS2_INFO("GNSS serial interface configured on USART6 (115200 baud)");
+  gnss_reader_init();
+  MROS2_INFO("GNSS serial interface configured on USART6 (115200 baud)");
 
   // ---- Launch Independent Sensor Tasks ----
   MROS2_INFO("Launching independent sensor tasks...");
@@ -215,10 +214,9 @@ int main()
   power_thread.start(power_monitor_task);
   MROS2_INFO("Power monitor task launched (5 Hz)");
   
-  // GNSS temporarily disabled for serial debugging
-  // Thread gnss_thread(osPriorityNormal, 4096);     // 4KB stack
-  // gnss_thread.start(gnss_reader_task);
-  // MROS2_INFO("GNSS reader task launched (10 Hz)");
+  Thread gnss_thread(osPriorityNormal, 4096);     // 4KB stack
+  gnss_thread.start(gnss_reader_task);
+  MROS2_INFO("GNSS reader task launched (2 Hz)");
 
   osDelay(1000);  // Wait for initialization to complete
   MROS2_INFO("ready to pub/sub message\r\n---");
