@@ -50,7 +50,9 @@ _next_run_dir() {
     local last
     last=$(ls -d "${POC_RUN_BASE}"/run_* 2>/dev/null \
            | grep -oP 'run_\K[0-9]+' | sort -n | tail -1)
-    printf '%s/run_%03d' "$POC_RUN_BASE" "$(( ${last:-0} + 1 ))"
+    # Strip leading zeros to prevent bash interpreting as octal (008 is invalid octal)
+    last=$(( 10#${last:-0} ))
+    printf '%s/run_%03d' "$POC_RUN_BASE" "$(( last + 1 ))"
 }
 
 RUN_DIR="$(_next_run_dir)"
