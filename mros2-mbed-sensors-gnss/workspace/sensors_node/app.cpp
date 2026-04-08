@@ -185,10 +185,11 @@ int main()
 
   // ===== DISCOVERY NOTE =====
   // mros2::spin() is NOT the main loop here — the publish while(true) below
-  // serves as the spin equivalent.  We start processing incoming SPDP from
-  // FastDDS as soon as the tasks are launched (no blocking osDelay before
-  // the first ThisThread::sleep_for).  A 3 s wait inside the publish loop
-  // gives SPDP+SEDP time to exchange before the first message is published.
+  // serves as the spin equivalent.  embeddedRTPS only supports multicast
+  // discovery on 239.255.0.1 (port 8650 for domain 5).  The RTPS stack starts
+  // processing incoming multicast SPDP as soon as the tasks are launched.
+  // A 3 s wait inside the publish loop gives SPDP+SEDP time to exchange
+  // before the first message is published.
   // ==========================
 
   // ---- Initialize All Sensor Modules ----
@@ -230,10 +231,12 @@ int main()
   // and publishing to ROS2 at 4 Hz (250ms interval).
   bool sensors_first_print_done = false;
 
-  // Wait for unicast SPDP exchange before first publish.
-  // mros2 is already processing incoming packets from FastDDS (sent via
-  // initialPeersList in fastdds_*.xml).  3 s covers 6 SPDP cycles @ 500 ms.
-  MROS2_INFO("[sensors] Waiting 3 s for unicast SPDP exchange...");
+  // Wait for multicast SPDP exchange before first publish.
+  // embeddedRTPS only supports multicast discovery (239.255.0.1, port 8650
+  // for domain 5).  FastDDS nodes join the same multicast group via
+  // metatrafficMulticastLocatorList in fastdds_*.xml.
+  // 3 s covers 6 SPDP cycles @ 500 ms.
+  MROS2_INFO("[sensors] Waiting 3 s for multicast SPDP exchange...");
   ThisThread::sleep_for(chrono::milliseconds(3000));
   MROS2_INFO("[sensors] Discovery wait done — starting publish");
 

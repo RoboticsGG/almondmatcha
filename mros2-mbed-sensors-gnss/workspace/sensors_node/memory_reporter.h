@@ -97,7 +97,7 @@ void _memory_reporter_task()
             fflush(stdout);
         }
 
-        // Direct register write already waits for full transmission.
+        // Sleep until next report
         ThisThread::sleep_for(chrono::milliseconds(MEM_REPORT_INTERVAL_MS));
     }
 }

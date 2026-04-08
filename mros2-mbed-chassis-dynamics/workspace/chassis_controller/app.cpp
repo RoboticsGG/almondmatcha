@@ -112,13 +112,12 @@ void imu_reader_task() {
         return;
     }
 
-    // ===== UNICAST DISCOVERY WAIT =====
+    // ===== MULTICAST DISCOVERY WAIT =====
     // mros2::spin() is already running so the RTPS stack processes incoming
-    // SPDP unicast packets from FastDDS (sent via initialPeersList in fastdds_*.xml).
+    // SPDP multicast packets from FastDDS on 239.255.0.1 (port 8650 for domain 5).
+    // embeddedRTPS only supports multicast discovery — no unicast initial peers.
     // 3 s is enough for bidirectional SPDP+SEDP exchange at 500 ms SPDP period.
-    // This replaces the former osDelay(10000) in main() which silenced RTPS for
-    // 10 s and forced reliance on multicast re-discovery.
-    MROS2_INFO("[imu_reader_task] Waiting 3 s for unicast SPDP exchange...");
+    MROS2_INFO("[imu_reader_task] Waiting 3 s for multicast SPDP exchange...");
     ThisThread::sleep_for(chrono::milliseconds(3000));
     MROS2_INFO("[imu_reader_task] Discovery wait done — starting IMU publish");
     // ==================================
@@ -246,10 +245,11 @@ int main()
 
     // ===== DISCOVERY NOTE =====
     // mros2::spin() is called immediately below — the RTPS stack starts
-    // processing unicast SPDP packets from FastDDS as soon as spin runs.
+    // processing multicast SPDP on 239.255.0.1 as soon as spin runs.
+    // embeddedRTPS only supports multicast discovery (no unicast initial peers).
     // imu_reader_task() contains a 3 s internal wait before publishing.
-    // No osDelay() here: blocking here would silence mros2 and force reliance
-    // on multicast re-discovery (root cause of the 373 s chassis_imu gap in run_003).
+    // No osDelay() here: blocking here would silence mros2 and delay
+    // multicast SPDP exchange.
     // ==========================
 
     // Initialize IMU sensor

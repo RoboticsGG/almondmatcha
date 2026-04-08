@@ -12,8 +12,8 @@
     1. UDPv4 transport restricted to 192.168.1.4 (enp0s31f6 only).
     2. initialPeersList includes the SPDP multicast group (239.255.0.1:8650)
        so FastDDS joins and receives STM32 announcements regardless of when
-       the boards booted. All unicast peer IPs are also listed for fast
-       discovery when boards boot at the same time as Linux nodes.
+       the boards booted (embeddedRTPS only supports multicast discovery).
+       Unicast peer IPs are listed for Linux-to-Linux FastDDS discovery.
 -->
 <profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
 

@@ -4,8 +4,10 @@
 
   Purpose:
     1. UDPv4 transport restricted to 192.168.1.5 (rover Ethernet only).
-    2. initialPeersList adds all rover participants as unicast peers so
-       discovery succeeds even if multicast is unreliable on the segment.
+    2. initialPeersList includes the SPDP multicast group (239.255.0.1:8650)
+       so FastDDS joins and receives STM32 announcements (embeddedRTPS only
+       supports multicast discovery). Unicast peer IPs are listed for
+       Linux-to-Linux FastDDS discovery.
 
   Usage:
     export FASTRTPS_DEFAULT_PROFILES_FILE=~/almondmatcha/ws_jetson/fastdds_jetson.xml
