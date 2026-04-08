@@ -3,7 +3,7 @@
   "target_overrides": {
     "*": {
       "platform.stdio-baud-rate": 115200,
-      "platform.stdio-buffered-serial-txbuf-size": 512,
+      "drivers.uart-serial-txbuf-size": 512,
       "rtos.main-thread-stack-size": 8192,
       "lwip.pbuf-pool-size": 20,
       "lwip.socket-max": 8,
