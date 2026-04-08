@@ -17,13 +17,10 @@ ROS_SRC="source /opt/ros/humble/setup.bash && cd ~/almondmatcha/ws_jetson && sou
 
 tmux kill-session -t $SESSION_NAME 2>/dev/null
 
-# Kill stale ros2 run processes and flush the DDS participant cache.
+# Kill any stale ros2 run processes from a previous session.
+# Do NOT restart the ros2 daemon — see ws_rpi/launch_rover_single_domain.sh comment.
 pkill -f "ros2 run" 2>/dev/null || true
-sleep 0.5
-source /opt/ros/humble/setup.bash 2>/dev/null || true
-ros2 daemon stop 2>/dev/null || true
-ros2 daemon start 2>/dev/null || true
-sleep 0.5
+sleep 1
 
 tmux new-session -d -s $SESSION_NAME
 
