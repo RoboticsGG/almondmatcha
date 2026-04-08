@@ -32,8 +32,8 @@
 // SAMPLING RATE CONSTANTS
 // ============================================================================
 
-const uint32_t ENCODER_SAMPLE_PERIOD_MS = 100;    // Encoder task @ 10 Hz
-const uint32_t POWER_SAMPLE_PERIOD_MS = 200;      // Power monitor task @ 5 Hz
+const uint32_t ENCODER_SAMPLE_PERIOD_MS = 200;    // Encoder task @ 5 Hz
+const uint32_t POWER_SAMPLE_PERIOD_MS = 1000;     // Power monitor task @ 1 Hz
 const uint32_t GNSS_SAMPLE_PERIOD_MS = 100;       // GNSS reader task @ 10 Hz
 const uint32_t MAIN_LOOP_PERIOD_MS = 250;         // Main publishing loop @ 4 Hz
 const uint32_t GNSS_PRINT_INTERVAL = 4;           // Print GNSS every 4 main loops (1 second)
