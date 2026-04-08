@@ -18,9 +18,12 @@ ROS_SRC="source /opt/ros/humble/setup.bash && cd ~/almondmatcha/ws_jetson && sou
 tmux kill-session -t $SESSION_NAME 2>/dev/null
 
 # Kill any stale ros2 run processes from a previous session.
+# Also kill stale collector processes which consume STM32 participant table slots.
 # Do NOT restart the ros2 daemon — see ws_rpi/launch_rover_single_domain.sh comment.
 pkill -f "ros2 run" 2>/dev/null || true
-sleep 1
+pkill -f "collect_latency" 2>/dev/null || true
+pkill -f "collect_net_stats" 2>/dev/null || true
+sleep 2
 
 tmux new-session -d -s $SESSION_NAME
 

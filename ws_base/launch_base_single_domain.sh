@@ -30,6 +30,13 @@ main() {
         sleep 0.5
     fi
 
+    # Kill any stale ros2 run / collector processes from a previous session.
+    # These zombie DDS participants consume STM32 participant table slots (MAX=20).
+    # Do NOT restart the ros2 daemon — it must keep FASTRTPS_DEFAULT_PROFILES_FILE.
+    pkill -f "ros2 run" 2>/dev/null || true
+    pkill -f "collect_topic_bw" 2>/dev/null || true
+    sleep 1
+
     tmux new-session -d -s $SESSION_NAME -x 220 -y 50
     tmux set-option -t $SESSION_NAME -g mouse on
     tmux set-option -t $SESSION_NAME -g pane-border-status top

@@ -165,6 +165,52 @@ preflight() {
 }
 
 # ============================================================================
+# Step 0 — Clean stale DDS participants on ALL machines
+# ============================================================================
+# WHY: zombie ros2 nodes / collector processes from a previous run create DDS
+#      participants that occupy the STM32's limited participant table (MAX=20).
+#      If stale participants are present when the boards boot, the STM32 may
+#      refuse to accept new (real) participants, causing topic discovery failure.
+#      The ros2 daemon is intentionally NOT killed — it must keep running with
+#      FASTRTPS_DEFAULT_PROFILES_FILE already set from the user's shell.
+
+clean_stale_participants() {
+    log "Step 0 — Cleaning stale DDS participants on all machines"
+
+    # ── Base PC cleanup ────────────────────────────────────────────────────────
+    log "  Cleaning base PC..."
+    pkill -f "ros2 run" 2>/dev/null || true
+    pkill -f "collect_topic_bw" 2>/dev/null || true
+    tmux kill-session -t base_poc 2>/dev/null || true
+    ok "  Base PC cleaned"
+
+    # ── RPi cleanup (over SSH) ─────────────────────────────────────────────────
+    log "  Cleaning RPi ($RPI_HOST)..."
+    ssh $SSH_OPTS "$RPI_HOST" "
+        pkill -f 'ros2 run' 2>/dev/null || true
+        pkill -f 'collect_latency' 2>/dev/null || true
+        pkill -f 'collect_net_stats' 2>/dev/null || true
+        tmux kill-session -t rover_poc 2>/dev/null || true
+    " 2>/dev/null || warn "  RPi cleanup had errors (non-fatal)"
+    ok "  RPi cleaned"
+
+    # ── Jetson cleanup (over SSH) ──────────────────────────────────────────────
+    log "  Cleaning Jetson ($JETSON_HOST)..."
+    ssh $SSH_OPTS "$JETSON_HOST" "
+        pkill -f 'ros2 run' 2>/dev/null || true
+        pkill -f 'collect_latency' 2>/dev/null || true
+        pkill -f 'collect_net_stats' 2>/dev/null || true
+        tmux kill-session -t jetson_poc 2>/dev/null || true
+    " 2>/dev/null || warn "  Jetson cleanup had errors (non-fatal)"
+    ok "  Jetson cleaned"
+
+    # Let DDS process participant departures so STM32 boards (if already running)
+    # can free slots before we reset them.
+    sleep 3
+    ok "All stale DDS participants cleaned — STM32 participant table will be empty after reset"
+}
+
+# ============================================================================
 # Step 1 — Start STM32 memory collector (before boards power on)
 # ============================================================================
 
@@ -192,18 +238,101 @@ start_stm32_collector() {
 # Step 2 — Power-cycle STM32 boards
 # ============================================================================
 
-prompt_power_cycle() {
+# ============================================================================
+# Step 2 — Reset STM32 boards (automated via ST-Link, or manual fallback)
+# ============================================================================
+
+reset_stm32_boards() {
+    log "Step 2 — Resetting STM32 boards"
+
+    # Try automated reset via ST-Link (st-flash from stlink-tools package).
+    # NUCLEO boards expose an ST-Link debugger over USB that can trigger a
+    # hardware reset without manual intervention — ideal for remote operation.
+    if command -v st-flash &>/dev/null; then
+        log "  st-flash found — attempting automated hardware reset..."
+        if st-flash --reset >/dev/null 2>&1; then
+            ok "  STM32 boards reset via ST-Link"
+            log "  Boards are now in SPDP discovery phase (SPDP_RESEND=500ms)"
+            return 0
+        fi
+        warn "  st-flash --reset failed — falling back to manual reset"
+    fi
+
+    # Manual fallback — user must physically press RESET on the boards.
     echo ""
     echo -e "${BOLD}======================================================${NC}"
-    echo -e "${YELLOW}  ACTION REQUIRED: Power-cycle both STM32 boards NOW${NC}"
+    echo -e "${YELLOW}  ACTION REQUIRED: Reset both STM32 boards NOW${NC}"
     echo -e "${BOLD}======================================================${NC}"
     echo ""
-    echo "  The collector is running. The most critical heap data is"
-    echo "  captured in the 10-second RTPS discovery window right after"
-    echo "  the boards boot — missing this window = missing the heap peak."
+    echo "  Press the BLACK RESET button on both NUCLEO boards"
+    echo "  (or unplug/replug USB power)."
     echo ""
-    pause "  Unplug and replug power to both STM32 boards, then press ENTER"
-    log "Boards power-cycled — discovery window has started (t=0)"
+    echo "  The serial collector is already running — after reset you should"
+    echo "  see ts_ms values < 10000 in the collector output."
+    echo ""
+    echo -e "${RED}  ⚠  Press ENTER immediately after resetting — do NOT wait.${NC}"
+    echo "     The script will verify the boards are alive before launching nodes."
+    echo ""
+    pause "  Reset both boards, then press ENTER"
+}
+
+# ============================================================================
+# Step 2b — Verify STM32 boards booted and are freshly running
+# ============================================================================
+
+wait_stm32_boot() {
+    log "  Verifying STM32 boards are alive via serial..."
+
+    local timeout=30
+    local start_time
+    start_time=$(date +%s)
+
+    # Snapshot current line counts so we can detect NEW serial data after reset
+    local chassis_before sensors_before
+    chassis_before=$(grep -c '\[chassis\]' "$LOG_DIR/stm32_collector.log" 2>/dev/null || echo 0)
+    sensors_before=$(grep -c '\[sensors\]' "$LOG_DIR/stm32_collector.log" 2>/dev/null || echo 0)
+
+    local chassis_ok=false
+    local sensors_ok=false
+
+    while (( $(date +%s) - start_time < timeout )); do
+        local chassis_now sensors_now
+        chassis_now=$(grep -c '\[chassis\]' "$LOG_DIR/stm32_collector.log" 2>/dev/null || echo 0)
+        sensors_now=$(grep -c '\[sensors\]' "$LOG_DIR/stm32_collector.log" 2>/dev/null || echo 0)
+
+        if (( chassis_now > chassis_before )) && ! $chassis_ok; then
+            chassis_ok=true
+            local chassis_ts
+            chassis_ts=$(grep '\[chassis\]' "$LOG_DIR/stm32_collector.log" | tail -1 | grep -oP 'ts=\K[0-9]+' || echo "?")
+            ok "  Chassis board: alive (ts=${chassis_ts}ms)"
+            if [[ "$chassis_ts" != "?" ]] && (( chassis_ts > 60000 )); then
+                warn "  Chassis ts=${chassis_ts}ms > 60s — board may NOT be freshly reset!"
+            fi
+        fi
+
+        if (( sensors_now > sensors_before )) && ! $sensors_ok; then
+            sensors_ok=true
+            local sensors_ts
+            sensors_ts=$(grep '\[sensors\]' "$LOG_DIR/stm32_collector.log" | tail -1 | grep -oP 'ts=\K[0-9]+' || echo "?")
+            ok "  Sensors board: alive (ts=${sensors_ts}ms)"
+            if [[ "$sensors_ts" != "?" ]] && (( sensors_ts > 60000 )); then
+                warn "  Sensors ts=${sensors_ts}ms > 60s — board may NOT be freshly reset!"
+            fi
+        fi
+
+        if $chassis_ok && $sensors_ok; then
+            ok "  Both STM32 boards confirmed alive — proceeding to launch"
+            sleep 1
+            return 0
+        fi
+
+        sleep 0.5
+    done
+
+    # Timeout — report what's missing
+    $chassis_ok || warn "  Chassis board: NO serial data after ${timeout}s!"
+    $sensors_ok || warn "  Sensors board: NO serial data after ${timeout}s!"
+    die "  Could not confirm both STM32 boards — aborting experiment"
 }
 
 # ============================================================================
@@ -211,7 +340,7 @@ prompt_power_cycle() {
 # ============================================================================
 
 launch_ros2_nodes() {
-    log "Step 3 — Launching ROS2 nodes (boards are in 10s discovery wait)"
+    log "Step 3 — Launching ROS2 nodes (STM32 boards confirmed alive)"
     log "  (launch output redirected to $LOG_DIR/launch_<host>.log)"
 
     log "  Launching rover nodes on RPi ($RPI_HOST)..."
@@ -537,8 +666,10 @@ main() {
     echo ""
 
     preflight
+    clean_stale_participants
     start_stm32_collector
-    prompt_power_cycle
+    reset_stm32_boards
+    wait_stm32_boot
 
     if [[ "$SKIP_LAUNCH" == false ]]; then
         launch_ros2_nodes

@@ -37,11 +37,21 @@
       <useBuiltinTransports>false</useBuiltinTransports>
 
       <builtin>
+        <!-- metatrafficMulticastLocatorList: tells FastDDS to JOIN the SPDP
+             multicast group for RECEIVING announcements. Without this,
+             useBuiltinTransports=false means no multicast reception —
+             initialPeersList only controls where SPDP is SENT TO.
+             Port 8650 = DDS SPDP port for domain 5 (7400 + 250*5). -->
+        <metatrafficMulticastLocatorList>
+          <locator>
+            <udpv4>
+              <address>239.255.0.1</address>
+              <port>8650</port>
+            </udpv4>
+          </locator>
+        </metatrafficMulticastLocatorList>
         <initialPeersList>
-          <!-- Multicast entry retained so FastDDS joins the SPDP multicast group
-               and can receive announcements from STM32 boards that were already
-               running before the Linux nodes started (e.g. not power-cycled).
-               Port 8650 = DDS SPDP port for domain 5 (7400 + 250*5). -->
+          <!-- Unicast peers for direct SPDP + multicast for belt-and-suspenders -->
           <locator>
             <udpv4>
               <address>239.255.0.1</address>

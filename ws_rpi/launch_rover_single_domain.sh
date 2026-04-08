@@ -25,11 +25,15 @@ tmux kill-session -t $SESSION_NAME 2>/dev/null
 # Kill any stale ros2 run processes from a previous session.
 # This prevents zombie DDS participants from occupying RTPS reader proxy slots
 # on the STM32 and causing SEDP matching to fail silently for some subscribers.
+# Also kill stale collector processes (latency/net-stats) which create extra
+# DDS participants and consume STM32 participant table slots (MAX=20).
 # Do NOT restart the ros2 daemon — it starts without FASTRTPS_DEFAULT_PROFILES_FILE
 # and would use the default DDS config (wrong NIC, no STM32 peers), breaking
 # ros2 topic list for the entire session.
 pkill -f "ros2 run" 2>/dev/null || true
-sleep 1
+pkill -f "collect_latency" 2>/dev/null || true
+pkill -f "collect_net_stats" 2>/dev/null || true
+sleep 2
 
 # ── Build 3-column layout ─────────────────────────────────────────────────────
 tmux new-session -d -s $SESSION_NAME -n "rover_poc"
