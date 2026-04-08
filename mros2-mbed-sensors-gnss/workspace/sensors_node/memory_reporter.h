@@ -93,8 +93,14 @@ void _memory_reporter_task()
                (unsigned long)stack_free);
 
         if (len > 0 && len < (int)sizeof(buf)) {
+            // Lock scheduler so the entire line is written without
+            // preemption.  At 115200 baud ~200 chars ≈ 17 ms — well
+            // within sensor-task slack (83 ms per 100 ms cycle).
+            // ISRs (Ethernet, SysTick) still fire normally.
+            int32_t lock = osKernelLock();
             fwrite(buf, 1, len, stdout);
             fflush(stdout);
+            osKernelRestoreLock(lock);
         }
 
         // Drain delay: at 115200 baud, 256 chars ≈ 22ms. Give USB CDC time
