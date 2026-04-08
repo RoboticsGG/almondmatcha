@@ -35,7 +35,7 @@
 // ARM std printf lib needs ~800-1200 B per call; 640 B caused stack overflow
 // and INVPC HardFault via interrupt-on-corrupted-SP during the printf call.
 #ifndef MEM_REPORTER_STACK_SIZE
-#define MEM_REPORTER_STACK_SIZE 1536
+#define MEM_REPORTER_STACK_SIZE 2048
 #endif
 
 // Trim: keep the node name tag short so the JSON line stays under 256 chars
@@ -72,9 +72,14 @@ void _memory_reporter_task()
         int ts_ms = (int)chrono::duration_cast<chrono::milliseconds>(
                             uptime.elapsed_time()).count();
 
-        // \r\n prefix ensures we start on a fresh line even if IMU printf left the
-        // cursor mid-line (no trailing newline on its \r-terminated output).
-        printf("\r\n{\"type\":\"STM32_MEM\",\"node\":\"%s\",\"ts_ms\":%d,"
+        // Pre-format into a local buffer and write atomically.
+        // Using printf directly causes byte-level corruption because the
+        // default UART TX buffer (32 B) overflows multiple times for a ~200 char
+        // JSON line, and the USB CDC can't drain fast enough between fills.
+        // snprintf + fwrite minimizes the number of UART buffer refills.
+        char buf[256];
+        int len = snprintf(buf, sizeof(buf),
+               "\r\n{\"type\":\"STM32_MEM\",\"node\":\"%s\",\"ts_ms\":%d,"
                "\"heap_used\":%lu,\"heap_max\":%lu,\"heap_free\":%lu,"
                "\"alloc_fail\":%lu,\"stack_free\":%lu}\r\n",
                _mem_reporter_node_name,
@@ -85,8 +90,15 @@ void _memory_reporter_task()
                (unsigned long)fail,
                (unsigned long)stack_free);
 
-        fflush(stdout);
-        ThisThread::sleep_for(chrono::milliseconds(MEM_REPORT_INTERVAL_MS));
+        if (len > 0 && len < (int)sizeof(buf)) {
+            fwrite(buf, 1, len, stdout);
+            fflush(stdout);
+        }
+
+        // Drain delay: at 115200 baud, 256 chars ≈ 22ms. Give USB CDC time
+        // to flush before sleeping — prevents back-pressure on next write.
+        ThisThread::sleep_for(chrono::milliseconds(30));
+        ThisThread::sleep_for(chrono::milliseconds(MEM_REPORT_INTERVAL_MS - 30));
     }
 }
 
