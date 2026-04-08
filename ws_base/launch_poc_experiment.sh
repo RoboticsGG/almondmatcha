@@ -628,6 +628,8 @@ print_summary() {
     echo ""
     echo "  Logs:"
     echo "    $LOG_DIR/stm32_collector.log"
+    echo "    $LOG_DIR/raw_serial_chassis.log  ← full STM32 serial stream"
+    echo "    $LOG_DIR/raw_serial_sensors.log  ← full STM32 serial stream"
     echo "    $LOG_DIR/topic_bw.log"
     echo "    $LOG_DIR/rpi/poc_*.log       ← per-node logs from RPi"
     echo "    $LOG_DIR/jetson/poc_*.log    ← per-node logs from Jetson"

@@ -6,8 +6,9 @@ collect_stm32_memory.py — Read USB serial ports of both STM32 Nucleo boards,
 The firmware's memory_reporter.h emits lines of the form:
     {"type":"STM32_MEM","node":"chassis","ts_ms":12345,"heap_used":...,"alloc_fail":...}
 
-Every other line from the STM32 (MROS2_INFO, sensor printf) is discarded.
-No firmware change to output suppression is required.
+Every other line from the STM32 (MROS2_INFO, sensor printf) is discarded from
+the CSV but saved verbatim to a raw serial log file for post-mortem diagnosis
+(hard faults, crash dumps, DDS debug output, etc.).
 
 Each board is saved to a separate CSV file.  The creation timestamp is embedded
 in every filename so successive runs never overwrite each other:
@@ -76,8 +77,9 @@ def make_out_path(out_stem: Path, label: str, run_ts: str) -> Path:
 
 
 def read_serial_thread(port: str, label: str, rows: list, lock: threading.Lock,
-                       stop_event: threading.Event):
-    """Background thread: read serial lines, filter JSON, append to per-label rows list."""
+                       stop_event: threading.Event, raw_log_path: Path):
+    """Background thread: read serial lines, filter JSON, append to per-label rows list.
+    All lines are also written verbatim to raw_log_path for post-mortem analysis."""
     try:
         ser = serial.Serial(port, BAUD_RATE, timeout=POLL_TIMEOUT)
     except serial.SerialException as e:
@@ -85,6 +87,9 @@ def read_serial_thread(port: str, label: str, rows: list, lock: threading.Lock,
         return
 
     print(f"[{label}] Listening on {port} at {BAUD_RATE} baud")
+    print(f"[{label}] Raw log: {raw_log_path}")
+    raw_log_path.parent.mkdir(parents=True, exist_ok=True)
+    raw_log = open(raw_log_path, "w")
     buf = b""
 
     while not stop_event.is_set():
@@ -95,8 +100,13 @@ def read_serial_thread(port: str, label: str, rows: list, lock: threading.Lock,
         while b"\n" in buf:
             line_bytes, buf = buf.split(b"\n", 1)
             line = line_bytes.decode("utf-8", errors="replace").strip()
+            if not line:
+                continue
+            # Write every line to raw log with wall-clock timestamp
+            raw_log.write(f"{datetime.utcnow().isoformat()} {line}\n")
+            raw_log.flush()
             if f'"type":"{MEM_TYPE_KEY}"' not in line:
-                continue  # silently drop all non-memory lines
+                continue  # not a memory-reporter line — already saved to raw log
             try:
                 data = json.loads(line)
             except json.JSONDecodeError:
@@ -124,6 +134,7 @@ def read_serial_thread(port: str, label: str, rows: list, lock: threading.Lock,
                   f"used={used//1024:4d}KB  free={free//1024:4d}KB{flag}")
 
     ser.close()
+    raw_log.close()
 
 
 def writer_thread(out_path: Path, rows: list, lock: threading.Lock,
@@ -193,10 +204,12 @@ def main():
 
     # Build per-label output paths
     out_paths = {label: make_out_path(args.out, label, run_ts) for label in ports}
+    raw_paths = {label: args.out.parent / "logs" / f"raw_serial_{label}.log" for label in ports}
 
     print("[INFO] Output files:")
     for label, path in out_paths.items():
-        print(f"  [{label}] {path}")
+        print(f"  [{label}] CSV:  {path}")
+        print(f"  [{label}] Raw:  {raw_paths[label]}")
     print("[INFO] Press Ctrl-C to stop.\n")
 
     stop_event = threading.Event()
@@ -208,7 +221,8 @@ def main():
         lock = threading.Lock()
 
         rt = threading.Thread(target=read_serial_thread,
-                              args=(port, label, rows, lock, stop_event),
+                              args=(port, label, rows, lock, stop_event,
+                                    raw_paths[label]),
                               daemon=True)
         rt.start()
         threads.append(rt)
