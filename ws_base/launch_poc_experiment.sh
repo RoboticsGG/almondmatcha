@@ -365,6 +365,107 @@ launch_ros2_nodes() {
 }
 
 # ============================================================================
+# Step 3b — Wait until BOTH STM32 topics are discovered and flowing
+# ============================================================================
+# WHY: embeddedRTPS on the STM32 has static participant tables (MAX=20).
+#      Even after a fresh reset, SEDP matching may take 5-30s depending on how
+#      many Linux participants the STM32 must process.  Starting collectors
+#      before topics are confirmed wastes the measurement window on "waiting
+#      for STM32 data" messages.
+#
+# HOW: Use ros2 topic hz on the base PC (which has FASTRTPS_DEFAULT_PROFILES_FILE
+#      set and metatrafficMulticastLocatorList configured to receive STM32 SPDP).
+#      We check that each topic has published at least a few messages.
+
+STM32_TOPICS=("/tpc_chassis_imu" "/tpc_chassis_sensors")
+STM32_TOPIC_DISCOVERY_TIMEOUT=120   # seconds — generous for worst-case SEDP
+
+wait_stm32_topics() {
+    log "Step 3b — Waiting for STM32 topics to be discovered and flowing"
+    log "  Required topics: ${STM32_TOPICS[*]}"
+    log "  Timeout: ${STM32_TOPIC_DISCOVERY_TIMEOUT}s"
+
+    local start_time
+    start_time=$(date +%s)
+
+    # Track which topics have been confirmed
+    local -A topic_confirmed
+    for t in "${STM32_TOPICS[@]}"; do
+        topic_confirmed["$t"]=false
+    done
+
+    local all_found=false
+
+    while (( $(date +%s) - start_time < STM32_TOPIC_DISCOVERY_TIMEOUT )); do
+        local elapsed=$(( $(date +%s) - start_time ))
+
+        for t in "${STM32_TOPICS[@]}"; do
+            if [[ "${topic_confirmed[$t]}" == "true" ]]; then
+                continue
+            fi
+
+            # Run ros2 topic hz for 3 seconds, count non-empty rate lines.
+            # timeout ensures we don't block forever if topic never appears.
+            local hz_output
+            hz_output=$(bash -c "
+                source /opt/ros/humble/setup.bash
+                source '$WORKSPACE/ws_base/install/setup.bash'
+                source '$WORKSPACE/common_ifaces/install/setup.bash'
+                export ROS_DOMAIN_ID=5
+                export FASTRTPS_DEFAULT_PROFILES_FILE='$WORKSPACE/ws_base/fastdds_base.xml'
+                timeout 4 ros2 topic hz '$t' --window 3 2>&1 | head -3
+            " 2>/dev/null) || true
+
+            # ros2 topic hz prints "average rate: X.XX" when messages are flowing
+            if echo "$hz_output" | grep -q "average rate"; then
+                local rate
+                rate=$(echo "$hz_output" | grep -oP 'average rate:\s*\K[0-9.]+' | head -1)
+                topic_confirmed["$t"]=true
+                ok "  $t confirmed flowing (${rate} Hz) after ${elapsed}s"
+            fi
+        done
+
+        # Check if all topics confirmed
+        all_found=true
+        for t in "${STM32_TOPICS[@]}"; do
+            if [[ "${topic_confirmed[$t]}" != "true" ]]; then
+                all_found=false
+                break
+            fi
+        done
+
+        if $all_found; then
+            echo ""
+            ok "  All STM32 topics confirmed — experiment data will be clean from the start"
+            return 0
+        fi
+
+        # Progress update every ~10s
+        if (( elapsed % 10 == 0 )) && (( elapsed > 0 )); then
+            local pending=""
+            for t in "${STM32_TOPICS[@]}"; do
+                [[ "${topic_confirmed[$t]}" != "true" ]] && pending+=" $t"
+            done
+            log "  Still waiting (${elapsed}s/${STM32_TOPIC_DISCOVERY_TIMEOUT}s)...  pending:${pending}"
+        fi
+
+        sleep 1
+    done
+
+    # Timeout — report what's missing
+    echo ""
+    warn "  STM32 topic discovery timed out after ${STM32_TOPIC_DISCOVERY_TIMEOUT}s!"
+    for t in "${STM32_TOPICS[@]}"; do
+        if [[ "${topic_confirmed[$t]}" == "true" ]]; then
+            ok "    $t — OK"
+        else
+            warn "    $t — NOT FOUND"
+        fi
+    done
+    die "  Cannot start experiment without all STM32 topics flowing — aborting"
+}
+
+# ============================================================================
 # Step 4 — Start latency collectors on RPi and Jetson
 # ============================================================================
 
@@ -673,6 +774,7 @@ main() {
 
     if [[ "$SKIP_LAUNCH" == false ]]; then
         launch_ros2_nodes
+        wait_stm32_topics
     else
         warn "  --skip-launch set: skipping ROS2 node launch"
     fi
