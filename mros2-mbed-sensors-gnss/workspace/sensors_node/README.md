@@ -1,8 +1,8 @@
 # STM32 Sensors Node - Modular Architecture
 
 **Board:** NUCLEO-F767ZI (STM32F767ZI microcontroller)  
-**ROS Domain ID:** 6  
-**Application Name:** Sensors Node (Domain 6)  
+**ROS Domain ID:** 5  
+**Application Name:** Sensors Node (Domain 5)  
 **Build Output:** `mros2-mbed.bin` (384.5 KB flash)
 
 ---
@@ -35,7 +35,7 @@ sensors_node/
 |--------|-----------------|----------|-----------|
 | `encoder_control` | Quadrature encoder reading via interrupts | PA_15, PB_5, PB_3, PB_4 (GPIO) | 10 Hz (polled) |
 | `power_monitor` | Bus voltage & current via I2C | PB_9, PB_8 (I2C @ 400 kHz) | 5 Hz (polled) |
-| `gnss_reader` | NMEA sentence reading from USART6 | PG_14, PG_9 (USART6 @ 115200) | 10 Hz (polled) |
+| `gnss_reader` | NMEA sentence reading from USART6 | PG_14, PG_9 (USART6 @ 115200) | 2 Hz (polled) |
 | `app.cpp` | Task launching, aggregation, ROS2 publishing | - | 4 Hz (main loop) |
 
 ---
@@ -93,9 +93,9 @@ sensors_node/
 - Voltage Scale: 1.25 mV/LSB
 - Current Scale: 2.5 µV/LSB (shunt voltage)
 
-### Task 3: GNSS Reader (10 Hz)
+### Task 3: GNSS Reader (2 Hz)
 
-**Polling Period:** 100ms  
+**Polling Period:** 500ms  
 **Priority:** Normal  
 **Stack Size:** 4 KB  
 **Function:** Acquires NMEA sentences from RTK-enabled GNSS receiver
@@ -105,7 +105,7 @@ sensors_node/
 2. Buffer incoming characters into line buffer
 3. Detect complete NMEA sentence (starts with '$', ends with CR/LF)
 4. Extract and store sentence in shared data structure under mutex protection
-5. Sleep 100ms before next poll
+5. Sleep 500ms before next poll
 
 **Public API:**
 - `gnss_reader_init()` - Configure USART6 at 115200 baud
@@ -133,15 +133,15 @@ sensors_node/
 
 **Operational Loop:**
 1. Acquire mutex and snapshot all sensor data
-2. Construct MainSensData message with current values
+2. Construct ChassisSensors message with current values
 3. Publish message to ROS2 topic at configured rate
 4. Output formatted console debug information
 5. Throttle and output GNSS data (every 1 second)
 6. Sleep 250ms before next aggregation cycle
 
 **Published Interface:**
-- **Topic:** `tp_sensdata_d6` (ROS2 DDS)
-- **Message Type:** `msgs_ifaces/msg/MainSensData`
+- **Topic:** `tpc_chassis_sensors` (ROS2 DDS)
+- **Message Type:** `msgs_ifaces/msg/ChassisSensors`
 - **Publication Rate:** 4 Hz (250ms)
 
 **Message Payload:**
@@ -162,7 +162,7 @@ struct {
     int32_t encoder_B;              // Updated by encoder_read_task at 10 Hz
     float bus_voltage;              // Updated by power_monitor_task at 5 Hz
     float current;                  // Updated by power_monitor_task at 5 Hz
-    char nmea_sentence[256];        // Updated by gnss_reader_task at 10 Hz
+    char nmea_sentence[256];        // Updated by gnss_reader_task at 2 Hz
 } sensor_data;
 
 Mutex sensor_data_mutex;            // Ensures atomic read/write access
@@ -179,7 +179,7 @@ All task polling periods are defined as constants at the top of `app.cpp`:
 ```cpp
 const uint32_t ENCODER_SAMPLE_PERIOD_MS = 100;    // Encoder task @ 10 Hz
 const uint32_t POWER_SAMPLE_PERIOD_MS = 200;      // Power monitor task @ 5 Hz
-const uint32_t GNSS_SAMPLE_PERIOD_MS = 100;       // GNSS reader task @ 10 Hz
+const uint32_t GNSS_SAMPLE_PERIOD_MS = 500;       // GNSS reader task @ 2 Hz
 const uint32_t MAIN_LOOP_PERIOD_MS = 250;         // Main publishing loop @ 4 Hz
 const uint32_t GNSS_PRINT_INTERVAL = 4;           // Print GNSS every 4 main loops (1 sec)
 ```
@@ -339,7 +339,7 @@ Edit sampling rate constants in `workspace/sensors_node/app.cpp`:
 ```cpp
 const uint32_t ENCODER_SAMPLE_PERIOD_MS = 100;    // Change to 50 for 20 Hz
 const uint32_t POWER_SAMPLE_PERIOD_MS = 200;      // Change to 100 for 10 Hz
-const uint32_t GNSS_SAMPLE_PERIOD_MS = 100;       // Change to 200 for 5 Hz
+const uint32_t GNSS_SAMPLE_PERIOD_MS = 500;       // Change to 200 for 5 Hz
 const uint32_t MAIN_LOOP_PERIOD_MS = 250;         // Change to 500 for 2 Hz
 ```
 
@@ -460,14 +460,14 @@ int gnss_reader_is_valid_sentence(const char* s); // Validate NMEA
 ## Network Configuration
 
 **Static IP:** 192.168.1.6  
-**Domain ID:** 6  
+**Domain ID:** 5  
 **Netmask:** 255.255.255.0  
 
 On host machine:
 
 ```bash
-export ROS_DOMAIN_ID=6
-ros2 topic echo /tp_sensdata_d6
+export ROS_DOMAIN_ID=5
+ros2 topic echo /tpc_chassis_sensors
 ```
 
 ---
@@ -492,7 +492,7 @@ MotorA: 1246 | MotorB: 5690 | Vbus: 12.495 V | I: 2.340 A
 - [ ] Bus voltage readings remain stable in expected operating range (11-14 V)
 - [ ] Current readings vary appropriately with motor load conditions (0-5 A typical)
 - [ ] GNSS displays valid NMEA sentences at regular 1-second intervals
-- [ ] ROS2 topic `tp_sensdata_d6` publishes at configured 4 Hz rate
+- [ ] ROS2 topic `tpc_chassis_sensors` publishes at configured 4 Hz rate
 - [ ] No mutex deadlock conditions observed during extended operation
 
 ---
@@ -528,6 +528,6 @@ MotorA: 1246 | MotorB: 5690 | Vbus: 12.495 V | I: 2.340 A
 
 ---
 
-**Last Updated:** November 4, 2025  
+**Last Updated:** April 8, 2026  
 **Architecture Version:** 2.0 (Modular Design)  
 **Previous Version:** 1.0 (Monolithic Implementation)

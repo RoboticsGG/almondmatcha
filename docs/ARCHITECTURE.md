@@ -129,7 +129,7 @@ Domain 5 (mROS2):
 Domain 5 (mROS2):
 ├── Encoder Task - 100 ms
 ├── Power Monitor Task - 200 ms
-├── GNSS Reader Task - 100 ms
+├── GNSS Reader Task - 500 ms
 └── Publishes: tpc_chassis_sensors @ 4 Hz (aggregated)
 ```
 
