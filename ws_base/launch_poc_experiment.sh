@@ -2,14 +2,16 @@
 # launch_poc_experiment.sh — Full POC experiment launcher (run on base PC)
 #
 # Executes the complete single-domain POC measurement sequence in order:
-#   1. Prompt to confirm STM32 boards are powered OFF
+#   1. Clean stale DDS participants on all machines
 #   2. Start STM32 memory collector (background)
-#   3. Prompt to power-cycle STM32 boards
-#   4. Launch ROS2 nodes on RPi, Jetson, and base PC
+#   3. Launch ROS2 nodes on RPi, Jetson, and base PC
+#   4. Wait for STM32 topics to be discovered and flowing
 #   5. Start latency collectors on RPi and Jetson
 #   6. Start net-stats collectors on RPi and Jetson (background SSH)
 #   7. Wait for the run duration
 #   8. Stop all collectors and pull CSVs to base PC
+#
+# STM32 boards are assumed to be always powered on. No reset step is needed.
 #
 # Usage:
 #   bash ws_base/launch_poc_experiment.sh
@@ -209,11 +211,11 @@ clean_stale_participants() {
     # Let DDS process participant departures so STM32 boards (if already running)
     # can free slots before we reset them.
     sleep 3
-    ok "All stale DDS participants cleaned — STM32 participant table will be empty after reset"
+    ok "All stale DDS participants cleaned"
 }
 
 # ============================================================================
-# Step 1 — Start STM32 memory collector (before boards power on)
+# Step 1 — Start STM32 memory collector
 # ============================================================================
 
 start_stm32_collector() {
@@ -237,53 +239,11 @@ start_stm32_collector() {
 }
 
 # ============================================================================
-# Step 2 — Power-cycle STM32 boards
-# ============================================================================
-
-# ============================================================================
-# Step 2 — Reset STM32 boards (automated via ST-Link, or manual fallback)
-# ============================================================================
-
-reset_stm32_boards() {
-    log "Step 2 — Resetting STM32 boards"
-
-    # Try automated reset via ST-Link (st-flash from stlink-tools package).
-    # NUCLEO boards expose an ST-Link debugger over USB that can trigger a
-    # hardware reset without manual intervention — ideal for remote operation.
-    if command -v st-flash &>/dev/null; then
-        log "  st-flash found — attempting automated hardware reset..."
-        if st-flash --reset >/dev/null 2>&1; then
-            ok "  STM32 boards reset via ST-Link"
-            log "  Boards are now in SPDP discovery phase (SPDP_RESEND=500ms)"
-            return 0
-        fi
-        warn "  st-flash --reset failed — falling back to manual reset"
-    fi
-
-    # Manual fallback — user must physically press RESET on the boards.
-    echo ""
-    echo -e "${BOLD}======================================================${NC}"
-    echo -e "${YELLOW}  ACTION REQUIRED: Reset both STM32 boards NOW${NC}"
-    echo -e "${BOLD}======================================================${NC}"
-    echo ""
-    echo "  Press the BLACK RESET button on both NUCLEO boards"
-    echo "  (or unplug/replug USB power)."
-    echo ""
-    echo "  The serial collector is already running — after reset you should"
-    echo "  see ts_ms values < 10000 in the collector output."
-    echo ""
-    echo -e "${RED}  ⚠  Press ENTER immediately after resetting — do NOT wait.${NC}"
-    echo "     The script will verify the boards are alive before launching nodes."
-    echo ""
-    pause "  Reset both boards, then press ENTER"
-}
-
-# ============================================================================
-# Step 3 — Launch ROS2 nodes on RPi, Jetson, then base PC
+# Step 2 — Launch ROS2 nodes on RPi, Jetson, then base PC
 # ============================================================================
 
 launch_ros2_nodes() {
-    log "Step 3 — Launching ROS2 nodes (STM32 boards confirmed alive)"
+    log "Step 2 — Launching ROS2 nodes"
     log "  (launch output redirected to $LOG_DIR/launch_<host>.log)"
 
     log "  Launching rover nodes on RPi ($RPI_HOST)..."
@@ -308,13 +268,12 @@ launch_ros2_nodes() {
 }
 
 # ============================================================================
-# Step 3b — Wait until BOTH STM32 topics are discovered and flowing
+# Step 3 — Wait until BOTH STM32 topics are discovered and flowing
 # ============================================================================
 # WHY: embeddedRTPS on the STM32 has static participant tables (MAX=20).
-#      Even after a fresh reset, SEDP matching may take 5-30s depending on how
-#      many Linux participants the STM32 must process.  Starting collectors
-#      before topics are confirmed wastes the measurement window on "waiting
-#      for STM32 data" messages.
+#      SEDP matching may take 5-30s depending on how many Linux participants
+#      the STM32 must process.  Starting collectors before topics are confirmed
+#      wastes the measurement window on "waiting for STM32 data" messages.
 #
 # HOW: Use ros2 topic hz on the base PC (which has FASTRTPS_DEFAULT_PROFILES_FILE
 #      set and metatrafficMulticastLocatorList configured to receive STM32 SPDP).
@@ -323,7 +282,7 @@ launch_ros2_nodes() {
 STM32_TOPICS=("/tpc_chassis_imu" "/tpc_chassis_sensors")
 
 wait_stm32_topics() {
-    log "Step 3b — Waiting for STM32 topics to be discovered and flowing"
+    log "Step 3 — Waiting for STM32 topics to be discovered and flowing"
     log "  Required topics: ${STM32_TOPICS[*]}"
     log "  No timeout — press Ctrl+C to abort"
 
@@ -398,7 +357,7 @@ wait_stm32_topics() {
 # ============================================================================
 
 start_latency_collectors() {
-    log "Step 4 — Starting latency/jitter collectors on RPi and Jetson"
+    log "Step 4 — Starting latency/jitter collectors on RPi and Jetson (after STM32 topics confirmed)"
 
     TARGET_HOST="$RPI_HOST"    TARGET_LABEL=rpi    SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/start_trace.sh"
@@ -410,11 +369,11 @@ start_latency_collectors() {
 }
 
 # ============================================================================
-# Step 4b — Start per-topic bandwidth collector (base PC, local)
+# Step 5 — Start per-topic bandwidth collector (base PC, local)
 # ============================================================================
 
 start_topic_bw_collector() {
-    log "Step 4b — Starting per-topic bandwidth collector (base PC)"
+    log "Step 5 — Starting per-topic bandwidth collector (base PC)"
     log "  output: $RUN_DIR/topic_bw.csv"
 
     # Source ROS2 env and exec python3 directly (exec replaces bash → PID is python3).
@@ -440,11 +399,11 @@ start_topic_bw_collector() {
 }
 
 # ============================================================================
-# Step 5 — Start net-stats collectors on RPi and Jetson (SSH + background)
+# Step 6 — Start net-stats collectors on RPi and Jetson (SSH + background)
 # ============================================================================
 
 start_net_collectors() {
-    log "Step 5 — Starting network stats collectors on RPi and Jetson"
+    log "Step 6 — Starting network stats collectors on RPi and Jetson"
 
     # -T: disable PTY allocation — SSH exits as soon as the remote shell exits.
     # Without -T, SSH holds the connection open waiting for the PTY to be fully
@@ -481,7 +440,7 @@ start_net_collectors() {
 }
 
 # ============================================================================
-# Step 6 — Wait for the run duration
+# Step 7 — Wait for the run duration
 # ============================================================================
 
 wait_for_run() {
@@ -554,11 +513,11 @@ wait_for_run() {
 }
 
 # ============================================================================
-# Step 7 — Stop collectors and pull CSVs
+# Step 8 — Stop collectors and pull CSVs
 # ============================================================================
 
 stop_and_collect() {
-    log "Step 7 — Stopping all collectors and pulling CSVs"
+    log "Step 8 — Stopping all collectors and pulling CSVs"
 
     mkdir -p "$LOG_DIR/rpi" "$LOG_DIR/jetson"
 
@@ -644,7 +603,7 @@ stop_and_collect() {
 }
 
 # ============================================================================
-# Step 8 — Print summary
+# Step 9 — Print summary
 # ============================================================================
 
 print_summary() {
@@ -697,7 +656,6 @@ main() {
     preflight
     clean_stale_participants
     start_stm32_collector
-    reset_stm32_boards
 
     if [[ "$SKIP_LAUNCH" == false ]]; then
         launch_ros2_nodes
