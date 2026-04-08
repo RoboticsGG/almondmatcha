@@ -49,14 +49,14 @@ main() {
 
     # Pane 0 (left): Mission Command — D5 (unchanged)
     tmux select-pane -t $SESSION_NAME:0.0 -T "MISSION COMMAND [D5]"
-    tmux send-keys -t $SESSION_NAME:0.0 "cd $WS_PATH && source install/setup.bash && export ROS_DOMAIN_ID=5 && export FASTRTPS_DEFAULT_PROFILES_FILE=$WS_PATH/fastdds_base.xml" C-m
+    tmux send-keys -t $SESSION_NAME:0.0 "cd $WS_PATH && source $HOME/almondmatcha/common_ifaces/install/setup.bash && source install/setup.bash && export ROS_DOMAIN_ID=5 && export FASTRTPS_DEFAULT_PROFILES_FILE=$WS_PATH/fastdds_base.xml" C-m
     tmux send-keys -t $SESSION_NAME:0.0 "clear && echo -e '\\e[1;36m>>> MISSION COMMAND [POC D5] <<<\\e[0m'" C-m
     tmux send-keys -t $SESSION_NAME:0.0 "ros2 run mission_control mission_command_node --ros-args --params-file src/mission_control/config/params.yaml" C-m
 
     # Pane 1 (right): Mission Monitoring — D5 (was D4)
     # tpc_telemetry_relay is now published on D5 so subscription still works.
     tmux select-pane -t $SESSION_NAME:0.1 -T "MISSION MONITORING [D5 POC]"
-    tmux send-keys -t $SESSION_NAME:0.1 "cd $WS_PATH && source install/setup.bash && export ROS_DOMAIN_ID=5 && export FASTRTPS_DEFAULT_PROFILES_FILE=$WS_PATH/fastdds_base.xml" C-m
+    tmux send-keys -t $SESSION_NAME:0.1 "cd $WS_PATH && source $HOME/almondmatcha/common_ifaces/install/setup.bash && source install/setup.bash && export ROS_DOMAIN_ID=5 && export FASTRTPS_DEFAULT_PROFILES_FILE=$WS_PATH/fastdds_base.xml" C-m
     tmux send-keys -t $SESSION_NAME:0.1 "clear && echo -e '\\e[1;35m>>> MISSION MONITORING [POC D5 — was D4] <<<\\e[0m'" C-m
     tmux send-keys -t $SESSION_NAME:0.1 "ros2 run mission_control mission_monitoring_node_pc" C-m
 

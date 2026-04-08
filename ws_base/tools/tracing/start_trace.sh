@@ -42,6 +42,9 @@ set -e
 source /opt/ros/humble/setup.bash
 source ~/almondmatcha/ws_rpi/install/setup.bash 2>/dev/null || \
     source ~/almondmatcha/ws_jetson/install/setup.bash 2>/dev/null || true
+# common_ifaces provides msgs_ifaces type support (ChassisIMU, SpresenseGNSS, etc.)
+# Without this, collect_latency.py cannot deserialise custom types and skips them.
+source ~/almondmatcha/common_ifaces/install/setup.bash 2>/dev/null || true
 export ROS_DOMAIN_ID=5
 
 # Pin Fast-DDS to the correct NIC for this host.

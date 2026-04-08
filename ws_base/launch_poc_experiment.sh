@@ -321,12 +321,11 @@ launch_ros2_nodes() {
 #      We check that each topic has published at least a few messages.
 
 STM32_TOPICS=("/tpc_chassis_imu" "/tpc_chassis_sensors")
-STM32_TOPIC_DISCOVERY_TIMEOUT=120   # seconds — generous for worst-case SEDP
 
 wait_stm32_topics() {
     log "Step 3b — Waiting for STM32 topics to be discovered and flowing"
     log "  Required topics: ${STM32_TOPICS[*]}"
-    log "  Timeout: ${STM32_TOPIC_DISCOVERY_TIMEOUT}s"
+    log "  No timeout — press Ctrl+C to abort"
 
     local start_time
     start_time=$(date +%s)
@@ -337,9 +336,7 @@ wait_stm32_topics() {
         topic_confirmed["$t"]=false
     done
 
-    local all_found=false
-
-    while (( $(date +%s) - start_time < STM32_TOPIC_DISCOVERY_TIMEOUT )); do
+    while true; do
         local elapsed=$(( $(date +%s) - start_time ))
 
         for t in "${STM32_TOPICS[@]}"; do
@@ -369,7 +366,7 @@ wait_stm32_topics() {
         done
 
         # Check if all topics confirmed
-        all_found=true
+        local all_found=true
         for t in "${STM32_TOPICS[@]}"; do
             if [[ "${topic_confirmed[$t]}" != "true" ]]; then
                 all_found=false
@@ -389,23 +386,11 @@ wait_stm32_topics() {
             for t in "${STM32_TOPICS[@]}"; do
                 [[ "${topic_confirmed[$t]}" != "true" ]] && pending+=" $t"
             done
-            log "  Still waiting (${elapsed}s/${STM32_TOPIC_DISCOVERY_TIMEOUT}s)...  pending:${pending}"
+            log "  Still waiting (${elapsed}s)...  pending:${pending}"
         fi
 
         sleep 1
     done
-
-    # Timeout — report what's missing
-    echo ""
-    warn "  STM32 topic discovery timed out after ${STM32_TOPIC_DISCOVERY_TIMEOUT}s!"
-    for t in "${STM32_TOPICS[@]}"; do
-        if [[ "${topic_confirmed[$t]}" == "true" ]]; then
-            ok "    $t — OK"
-        else
-            warn "    $t — NOT FOUND"
-        fi
-    done
-    die "  Cannot start experiment without all STM32 topics flowing — aborting"
 }
 
 # ============================================================================
