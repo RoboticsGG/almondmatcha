@@ -22,6 +22,17 @@ SRC="cd ~/almondmatcha/ws_rpi && source /opt/ros/humble/setup.bash && source ins
 
 tmux kill-session -t $SESSION_NAME 2>/dev/null
 
+# Kill any stale ros2 run processes and flush the DDS participant cache.
+# Without this, zombie DDS participants from a previous session occupy RTPS
+# reader proxy slots on the STM32, causing SEDP matching to fail silently for
+# some subscribers (e.g. chassis_sensors_node) while others still work.
+pkill -f "ros2 run" 2>/dev/null || true
+sleep 0.5
+source /opt/ros/humble/setup.bash 2>/dev/null || true
+ros2 daemon stop 2>/dev/null || true
+ros2 daemon start 2>/dev/null || true
+sleep 0.5
+
 # ── Build 3-column layout ─────────────────────────────────────────────────────
 tmux new-session -d -s $SESSION_NAME -n "rover_poc"
 

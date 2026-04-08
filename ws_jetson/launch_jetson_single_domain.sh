@@ -17,6 +17,14 @@ ROS_SRC="source /opt/ros/humble/setup.bash && cd ~/almondmatcha/ws_jetson && sou
 
 tmux kill-session -t $SESSION_NAME 2>/dev/null
 
+# Kill stale ros2 run processes and flush the DDS participant cache.
+pkill -f "ros2 run" 2>/dev/null || true
+sleep 0.5
+source /opt/ros/humble/setup.bash 2>/dev/null || true
+ros2 daemon stop 2>/dev/null || true
+ros2 daemon start 2>/dev/null || true
+sleep 0.5
+
 tmux new-session -d -s $SESSION_NAME
 
 # Same 4-pane layout as baseline
