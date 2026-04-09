@@ -83,8 +83,9 @@ eval ${DOCKERCMD_PRE}${DEPLOY_CMD}${DOCKERCMD_SUF}
 if [ -d platform/patches ] && [ -d mros2/embeddedRTPS ]; then
   for p in platform/patches/*.patch; do
     [ -f "$p" ] || continue
-    if ! git -C mros2/embeddedRTPS apply --check --reverse "$p" 2>/dev/null; then
-      git -C mros2/embeddedRTPS apply "$p" && echo "INFO: applied patch $(basename $p)"
+    abspath="$(cd "$(dirname "$p")" && pwd)/$(basename "$p")"
+    if ! git -C mros2/embeddedRTPS apply --check --reverse "$abspath" 2>/dev/null; then
+      git -C mros2/embeddedRTPS apply "$abspath" && echo "INFO: applied patch $(basename $p)"
     fi
   done
 fi
