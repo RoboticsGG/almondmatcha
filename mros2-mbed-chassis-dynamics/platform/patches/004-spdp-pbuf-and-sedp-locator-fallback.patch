@@ -1,0 +1,40 @@
+diff --git a/include/rtps/storages/PBufWrapper.h b/include/rtps/storages/PBufWrapper.h
+index 6e8339e..b41d1a5 100644
+--- a/include/rtps/storages/PBufWrapper.h
++++ b/include/rtps/storages/PBufWrapper.h
+@@ -68,7 +68,7 @@ struct PBufWrapper {
+   DataSize_t spaceUsed() const;
+ 
+ private:
+-  constexpr static pbuf_layer m_layer = PBUF_TRANSPORT;
++  constexpr static pbuf_layer m_layer = PBUF_RAW;
+   constexpr static pbuf_type m_type = PBUF_POOL;
+ 
+   DataSize_t m_freeSpace = 0;
+diff --git a/src/discovery/SPDPAgent.cpp b/src/discovery/SPDPAgent.cpp
+index 562d1b5..98eb0ed 100644
+--- a/src/discovery/SPDPAgent.cpp
++++ b/src/discovery/SPDPAgent.cpp
+@@ -194,6 +194,22 @@ bool SPDPAgent::addProxiesForBuiltInEndpoints() {
+     }
+   }
+ 
++  // Fallback: FastDDS may omit PID_METATRAFFIC_UNICAST_LOCATOR.
++  // Derive metatraffic port from default unicast port (port - 1).
++  static LocatorIPv4 derivedMetaLoc;
++  if (!locator) {
++    for (unsigned int i = 0;
++         i < m_proxyDataBuffer.m_defaultUnicastLocatorList.size(); i++) {
++      LocatorIPv4 *l = &(m_proxyDataBuffer.m_defaultUnicastLocatorList[i]);
++      if (l->isValid() && l->isSameSubnet()) {
++        derivedMetaLoc = *l;
++        derivedMetaLoc.port = l->port - 1; // D3-D1=1 in RTPS port mapping
++        locator = &derivedMetaLoc;
++        break;
++      }
++    }
++  }
++
+   if (!locator) {
+     return false;
+   }
