@@ -78,7 +78,7 @@ echo "      APPNAME=${APPNAME}"
 # "Could not find a valid git repository at this path".  Instead, clone mbed-os and
 # mros2 directly from the pinned refs in the .lib files.  After cloning, sync our
 # custom msgs_ifaces headers into mros2/mros2_msgs/ (mros2 from GitHub only has std msgs).
-DEPLOY_SYNC_CMD='([ -d mbed-os ] || (git clone https://github.com/ARMmbed/mbed-os.git mbed-os && git -C mbed-os checkout d723bf9e55415433e108124ee6d36337feddf1b8)) && ([ -d mros2 ] || git clone --branch v0.5.4 https://github.com/mROS-base/mros2.git mros2) && if [ -d mros2/mros2_msgs ] && [ -d mros2_add_msgs/mros2_msgs/msgs_ifaces/msg ]; then mkdir -p mros2/mros2_msgs/msgs_ifaces/msg && cp -f mros2_add_msgs/mros2_msgs/msgs_ifaces/msg/*.hpp mros2/mros2_msgs/msgs_ifaces/msg/ && echo INFO: synced msgs_ifaces headers into mros2/mros2_msgs/; fi'
+DEPLOY_SYNC_CMD='([ -d mbed-os ] || (git clone https://github.com/ARMmbed/mbed-os.git mbed-os && git -C mbed-os checkout d723bf9e55415433e108124ee6d36337feddf1b8)) && ([ -d mros2 ] || git clone --branch v0.5.4 https://github.com/mROS-base/mros2.git mros2) && git -C mros2 submodule update --init && if [ -d mros2/mros2_msgs ] && [ -d mros2_add_msgs/mros2_msgs/msgs_ifaces/msg ]; then mkdir -p mros2/mros2_msgs/msgs_ifaces/msg && cp -f mros2_add_msgs/mros2_msgs/msgs_ifaces/msg/*.hpp mros2/mros2_msgs/msgs_ifaces/msg/ && echo INFO: synced msgs_ifaces headers into mros2/mros2_msgs/; fi'
 eval ${DOCKERCMD_PRE}${DEPLOY_SYNC_CMD}${DOCKERCMD_SUF}
 
 # Apply embeddedRTPS patches (e.g. AckNack bitmap overflow fix)
