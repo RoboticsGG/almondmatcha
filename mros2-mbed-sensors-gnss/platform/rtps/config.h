@@ -72,14 +72,16 @@ const uint8_t NUM_STATEFUL_WRITERS = 3;               // SEDP: 2 internal + 1 ap
 const uint8_t MAX_NUM_PARTICIPANTS = 1;               // local participant pool — STM32 creates exactly 1
 const uint8_t NUM_WRITERS_PER_PARTICIPANT = 16;       // max DDS writers per remote node (10 actual + margin)
 const uint8_t NUM_READERS_PER_PARTICIPANT = 16;       // max DDS readers per remote node (11 actual + margin)
-const uint8_t NUM_WRITER_PROXIES_PER_READER = 25;     // SEDP readers need 1 proxy per remote participant
-const uint8_t NUM_READER_PROXIES_PER_WRITER = 25;     // SEDP writers need 1 proxy per remote participant
+const uint8_t NUM_WRITER_PROXIES_PER_READER = 30;     // SEDP readers: 1 WriterProxy per remote participant
+const uint8_t NUM_READER_PROXIES_PER_WRITER = 30;     // SEDP writers: 1 ReaderProxy per remote participant
 
-// Discovery: SEDP unmatched endpoint pools (per Participant, only 1 on STM32).
-// Every remote DDS endpoint not matching a local reader/writer is stored here.
-// ROS2 adds /rosout + /parameter_events per node → ~51 remote writers, ~50 readers.
-const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 80;  // 51 actual + 57% margin
-const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 80;  // 50 actual + 60% margin
+// SEDP unmatched endpoint pools — disabled for static topology.
+// These only serve late-joining local endpoints (never happens on STM32).
+// addUnmatchedRemote*() has its own isFull() guard, so these never trigger
+// the [MemoryPool] RESSOURCE LIMIT EXCEEDED error even if undersized.
+// Set SEDP_VERBOSE=0 in patch 003 to compile out the tracking entirely.
+const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 2;   // unused — static topology
+const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 2;   // unused — static topology
 
 const uint8_t MAX_NUM_READER_CALLBACKS = 2;  // This board has no callbacks (publish-only)
 
@@ -101,7 +103,7 @@ const uint16_t SPDP_RESEND_PERIOD_MS = 500;   // 500ms SPDP announcements for fa
 const uint8_t SPDP_CYCLECOUNT_HEARTBEAT =
     2; // skip x SPDP rounds before checking liveliness
 const uint8_t SPDP_WRITER_PRIO = 24;
-const uint8_t SPDP_MAX_NUMBER_FOUND_PARTICIPANTS = 19; // MAX_NUM_PARTICIPANTS - 1 (excludes self)
+const uint8_t SPDP_MAX_NUMBER_FOUND_PARTICIPANTS = 30; // 15 nodes + 3 daemons + ros2 CLI tools + margin
 const uint8_t SPDP_MAX_NUM_LOCATORS = 5;
 const Duration_t SPDP_DEFAULT_REMOTE_LEASE_DURATION = {
     100, 0}; // Default lease duration for remote participants, usually
