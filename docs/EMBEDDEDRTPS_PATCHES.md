@@ -8,6 +8,7 @@
 | `platform/patches/002-rtps-hardfault-prevention.patch` | Receive buffer isolation, guard-word corruption detection, NUCLEO-F767ZI pointer validation |
 | `platform/patches/003-discovery-pool-diagnostic.patch` | MemoryPool error message with size/used counters; SEDP_VERBOSE silenced |
 | `platform/patches/004-spdp-pbuf-and-sedp-locator-fallback.patch` | SPDP packet corruption fix (PBUF_RAW); SEDP locator fallback chain; SEDP immediate resend |
+| `platform/patches/005-multicast-address-detection-fix.patch` | `isMulticastAddress()` byte-order bug; `readLocatorIntoList()` operator precedence bug |
 
 Applied to `mros2/embeddedRTPS` (cloned from mROS-base/mros2 v0.5.4) by
 `build.bash` after clone. Same patches used in both firmware trees.
@@ -293,6 +294,13 @@ was dead data, never read by any consumer.
    `port - 1` (D3−D1=1 in the RTPS port formula) — last-resort for DDS
    implementations that advertise neither metatraffic locator PID.
 
+**Note:** Fallback 1 was non-functional until Patch 005.  `readLocatorIntoList()`
+silently discarded multicast locators during SPDP parsing due to two bugs in
+`isMulticastAddress()` and operator precedence (see Patch 005).  As a result,
+`m_metatrafficMulticastLocatorList` was always empty and Fallback 1 never
+fired.  Execution fell through to Fallback 2, which derived port 8660 — a port
+no process listened on.  Patch 005 makes Fallback 1 effective.
+
 ### Bug C — Missing SEDP immediate resend for new participants
 
 **File:** `src/discovery/SPDPAgent.cpp` — `processProxyData()`
@@ -313,6 +321,120 @@ complete in time.
 enqueues a resend of all existing SEDP endpoint announcements to the newly
 matched reader proxies via the threadpool, without waiting for the next
 heartbeat cycle.
+
+---
+
+## Patch 005 — Multicast address detection fix
+
+**Files:** `src/communication/UdpDriver.cpp`,
+`src/discovery/ParticipantProxyData.cpp`
+
+**Symptom (runs 019–022):** `ros2 topic info` still shows Publisher count: 0
+despite Patch 004's SEDP locator fallback chain being in place.  Patch 004's
+Fallback 1 (`m_metatrafficMulticastLocatorList`) was intended to direct SEDP
+to 239.255.0.1:8650, but the field was silently empty every run.
+
+### Bug A — `isMulticastAddress()` byte-order bug
+
+**File:** `src/communication/UdpDriver.cpp`
+
+**Root cause:** The original check:
+
+```cpp
+bool UdpDriver::isMulticastAddress(ip4_addr_t addr) {
+  return ((addr.addr >> 28) == 14);
+}
+```
+
+assumes `addr.addr` is in host byte order with the first octet in the MSB.
+lwIP's `transformIP4ToU32()` stores `ip4_addr_t` in **little-endian network
+order**: the first (most-significant) IP octet is placed in the LSB of the
+`uint32_t`.  For 239.255.0.1 on the STM32 (a little-endian ARM Cortex-M7):
+
+```
+transformIP4ToU32(239, 255, 0, 1) = (1<<24)|(0<<16)|(255<<8)|239 = 0x0100FFEF
+0x0100FFEF >> 28 = 0   ← NOT 14
+```
+
+This function returned `false` for every multicast address, including
+239.255.0.1.
+
+**Fix:** Replace the manual bit-shift check with lwIP's own macro, which is
+byte-order-correct by construction:
+
+```cpp
+bool UdpDriver::isMulticastAddress(ip4_addr_t addr) {
+  return ip4_addr_ismulticast(&addr);
+}
+```
+
+`ip4_addr_ismulticast` is defined in `<lwip/ip4_addr.h>` (transitively
+included via the existing `<lwip/igmp.h>`) as:
+
+```c
+#define ip4_addr_ismulticast(addr1) \
+  (((addr1)->addr & PP_HTONL(0xf0000000UL)) == PP_HTONL(0xe0000000UL))
+```
+
+`PP_HTONL` converts the constant to network byte order at compile time,
+making the comparison byte-order-neutral.
+
+### Bug B — Operator precedence in `readLocatorIntoList()`
+
+**File:** `src/discovery/ParticipantProxyData.cpp`
+
+**Root cause:** The condition that guards storing a parsed locator:
+
+```cpp
+if (ret && full_length_locator.isSameSubnet() ||
+    full_length_locator.isMulticastAddress())
+```
+
+parsed by C++ precedence rules (`&&` binds tighter than `||`) as:
+
+```cpp
+if ((ret && full_length_locator.isSameSubnet()) ||
+    full_length_locator.isMulticastAddress())
+```
+
+With Bug A making `isMulticastAddress()` always return `false`, the locator
+was only stored when `ret && isSameSubnet()`.  For the multicast address
+239.255.0.1, `isSameSubnet()` returns `false` (it is not on the same /24
+subnet as the board's IP), so the `PID_METATRAFFIC_MULTICAST_LOCATOR` from
+FastDDS's SPDP was silently discarded by the `else { return true; }` branch.
+
+**Fix:** Add parentheses to enforce the intended grouping:
+
+```cpp
+if (ret && (full_length_locator.isSameSubnet() ||
+            full_length_locator.isMulticastAddress()))
+```
+
+### Chain of failure (patch 004 → patch 005)
+
+```
+FastDDS SPDP  ──► PID_METATRAFFIC_MULTICAST_LOCATOR = 239.255.0.1:8650
+                              │
+                  readLocatorIntoList()
+                  isMulticastAddress() == false  ← Bug A
+                  isSameSubnet()       == false
+                  → locator discarded             ← Bug B
+                              │
+            m_metatrafficMulticastLocatorList = [ EMPTY ]
+                              │
+   addProxiesForBuiltInEndpoints():
+     Fallback 1: empty list → skip
+     Fallback 2: derive port 8660 → nobody listens
+                              │
+         SEDP sent to 192.168.1.4:8660 → dropped
+                              │
+         Publisher count: 0  (runs 019–022)
+```
+
+With Patch 005 applied, `isMulticastAddress()` correctly identifies
+239.255.0.1 → the locator is stored → Fallback 1 finds 239.255.0.1:8650
+→ SEDP is sent to the multicast metatraffic port where all FastDDS nodes
+listen → discovery completes.
 
 ---
 
@@ -349,10 +471,12 @@ These are per-board `platform/rtps/config.h` values changed from defaults:
 | 004: PBUF_RAW | +0 | +0 (no code, changes allocation layer) |
 | 004: SEDP locator fallbacks | +40 | +12 (static derivedMetaLoc) |
 | 004: SEDP immediate resend | +24 | +0 |
+| 005: isMulticastAddress fix | ~−8 | +0 (smaller code) |
+| 005: readLocatorIntoList precedence | +0 | +0 (comment-only logic change) |
 | **config.h MAX_NUM_PARTICIPANTS 20→1** | +0 | **−212,000 BSS** |
 | **config.h pool/queue tuning** | +0 | −1,600 BSS (unmatched 20→2 ×2) |
-| **Total patch net** | **~+588** | **~+6,100** |
-| **Total with config changes** | **~+588** | **~−208,000 (net savings)** |
+| **Total patch net** | **~+580** | **~+6,100** |
+| **Total with config changes** | **~+580** | **~−208,000 (net savings)** |
 
 ---
 
@@ -368,3 +492,12 @@ After flashing, check `raw_serial_*.log` for:
 - If pointer validation triggers (crash prevented), the board will silently
   drop the corrupted message and continue operating — topics may take longer
   to discover but the board will NOT reboot
+
+### Patch 005 specific
+- Run `ss -ulnp` on base PC before experiment — confirm port 8650 is open
+  (FastDDS joins multicast), ports 8660/8662 are NOT open (expected, metatraffic
+  unicast not bound with `metatrafficMulticastLocatorList` in XML)
+- SEDP traffic should now reach FastDDS via multicast: `sudo tcpdump -i enp0s31f6
+  'dst host 239.255.0.1 and udp port 8650' -nn` should show packets from both
+  192.168.1.2 and 192.168.1.6 with length > 200 bytes (those are SEDP DATA)
+- `ros2 topic info /tpc_chassis_imu` Publisher count: 1 (was 0 in runs 019–022)
