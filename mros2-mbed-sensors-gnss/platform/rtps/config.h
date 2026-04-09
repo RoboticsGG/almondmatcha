@@ -98,7 +98,7 @@ const int THREAD_POOL_READER_STACKSIZE = 8192;     // byte - Restored to 8192: 4
                                                    // during SEDP burst (3+ Linux nodes joining)
 const uint16_t SPDP_WRITER_STACKSIZE = 4096;       // byte - Halved from 8192, critical memory savings
 
-const uint16_t SF_WRITER_HB_PERIOD_MS = 2000; // 2s heartbeat for writer detection
+const uint16_t SF_WRITER_HB_PERIOD_MS = 1000; // 1s heartbeat — faster SEDP convergence
 const uint16_t SPDP_RESEND_PERIOD_MS = 500;   // 500ms SPDP announcements for faster discovery
 const uint8_t SPDP_CYCLECOUNT_HEARTBEAT =
     2; // skip x SPDP rounds before checking liveliness
