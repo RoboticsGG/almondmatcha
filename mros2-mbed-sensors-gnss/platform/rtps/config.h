@@ -72,7 +72,7 @@ const uint8_t MAX_NUM_PARTICIPANTS = 20;              // D5 single-domain: 15 ac
 const uint8_t NUM_WRITERS_PER_PARTICIPANT = 8;        // max publishers per remote node
 const uint8_t NUM_READERS_PER_PARTICIPANT = 8;        // max subscribers per remote node
 const uint8_t NUM_WRITER_PROXIES_PER_READER = 22;     // must cover SPDP_MAX_NUMBER_FOUND_PARTICIPANTS (19); was 5 — root cause of RX failure
-const uint8_t NUM_READER_PROXIES_PER_WRITER = 15;     // tpc_chassis_sensors has ~8 subscribers
+const uint8_t NUM_READER_PROXIES_PER_WRITER = 25;     // SEDP writers need 1 proxy per remote participant (15 actual + margin)
 
 // Discovery burst handling
 // WARNING: these pools are embedded in EVERY Participant slot (all 20) in static BSS.
