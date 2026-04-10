@@ -29,6 +29,12 @@
 #include "led_status.h"
 #include "memory_reporter.h"  // single-domain POC: periodic heap/stack JSON to USB serial
 
+// Build timestamp baked in at compile time
+#define FW_BUILD_DATE __DATE__
+#define FW_BUILD_TIME __TIME__
+#define FW_BOARD_NAME "chassis-dynamics"
+#define FW_BOARD_IP   "192.168.1.2"
+
 #include <tuple>
 
 /* =====================================
@@ -220,11 +226,20 @@ int main()
     }
     MROS2_INFO("Network connected successfully");
 
-    MROS2_INFO("================================");
-    MROS2_INFO("Platform: %s", MROS2_PLATFORM_NAME);
-    MROS2_INFO("Node: RoverWithIMU (Domain 5)");
-    MROS2_INFO("Tasks: 2 (Motor Control + IMU Reader)");
-    MROS2_INFO("================================");
+    MROS2_INFO("========================================");
+    MROS2_INFO("  Firmware: %s", FW_BOARD_NAME);
+    MROS2_INFO("  Built:    %s %s", FW_BUILD_DATE, FW_BUILD_TIME);
+    MROS2_INFO("  Board IP: %s", FW_BOARD_IP);
+    MROS2_INFO("  Platform: %s", MROS2_PLATFORM_NAME);
+    MROS2_INFO("  Domain:   %d", rtps::Config::DOMAIN_ID);
+    MROS2_INFO("  SPDP max: %d  HB: %d ms  SPDP: %d ms",
+               rtps::Config::SPDP_MAX_NUMBER_FOUND_PARTICIPANTS,
+               rtps::Config::SF_WRITER_HB_PERIOD_MS,
+               rtps::Config::SPDP_RESEND_PERIOD_MS);
+    MROS2_INFO("  Node: RoverWithIMU");
+    MROS2_INFO("  Pub:  tpc_chassis_imu (10 Hz)");
+    MROS2_INFO("  Sub:  tpc_chassis_cmd");
+    MROS2_INFO("========================================");
     
     // Initialize ROS2
     mros2::init(0, NULL);

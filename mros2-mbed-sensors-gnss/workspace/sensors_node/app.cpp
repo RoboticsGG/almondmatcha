@@ -28,6 +28,12 @@
 #include <cstdlib>
 #include <cstring>
 
+// Build timestamp baked in at compile time
+#define FW_BUILD_DATE __DATE__
+#define FW_BUILD_TIME __TIME__
+#define FW_BOARD_NAME "sensors-gnss"
+#define FW_BOARD_IP   "192.168.1.6"
+
 // ============================================================================
 // SAMPLING RATE CONSTANTS
 // ============================================================================
@@ -170,8 +176,20 @@ int main()
   }
 
   // ---- Platform and mROS2 Initialization ----
-  MROS2_INFO("%s start!", MROS2_PLATFORM_NAME);
-  MROS2_INFO("app name: STM32 Sensors Node (Domain 5)");
+  MROS2_INFO("========================================");
+  MROS2_INFO("  Firmware: %s", FW_BOARD_NAME);
+  MROS2_INFO("  Built:    %s %s", FW_BUILD_DATE, FW_BUILD_TIME);
+  MROS2_INFO("  Board IP: %s", FW_BOARD_IP);
+  MROS2_INFO("  Platform: %s", MROS2_PLATFORM_NAME);
+  MROS2_INFO("  Domain:   %d", rtps::Config::DOMAIN_ID);
+  MROS2_INFO("  SPDP max: %d  HB: %d ms  SPDP: %d ms",
+             rtps::Config::SPDP_MAX_NUMBER_FOUND_PARTICIPANTS,
+             rtps::Config::SF_WRITER_HB_PERIOD_MS,
+             rtps::Config::SPDP_RESEND_PERIOD_MS);
+  MROS2_INFO("  Node: mros2_node_sensors_d6");
+  MROS2_INFO("  Pub:  tpc_chassis_sensors (4 Hz)");
+  MROS2_INFO("  Sub:  (none)");
+  MROS2_INFO("========================================");
 
   mros2::init(0, NULL);
   MROS2_DEBUG("mROS 2 initialization is completed");
