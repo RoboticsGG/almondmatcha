@@ -240,10 +240,6 @@ int main()
   osDelay(1000);  // Wait for initialization to complete
   MROS2_INFO("ready to pub/sub message\r\n---");
 
-  // Single-domain POC: start memory reporter (prints heap JSON to USB serial every 2 s)
-  memory_reporter_start("sensors");
-  MROS2_INFO("Memory reporter started (200ms interval) — look for {\"type\":\"STM32_MEM\"} on serial");
-
   // ---- Main Sensor Publishing Loop ----
   // Main loop focuses on aggregating data from the three independent tasks
   // and publishing to ROS2 at 4 Hz (250ms interval).
@@ -277,10 +273,14 @@ int main()
 
     // Print once on first publish to confirm sensors are alive, then stay silent
     if (!sensors_first_print_done) {
-      printf("\r\n[SENSORS] First sample — Enc(A:%ld B:%ld) Power(%.2fV %.2fA)",
+      printf("\r\n[SENSORS] First sample — Enc(A:%ld B:%ld) Power(%.2fV %.2fA)\r\n",
          enc_A, enc_B, vbus, curr);
       fflush(stdout);
       sensors_first_print_done = true;
+
+      // Start memory reporter AFTER first sample so boot output is clean
+      memory_reporter_start("sensors");
+      MROS2_INFO("Memory reporter started (1s interval)");
     }
 
     // Main loop runs at MAIN_LOOP_PERIOD_MS (4 Hz)

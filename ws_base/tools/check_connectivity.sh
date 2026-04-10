@@ -17,7 +17,7 @@
 #
 # Exit code: 0 = all checks passed, 1 = one or more checks failed
 
-set -euo pipefail
+set -uo pipefail
 
 WORKSPACE="$(cd "$(dirname "$0")/../.." && pwd)"
 NIC="${NIC:-enp0s31f6}"
@@ -33,9 +33,9 @@ PASS=0
 FAIL=0
 WARN=0
 
-ok()   { echo -e "  ${GRN}[PASS]${RST} $*"; ((PASS++)); }
-fail() { echo -e "  ${RED}[FAIL]${RST} $*"; ((FAIL++)); }
-warn() { echo -e "  ${YLW}[WARN]${RST} $*"; ((WARN++)); }
+ok()   { echo -e "  ${GRN}[PASS]${RST} $*"; PASS=$((PASS + 1)); }
+fail() { echo -e "  ${RED}[FAIL]${RST} $*"; FAIL=$((FAIL + 1)); }
+warn() { echo -e "  ${YLW}[WARN]${RST} $*"; WARN=$((WARN + 1)); }
 info() { echo -e "  ${CYN}[INFO]${RST} $*"; }
 
 # ── Step 1: Ping all nodes ──────────────────────────────────────────────────

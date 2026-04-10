@@ -301,9 +301,12 @@ int main()
     MROS2_INFO("Sampling rates: Motor=%ldms, IMU=%ldms (publish every %ld samples)",
                MOTOR_RESPONSE_PERIOD_MS, IMU_SAMPLE_PERIOD_MS, IMU_PUBLISH_INTERVAL);
 
-    // Single-domain POC: start memory reporter (prints heap JSON to USB serial every 2 s)
+    // Single-domain POC: start memory reporter AFTER discovery wait
+    // (4s delay = 1s osDelay above + 3s SPDP wait in imu_reader_task)
+    // so the first-sample print appears before the JSON memory stream.
+    osDelay(4000);
     memory_reporter_start("chassis");
-    MROS2_INFO("Memory reporter started (200ms interval) — look for {\"type\":\"STM32_MEM\"} on serial");
+    MROS2_INFO("Memory reporter started (1s interval)");
 
     // Main loop: Spin ROS2 communication
     mros2::spin();
