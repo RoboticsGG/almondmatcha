@@ -368,6 +368,32 @@ EOF
 
 If `interval_ms` column is empty for all rows: confirm `ROS_DOMAIN_ID=5` is set in both terminals.
 
+### 5. Switching to/from the multi-domain branch
+
+**No rebuild is required when switching branches.** Both `single-domain` and `multi-domain` carry identical C++ source code — the only files that differ between them are launch scripts, docs, and `launch_poc_experiment.sh`. The compiled `build/` and `install/` trees are valid on both branches.
+
+```bash
+# On the base PC (and repeat on RPi / Jetson via SSH if their working trees are checked out)
+git stash           # stash any local edits if needed
+git checkout multi-domain
+```
+
+After switching:
+- **No rebuild needed** on any machine
+- **poc_run data is preserved** — `ws_base/tools/poc_run/single_domain/` and `multi_domain/` are gitignored subdirectories and are unaffected by `git checkout`
+- Use `ws_rpi/launch_rover_multi_domain.sh`, `ws_jetson/launch_jetson_multi_domain.sh`, `ws_base/launch_base_multi_domain.sh` on the multi-domain branch
+- `launch_poc_experiment.sh` on the multi-domain branch already references those scripts and writes to `poc_run/multi_domain/`
+
+To switch back:
+```bash
+git checkout single-domain
+# No rebuild needed — launch scripts and poc_run path revert automatically
+```
+
+> **Important — keep the working trees in sync:** Each machine (RPi, Jetson) keeps its own
+> git working tree. When you switch branches on the base PC, SSH into each SBC and run
+> `git checkout <branch>` there as well. Otherwise the old launch scripts will be used.
+
 ---
 
 ## Running the POC Experiment
