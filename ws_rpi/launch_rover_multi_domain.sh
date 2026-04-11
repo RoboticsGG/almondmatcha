@@ -1,0 +1,142 @@
+#!/bin/bash
+# ws_rpi — Multi-Domain POC Launch Script
+# Multi-domain: all RPi nodes on ROS_DOMAIN_ID=5 (same as baseline)
+# mission_monitoring_node_rpi internally bridges D5 → D4 (tpc_telemetry_relay)
+# This script is identical in node set to launch_rover_tmux.sh but uses a distinct
+# tmux session name ("rover_poc") so both can coexist during cross-comparisons.
+#
+# NOTE: Run this script AFTER deploying the multi-domain scripts on Jetson and Base,
+#       and AFTER flashing the updated STM32 firmware.
+#
+#  col→  LEFT          MIDDLE          RIGHT
+#  row0  0:GNSS_Spres  1:Chassis_Ctrl  2:Mission_Monitor
+#  row1  3:GNSS_Ublox  5:Chassis_IMU   7:CSV_Logger
+#  row2  4:GNSS_Miss   6:Chassis_Sens  8:(spare/trace)
+
+SESSION_NAME="rover_poc"
+# D5 for every pane — same as baseline; kept explicit for clarity
+# FASTRTPS_DEFAULT_PROFILES_FILE pins Fast-DDS to the rover Ethernet interface
+# (192.168.1.4/enp0s31f6) and adds STM32 unicast peers, preventing the WiFi
+# interface (wlp4s0) from being chosen instead and causing topic discovery gaps.
+SRC="cd ~/almondmatcha/ws_rpi && source /opt/ros/humble/setup.bash && source install/setup.bash && export ROS_DOMAIN_ID=5 && export FASTRTPS_DEFAULT_PROFILES_FILE=~/almondmatcha/ws_rpi/fastdds_rover.xml"
+
+tmux kill-session -t $SESSION_NAME 2>/dev/null
+
+# Kill any stale ros2 run processes from a previous session.
+# This prevents zombie DDS participants from occupying RTPS reader proxy slots
+# on the STM32 and causing SEDP matching to fail silently for some subscribers.
+# Also kill stale collector processes (latency/net-stats) which create extra
+# DDS participants and consume STM32 participant table slots (MAX=20).
+# Do NOT restart the ros2 daemon — it starts without FASTRTPS_DEFAULT_PROFILES_FILE
+# and would use the default DDS config (wrong NIC, no STM32 peers), breaking
+# ros2 topic list for the entire session.
+pkill -f "ros2 run" 2>/dev/null || true
+pkill -f "collect_latency" 2>/dev/null || true
+pkill -f "collect_net_stats" 2>/dev/null || true
+sleep 2
+
+# ── Build 3-column layout ─────────────────────────────────────────────────────
+tmux new-session -d -s $SESSION_NAME -n "rover_poc"
+
+tmux split-window  -h -p 67 -t $SESSION_NAME:0
+tmux select-pane   -t $SESSION_NAME:0.1
+tmux split-window  -h -p 50 -t $SESSION_NAME:0.1
+
+tmux select-pane   -t $SESSION_NAME:0.0
+tmux split-window  -v -p 67 -t $SESSION_NAME:0.0
+tmux select-pane   -t $SESSION_NAME:0.3
+tmux split-window  -v -p 50 -t $SESSION_NAME:0.3
+
+tmux select-pane   -t $SESSION_NAME:0.1
+tmux split-window  -v -p 67 -t $SESSION_NAME:0.1
+tmux select-pane   -t $SESSION_NAME:0.5
+tmux split-window  -v -p 50 -t $SESSION_NAME:0.5
+
+tmux select-pane   -t $SESSION_NAME:0.2
+tmux split-window  -v -p 67 -t $SESSION_NAME:0.2
+tmux select-pane   -t $SESSION_NAME:0.7
+tmux split-window  -v -p 50 -t $SESSION_NAME:0.7
+
+sleep 0.5
+
+tmux set-option -g pane-border-status top
+tmux set-option -g pane-border-format " [#{pane_index}] #{pane_title} "
+tmux set-option -g pane-border-style fg=colour220       # yellow = POC mode
+tmux set-option -g pane-active-border-style fg=colour196 # red = POC mode
+
+# ── Staggered launch ─────────────────────────────────────────────────────────
+# STM32 boards run a 10-second SPDP discovery wait after boot before publishing.
+# All 8 RPi participants must announce SPDP within that window.
+# Script-level sleep 2 between each pane (8 × 2 s = 16 s total) keeps all nodes
+# up before the STM32 discovery window closes, while preventing a simultaneous
+# SPDP burst that would overflow the STM32's MAX_NUM_UNMATCHED_REMOTE_* pools.
+# The 2 s gap (vs 1 s before) halves the SPDP burst rate, giving the STM32
+# thread pool more time to drain each SEDP exchange before the next arrives.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── LEFT column ───────────────────────────────────────────────────────────────
+tmux select-pane -t $SESSION_NAME:0.0 -T "GNSS_Spresense [D5]"
+tmux send-keys   -t $SESSION_NAME:0.0 "$SRC" C-m
+tmux send-keys   -t $SESSION_NAME:0.0 "clear && echo -e '\\e[1;36m>>> [1/8] GNSS SPRESENSE  [D5] <<<\\e[0m'" C-m
+tmux send-keys   -t $SESSION_NAME:0.0 "ros2 run gnss_navigation gnss_spresense_node 2>&1 | tee ~/ros2_traces/poc_gnss_spresense.log" C-m
+echo "[$(date +%H:%M:%S)] [1/8] gnss_spresense_node sent to pane 0"
+sleep 2
+
+tmux select-pane -t $SESSION_NAME:0.3 -T "GNSS_Ublox_RTK [D5]"
+tmux send-keys   -t $SESSION_NAME:0.3 "$SRC" C-m
+tmux send-keys   -t $SESSION_NAME:0.3 "clear && echo -e '\\e[1;32m>>> [2/8] GNSS UBLOX RTK  [D5] <<<\\e[0m'" C-m
+tmux send-keys   -t $SESSION_NAME:0.3 "ros2 run gnss_navigation gnss_ublox_node 2>&1 | tee ~/ros2_traces/poc_gnss_ublox.log" C-m
+echo "[$(date +%H:%M:%S)] [2/8] gnss_ublox_node sent to pane 3"
+sleep 2
+
+tmux select-pane -t $SESSION_NAME:0.4 -T "GNSS_Mission [D5]"
+tmux send-keys   -t $SESSION_NAME:0.4 "$SRC" C-m
+tmux send-keys   -t $SESSION_NAME:0.4 "clear && echo -e '\\e[1;33m>>> [3/8] GNSS MISSION MONITOR  [D5] <<<\\e[0m'" C-m
+tmux send-keys   -t $SESSION_NAME:0.4 "ros2 run gnss_navigation gnss_mission_monitor_node --ros-args -p no_gnss_mode:=true 2>&1 | tee ~/ros2_traces/poc_gnss_mission.log" C-m
+echo "[$(date +%H:%M:%S)] [3/8] gnss_mission_monitor_node sent to pane 4 (no_gnss_mode=true)"
+sleep 2
+
+# ── MIDDLE column ─────────────────────────────────────────────────────────────
+tmux select-pane -t $SESSION_NAME:0.1 -T "Chassis_Controller [D5]"
+tmux send-keys   -t $SESSION_NAME:0.1 "$SRC" C-m
+tmux send-keys   -t $SESSION_NAME:0.1 "clear && echo -e '\\e[1;35m>>> [4/8] CHASSIS CONTROLLER  [D5] <<<\\e[0m'" C-m
+tmux send-keys   -t $SESSION_NAME:0.1 "ros2 run chassis_control chassis_controller_node 2>&1 | tee ~/ros2_traces/poc_chassis_ctrl.log" C-m
+echo "[$(date +%H:%M:%S)] [4/8] chassis_controller_node sent to pane 1"
+sleep 2
+
+tmux select-pane -t $SESSION_NAME:0.5 -T "Chassis_IMU [D5]"
+tmux send-keys   -t $SESSION_NAME:0.5 "$SRC" C-m
+tmux send-keys   -t $SESSION_NAME:0.5 "clear && echo -e '\\e[1;34m>>> [5/8] CHASSIS IMU  [D5] <<<\\e[0m'" C-m
+tmux send-keys   -t $SESSION_NAME:0.5 "ros2 run chassis_sensors chassis_imu_node 2>&1 | tee ~/ros2_traces/poc_chassis_imu.log" C-m
+echo "[$(date +%H:%M:%S)] [5/8] chassis_imu_node sent to pane 5"
+sleep 2
+
+tmux select-pane -t $SESSION_NAME:0.6 -T "Chassis_Sensors [D5]"
+tmux send-keys   -t $SESSION_NAME:0.6 "$SRC" C-m
+tmux send-keys   -t $SESSION_NAME:0.6 "clear && echo -e '\\e[1;31m>>> [6/8] CHASSIS SENSORS  [D5] <<<\\e[0m'" C-m
+tmux send-keys   -t $SESSION_NAME:0.6 "ros2 run chassis_sensors chassis_sensors_node 2>&1 | tee ~/ros2_traces/poc_chassis_sensors.log" C-m
+echo "[$(date +%H:%M:%S)] [6/8] chassis_sensors_node sent to pane 6"
+sleep 2
+
+# ── RIGHT column ──────────────────────────────────────────────────────────────
+tmux select-pane -t $SESSION_NAME:0.2 -T "Mission_Monitor_RPi [D5]"
+tmux send-keys   -t $SESSION_NAME:0.2 "$SRC" C-m
+tmux send-keys   -t $SESSION_NAME:0.2 "clear && echo -e '\\e[1;93m>>> [7/8] MISSION MONITORING  [D5→D4 relay] <<<\\e[0m'" C-m
+tmux send-keys   -t $SESSION_NAME:0.2 "ros2 run rover_monitoring mission_monitoring_node_rpi 2>&1 | tee ~/ros2_traces/poc_mission_monitor.log" C-m
+echo "[$(date +%H:%M:%S)] [7/8] mission_monitoring_node_rpi sent to pane 2"
+sleep 2
+
+tmux select-pane -t $SESSION_NAME:0.7 -T "CSV_Logger [D5]"
+tmux send-keys   -t $SESSION_NAME:0.7 "$SRC" C-m
+tmux send-keys   -t $SESSION_NAME:0.7 "clear && echo -e '\\e[1;96m>>> [8/8] CSV DATA LOGGER  [D5] <<<\\e[0m'" C-m
+tmux send-keys   -t $SESSION_NAME:0.7 "ros2 run rover_monitoring rover_monitoring_node 2>&1 | tee ~/ros2_traces/poc_csv_logger.log" C-m
+echo "[$(date +%H:%M:%S)] [8/8] rover_monitoring_node sent to pane 7"
+
+# Pane 8 — spare / ad-hoc monitoring
+tmux select-pane -t $SESSION_NAME:0.8 -T "Trace_Monitor"
+tmux send-keys   -t $SESSION_NAME:0.8 "$SRC" C-m
+tmux send-keys   -t $SESSION_NAME:0.8 "clear && echo -e '\\e[1;90m>>> [TRACE / SPARE]  ROS2 topic hz monitoring available <<<\\e[0m'" C-m
+tmux send-keys   -t $SESSION_NAME:0.8 "echo 'Tip: ros2 topic hz /tpc_chassis_imu --window 50 | ros2 topic hz /tpc_chassis_sensors --window 50'" C-m
+
+tmux select-pane -t $SESSION_NAME:0.2
+[ -z "${SKIP_ATTACH:-}" ] && tmux attach-session -t $SESSION_NAME

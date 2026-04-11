@@ -1,6 +1,6 @@
-# STM32 Firmware Changes Summary — Single-Domain POC
+# STM32 Firmware Changes Summary
 
-**Branch:** `single-domain`  
+**Branch:** `multi-domain` (inherited from `single-domain`)  
 **Last updated:** April 12, 2026  
 **Boards:** 2× NUCLEO-F767ZI (chassis-dynamics @ 192.168.1.2, sensors-gnss @ 192.168.1.6)  
 **Upstream base:** mROS-base/mros2 v0.5.4 (commit `de70e01`)

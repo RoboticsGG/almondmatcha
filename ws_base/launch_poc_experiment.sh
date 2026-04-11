@@ -1,7 +1,7 @@
 #!/bin/bash
 # launch_poc_experiment.sh — Full POC experiment launcher (run on base PC)
 #
-# Executes the complete single-domain POC measurement sequence in order:
+# Executes the complete multi-domain POC measurement sequence in order:
 #   1. Clean stale DDS participants on all machines
 #   2. Start STM32 memory collector (background)
 #   3. Launch ROS2 nodes on RPi, Jetson, and base PC
@@ -19,15 +19,15 @@
 #   bash ws_base/launch_poc_experiment.sh --skip-launch    # skip ROS2 node launch (collectors only)
 #
 # Output files (all on base PC under a single per-run directory):
-#   ws_base/tools/poc_run/single_domain/run_NNN/latency_rpi.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/latency_jetson.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/net_stats_rpi.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/net_stats_jetson.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/topic_bw.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/stm32_chassis.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/stm32_sensors.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/merged_all.csv    ← time-bucketed union of all above
-#   ws_base/tools/poc_run/single_domain/run_NNN/logs/             ← all sub-process logs
+#   ws_base/tools/poc_run/multi_domain/run_NNN/latency_rpi.csv
+#   ws_base/tools/poc_run/multi_domain/run_NNN/latency_jetson.csv
+#   ws_base/tools/poc_run/multi_domain/run_NNN/net_stats_rpi.csv
+#   ws_base/tools/poc_run/multi_domain/run_NNN/net_stats_jetson.csv
+#   ws_base/tools/poc_run/multi_domain/run_NNN/topic_bw.csv
+#   ws_base/tools/poc_run/multi_domain/run_NNN/stm32_chassis.csv
+#   ws_base/tools/poc_run/multi_domain/run_NNN/stm32_sensors.csv
+#   ws_base/tools/poc_run/multi_domain/run_NNN/merged_all.csv    ← time-bucketed union of all above
+#   ws_base/tools/poc_run/multi_domain/run_NNN/logs/             ← all sub-process logs
 
 set -euo pipefail
 
@@ -48,7 +48,7 @@ WORKSPACE="$HOME/almondmatcha"
 # run_NNN is auto-incremented — each launch creates the next available number.
 # Data is separated by branch: poc_run/single_domain/ vs poc_run/multi_domain/
 # so switching branches doesn't overwrite or mix experiment data.
-POC_RUN_BASE="$WORKSPACE/ws_base/tools/poc_run/single_domain"
+POC_RUN_BASE="$WORKSPACE/ws_base/tools/poc_run/multi_domain"
 
 _next_run_dir() {
     local last
@@ -249,7 +249,7 @@ launch_ros2_nodes() {
     log "  (launch output redirected to $LOG_DIR/launch_<host>.log)"
 
     log "  Launching rover nodes on RPi ($RPI_HOST)..."
-    ssh $SSH_OPTS "$RPI_HOST" "SKIP_ATTACH=1 bash ~/almondmatcha/ws_rpi/launch_rover_single_domain.sh" \
+    ssh $SSH_OPTS "$RPI_HOST" "SKIP_ATTACH=1 bash ~/almondmatcha/ws_rpi/launch_rover_multi_domain.sh" \
         >"$LOG_DIR/launch_rpi.log" 2>&1 &
     # RPi launches 8 nodes with 2 s stagger each (≈16 s total).
     # Wait long enough for all RPi nodes to finish their SPDP announcements
@@ -259,7 +259,7 @@ launch_ros2_nodes() {
     ok "  RPi launch sent (8 nodes, 2 s stagger = ~16 s)"
 
     log "  Launching Jetson nodes ($JETSON_HOST)..."
-    ssh $SSH_OPTS "$JETSON_HOST" "SKIP_ATTACH=1 bash ~/almondmatcha/ws_jetson/launch_jetson_single_domain.sh" \
+    ssh $SSH_OPTS "$JETSON_HOST" "SKIP_ATTACH=1 bash ~/almondmatcha/ws_jetson/launch_jetson_multi_domain.sh" \
         >"$LOG_DIR/launch_jetson.log" 2>&1 &
     # Jetson launches 4 nodes with 3+2+2 s stagger (≈7 s total).
     # Wait for all Jetson nodes to announce before adding base PC nodes.
@@ -267,15 +267,15 @@ launch_ros2_nodes() {
     ok "  Jetson launch sent (4 nodes, 3+2+2 s stagger = ~7 s)"
 
     log "  Launching base PC nodes..."
-    SKIP_ATTACH=1 bash "$WORKSPACE/ws_base/launch_base_single_domain.sh" \
+    SKIP_ATTACH=1 bash "$WORKSPACE/ws_base/launch_base_multi_domain.sh" \
         >"$LOG_DIR/launch_base.log" 2>&1 &
     # Base PC launches 2 nodes with minimal delay.
     # Give them time to announce and settle before probing STM32 topics.
     sleep 5
     ok "  Base PC launch sent (2 nodes)"
 
-    log "  All ROS2 nodes launched — Linux participants now visible to STM32 discovery"
-    log "  Total: 14 Linux participants staggered over ~35 s to avoid STM32 overload"
+    log "  All ROS2 nodes launched — D5 Linux participants visible to STM32 discovery"
+    log "  Total: 14 Linux nodes (D5: 10, D6: 2, D4: 2) staggered over ~35 s"
 }
 
 # ============================================================================
@@ -687,8 +687,8 @@ print_summary() {
 
 main() {
     echo ""
-    echo -e "${BOLD}  Single-Domain POC Experiment Launcher${NC}"
-    echo -e "  Branch: single-domain | Domain ID: 5 | Duration: ${RUN_DURATION}s"
+    echo -e "${BOLD}  Multi-Domain POC Experiment Launcher${NC}"
+    echo -e "  Branch: multi-domain | Domains: D4/D5/D6 | Duration: ${RUN_DURATION}s"
     echo ""
 
     preflight

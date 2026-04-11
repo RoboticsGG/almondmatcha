@@ -1,7 +1,7 @@
 # Quick Reference: System Launch & Configuration
 
 **Last updated:** April 12, 2026  
-**Configuration:** Single-domain POC — all nodes on D5; 16 participants + 14 margin  
+**Configuration:** Multi-domain POC — D4 (telemetry) / D5 (control+STM32) / D6 (vision); ~12 D5 participants + 18 margin  
 **Network:** All systems connected via Gigabit Ethernet switch (192.168.1.0/24)
 
 ---
@@ -97,18 +97,18 @@ cd ~/almondmatcha/ws_base
 
 ## Participant Count
 
-**Domain 5 (all nodes — single-domain POC):**
+**Multi-domain (D4/D5/D6):**
 
-| System | Nodes | D5 Total |
-|--------|-------|----------|
-| STM32 boards | chassis + sensors | 2 |
-| ws_rpi | 8 rover/GNSS nodes | 10 |
-| ws_jetson | camera_stream, lane_detection, rover_kinematic_control, rover_local_monitoring | 14 |
-| ws_base | 2 base nodes | **16** |
-| **Headroom** | | **+4** |
-| **STM32 capacity (`MAX_NUM_PARTICIPANTS`)** | | **20** |
+| System | D5 Nodes | D4 Nodes | D6 Nodes | Total |
+|--------|----------|----------|----------|-------|
+| STM32 boards | chassis + sensors = 2 | — | — | 2 |
+| ws_rpi | 8 rover/GNSS nodes | (D4 pub internal to monitoring node) | — | 8 |
+| ws_jetson | kinematic_ctrl (D5 pub) = 1 | local_monitoring = 1 | camera + lane = 2 | 4 |
+| ws_base | mission_command = 1 | mission_monitoring = 1 | — | 2 |
+| **D5 total** | **12** | | | **16** |
+| **STM32 D5 capacity (`SPDP_MAX=30`)** | **+18 margin** | | | |
 
-> All nodes run on D5. No D4/D6 domain separation — this is the single-domain POC configuration.
+> D6 vision nodes (camera, lane detection) use shared memory on Jetson localhost — no network traffic, invisible to STM32. D4 telemetry nodes don't interact with STM32.
 
 ---
 
@@ -142,12 +142,17 @@ ping 192.168.1.4  # Base PC
 sudo timeout 5 tcpdump -i enp0s31f6 \
   'dst host 239.255.0.1 and udp port 8650' -nn -c 3
 
-# Check participant count in D5
+# Check D5 participant count (STM32 + control nodes)
 export ROS_DOMAIN_ID=5
 export FASTRTPS_DEFAULT_PROFILES_FILE=~/almondmatcha/ws_base/fastdds_base.xml
-ros2 node list | wc -l  # Should be 16 (all D5 nodes including STM32 boards)
+ros2 node list | wc -l  # Should be ~12 (D5 nodes including STM32 boards)
 
-# Verify data flow (from any machine on switch)
+# Check D4 telemetry
+export ROS_DOMAIN_ID=4
+ros2 topic echo /tpc_telemetry_relay --once  # 5 Hz from RPi
+
+# Verify STM32 data flow (D5)
+export ROS_DOMAIN_ID=5
 ros2 topic hz /tpc_chassis_imu      # ~10 Hz
 ros2 topic hz /tpc_chassis_sensors  # ~4 Hz
 
