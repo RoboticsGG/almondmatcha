@@ -101,13 +101,17 @@ done
 # ============================================================================
 
 STM32_COLLECTOR_PID=""
-TOPIC_BW_PID=""
+TOPIC_BW_PID=""       # D5 — base PC
+TOPIC_BW_D4_PID=""   # D4 — base PC
+# D6 bw runs remotely on Jetson — no local PID; killed via SSH in cleanup
 
 cleanup() {
     echo ""
     warn "Interrupted — stopping all background collectors..."
     [[ -n "$STM32_COLLECTOR_PID" ]] && kill "$STM32_COLLECTOR_PID" 2>/dev/null || true
     [[ -n "$TOPIC_BW_PID"        ]] && kill "$TOPIC_BW_PID"        2>/dev/null || true
+    [[ -n "$TOPIC_BW_D4_PID"    ]] && kill "$TOPIC_BW_D4_PID"    2>/dev/null || true
+    ssh $SSH_OPTS "$JETSON_HOST" "pkill -f 'collect_topic_bw' 2>/dev/null || true" 2>/dev/null || true
     # Stop latency collectors (cleanup path — best effort)
     LOCAL_DEST_CSV="$RUN_DIR/latency_rpi.csv"        TARGET_HOST="$RPI_HOST"    TARGET_LABEL=rpi        SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh" 2>/dev/null || true
@@ -416,13 +420,10 @@ start_latency_collectors() {
 # ============================================================================
 
 start_topic_bw_collector() {
-    log "Step 5 — Starting per-topic bandwidth collector (base PC)"
-    log "  output: $RUN_DIR/topic_bw.csv"
+    log "Step 5 — Starting per-topic bandwidth collectors (base PC: D5 + D4; Jetson: D6)"
 
-    # Source ROS2 env and exec python3 directly (exec replaces bash → PID is python3).
-    # FASTRTPS profile pins DDS to the base PC ethernet NIC (192.168.1.4).
-    # Source order: humble → ws_base → common_ifaces (last wins on AMENT_PREFIX_PATH)
-    # so msgs_ifaces from common_ifaces always overlays any stale ws_base copy.
+    # ── D5 collector — base PC, FastDDS XML pinned to NIC ────────────────────
+    log "  D5 output: $RUN_DIR/topic_bw.csv"
     bash -c "
         source /opt/ros/humble/setup.bash
         source '$WORKSPACE/ws_base/install/setup.bash'
@@ -434,11 +435,48 @@ start_topic_bw_collector() {
             --interval 1
     " </dev/null >"$LOG_DIR/topic_bw.log" 2>&1 &
     TOPIC_BW_PID=$!
-
     sleep 1
     kill -0 "$TOPIC_BW_PID" 2>/dev/null \
-        || die "Topic BW collector exited immediately — check $LOG_DIR/topic_bw.log"
-    ok "  Topic BW collector running (PID $TOPIC_BW_PID)"
+        || die "Topic BW (D5) exited immediately — check $LOG_DIR/topic_bw.log"
+    ok "  D5 Topic BW collector running (PID $TOPIC_BW_PID)"
+
+    # ── D4 collector — base PC, no FastDDS XML (no STM32 on D4) ─────────────
+    log "  D4 output: $RUN_DIR/topic_bw_d4.csv"
+    bash -c "
+        source /opt/ros/humble/setup.bash
+        source '$WORKSPACE/ws_base/install/setup.bash'
+        source '$WORKSPACE/common_ifaces/install/setup.bash'
+        export ROS_DOMAIN_ID=4
+        unset FASTRTPS_DEFAULT_PROFILES_FILE
+        exec python3 '$TOOLS_DIR/monitoring/collect_topic_bw.py' \
+            --out '$RUN_DIR/topic_bw_d4.csv' \
+            --interval 1
+    " </dev/null >"$LOG_DIR/topic_bw_d4.log" 2>&1 &
+    TOPIC_BW_D4_PID=$!
+    sleep 1
+    kill -0 "$TOPIC_BW_D4_PID" 2>/dev/null \
+        || die "Topic BW (D4) exited immediately — check $LOG_DIR/topic_bw_d4.log"
+    ok "  D4 Topic BW collector running (PID $TOPIC_BW_D4_PID)"
+
+    # ── D6 collector — remote Jetson, shared memory, no FastDDS XML ──────────
+    # D6 is Jetson-localhost only; must run on the Jetson itself.
+    log "  D6 output: $RUN_DIR/topic_bw_d6.csv  (collected on Jetson)"
+    ssh -T $SSH_OPTS "$JETSON_HOST" "
+        source /opt/ros/humble/setup.bash
+        source ~/almondmatcha/ws_jetson/install/setup.bash 2>/dev/null || true
+        source ~/almondmatcha/common_ifaces/install/setup.bash 2>/dev/null || true
+        export ROS_DOMAIN_ID=6
+        unset FASTRTPS_DEFAULT_PROFILES_FILE
+        mkdir -p ~/ros2_traces
+        pkill -f 'collect_topic_bw' 2>/dev/null || true
+        setsid nohup python3 ~/almondmatcha/ws_base/tools/monitoring/collect_topic_bw.py \
+            --out ~/ros2_traces/topic_bw_d6.csv \
+            --interval 1 \
+            </dev/null >~/ros2_traces/topic_bw_d6.log 2>&1 &
+        disown
+        echo [OK] D6 Topic BW collector PID: \$!
+    " && ok "  D6 Topic BW collector started on Jetson" \
+      || warn "  D6 Topic BW collector failed to start on Jetson (non-fatal)"
 }
 
 # ============================================================================
@@ -503,7 +541,7 @@ wait_for_run() {
     for (( i=0; i<DASH; i++ )); do echo ""; done
 
     local elapsed=0 bar filled empty pct i
-    local ch_line se_line ch_used ch_free ch_n se_used se_free se_n stm32_status
+    local ch_line se_line ch_used ch_free ch_n se_used se_free se_n stm32_status bw_status bw_d4_status
 
     while (( elapsed < RUN_DURATION )); do
         sleep 1
@@ -532,8 +570,11 @@ wait_for_run() {
             && stm32_status="\033[0;32m● running\033[0m" \
             || stm32_status="\033[0;31m● DIED\033[0m"
         kill -0 "$TOPIC_BW_PID" 2>/dev/null \
-            && bw_status="\033[0;32m● running\033[0m" \
-            || bw_status="\033[0;31m● DIED\033[0m"
+            && bw_status="\033[0;32m● D5\033[0m" \
+            || bw_status="\033[0;31m● D5 DIED\033[0m"
+        kill -0 "$TOPIC_BW_D4_PID" 2>/dev/null \
+            && bw_d4_status="\033[0;32m● D4\033[0m" \
+            || bw_d4_status="\033[0;31m● D4 DIED\033[0m"
 
         # --- Overwrite dashboard in place (cursor up DASH lines, carriage return, rewrite) ---
         printf "\033[%dA\r" "$DASH"
@@ -547,8 +588,8 @@ wait_for_run() {
                "$se_used" "$se_free" "$se_n" ""
         printf "%-70s\n" ""
         printf "  Collectors:%-59s\n" ""
-        printf "    STM32 %b  Topic BW %b  RPi lat \033[0;32m●\033[0m  Jetson lat \033[0;32m●\033[0m   \n" \
-               "$stm32_status" "$bw_status"
+        printf "    STM32 %b  BW %b %b  D6(Jetson)\033[0;32m●\033[0m  RPi lat \033[0;32m●\033[0m  Jetson lat \033[0;32m●\033[0m   \n" \
+               "$stm32_status" "$bw_status" "$bw_d4_status"
     done
 
     echo ""
@@ -567,6 +608,7 @@ stop_and_collect() {
     # ── Stop local collectors immediately (no network wait) ──────────────────
     [[ -n "$STM32_COLLECTOR_PID" ]] && kill "$STM32_COLLECTOR_PID" 2>/dev/null || true
     [[ -n "$TOPIC_BW_PID"        ]] && kill "$TOPIC_BW_PID"        2>/dev/null || true
+    [[ -n "$TOPIC_BW_D4_PID"    ]] && kill "$TOPIC_BW_D4_PID"    2>/dev/null || true
     sleep 0.5   # allow final flush before STM32 CSV rename
     local f
     f=$(ls "$RUN_DIR"/stm32_chassis_*.csv 2>/dev/null | tail -1) && [[ -n "$f" ]] && mv "$f" "$RUN_DIR/stm32_chassis.csv" || true
@@ -620,9 +662,15 @@ stop_and_collect() {
                 kill \$(cat ~/ros2_traces/net_stats_jetson.pid) 2>/dev/null || true
                 rm -f ~/ros2_traces/net_stats_jetson.pid
             fi
+            pkill -f 'collect_topic_bw' 2>/dev/null || true
         "
         scp $SSH_OPTS "$JETSON_HOST:~/ros2_traces/net_stats_jetson.csv" \
             "$RUN_DIR/net_stats_jetson.csv" 2>/dev/null || true
+
+        # Pull D6 topic BW CSV from Jetson
+        scp $SSH_OPTS "$JETSON_HOST:~/ros2_traces/topic_bw_d6.csv" \
+            "$RUN_DIR/topic_bw_d6.csv" 2>/dev/null \
+            || warn "  topic_bw_d6.csv not found on Jetson (non-fatal)"
 
         # Pull node logs
         scp $SSH_OPTS "$JETSON_HOST:~/ros2_traces/poc_*.log" \
@@ -665,10 +713,12 @@ print_summary() {
     echo "  Data files:"
     echo "    $RUN_DIR/latency_rpi.csv"
     echo "    $RUN_DIR/latency_jetson.csv      (D5 topics)"
-    echo "    $RUN_DIR/latency_jetson_d6.csv   (D6 vision topics: camera/lane)"
+    echo "    $RUN_DIR/latency_jetson_d6.csv   (D6 vision: camera/lane)"
     echo "    $RUN_DIR/net_stats_rpi.csv"
     echo "    $RUN_DIR/net_stats_jetson.csv"
-    echo "    $RUN_DIR/topic_bw.csv"
+    echo "    $RUN_DIR/topic_bw.csv            (D5 — base PC)"
+    echo "    $RUN_DIR/topic_bw_d4.csv         (D4 — base PC: telemetry relay)"
+    echo "    $RUN_DIR/topic_bw_d6.csv         (D6 — Jetson: camera/lane bandwidth)"
     echo "    $RUN_DIR/stm32_chassis.csv"
     echo "    $RUN_DIR/stm32_sensors.csv"
     echo ""
@@ -679,7 +729,8 @@ print_summary() {
     echo "    $LOG_DIR/stm32_collector.log"
     echo "    $LOG_DIR/raw_serial_chassis.log  ← full STM32 serial stream"
     echo "    $LOG_DIR/raw_serial_sensors.log  ← full STM32 serial stream"
-    echo "    $LOG_DIR/topic_bw.log"
+    echo "    $LOG_DIR/topic_bw.log            (D5)"
+    echo "    $LOG_DIR/topic_bw_d4.log         (D4)"
     echo "    $LOG_DIR/rpi/poc_*.log       ← per-node logs from RPi"
     echo "    $LOG_DIR/jetson/poc_*.log    ← per-node logs from Jetson"
     echo ""

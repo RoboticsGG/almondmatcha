@@ -555,12 +555,16 @@ def main():
     ap.add_argument('--net-jetson',     type=Path,
                     help='Merge: collect_net_stats.py CSV from Jetson')
     ap.add_argument('--topic-bw',       type=Path,
-                    help='Merge: collect_topic_bw.py CSV from base PC')
-    # ── Convenience shorthand — pass a run directory instead of 7 individual paths
+                    help='Merge: collect_topic_bw.py CSV from base PC (D5)')
+    ap.add_argument('--topic-bw-d4',    type=Path,
+                    help='Merge: collect_topic_bw.py CSV from base PC (D4)')
+    ap.add_argument('--topic-bw-d6',    type=Path,
+                    help='Merge: collect_topic_bw.py CSV from Jetson (D6, shared memory)')
+    # ── Convenience shorthand — pass a run directory instead of individual paths
     ap.add_argument('--run-dir',         type=Path,
                     help='Path to a poc_run/run_NNN directory; auto-finds all CSVs '
                          'and implies --merge.  Individual --latency-*/--stm32/--net-*/'
-                         '--topic-bw flags are ignored when --run-dir is set.')
+                         '--topic-bw* flags are ignored when --run-dir is set.')
     args = ap.parse_args()
 
     if not args.csv and not args.baseline and not args.poc and not args.merge \
@@ -585,6 +589,9 @@ def main():
         args.net_rpi        = _find('net_stats_rpi.csv')
         args.net_jetson     = _find('net_stats_jetson.csv')
         args.topic_bw       = _find('topic_bw.csv')
+        # Multi-domain only: D4 and D6 topic bandwidth; silently absent on single-domain.
+        args.topic_bw_d4    = _find('topic_bw_d4.csv')
+        args.topic_bw_d6    = _find('topic_bw_d6.csv')
         # Multi-domain only: D6 vision latency (latency_jetson_d6.csv).
         # Silently absent on single-domain runs — no error.
         latency_jetson_d6 = _find('latency_jetson_d6.csv')
@@ -600,6 +607,8 @@ def main():
             ('net_stats_rpi.csv', args.net_rpi),
             ('net_stats_jetson.csv', args.net_jetson),
             ('topic_bw.csv', args.topic_bw),
+            ('topic_bw_d4.csv', args.topic_bw_d4),
+            ('topic_bw_d6.csv', args.topic_bw_d6),
         ] if val is not None]
         print(f'[INFO] --run-dir: found {len(found)} CSV(s): {found}')
 
@@ -669,7 +678,17 @@ def main():
         stm32         = (stm32_chassis + stm32_sensors) or None
         net_rpi    = load_net_csv(args.net_rpi,    'RPi')    if args.net_rpi    else None
         net_jetson = load_net_csv(args.net_jetson, 'Jetson') if args.net_jetson else None
-        topic_bw   = load_topic_bw_csv(args.topic_bw)        if args.topic_bw   else None
+        # Merge topic_bw from all domains (D5, D4, D6) into a single dict.
+        # Topics are domain-isolated so there are no key collisions.
+        topic_bw: dict | None = {}
+        for _bw_path in [args.topic_bw,
+                         getattr(args, 'topic_bw_d4', None),
+                         getattr(args, 'topic_bw_d6', None)]:
+            if _bw_path:
+                _loaded = load_topic_bw_csv(_bw_path)
+                if _loaded:
+                    topic_bw.update(_loaded)
+        topic_bw = topic_bw or None
 
         plot_unified_timeline(
             latency_rpi    = lat_rpi,
