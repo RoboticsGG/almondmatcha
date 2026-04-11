@@ -410,7 +410,7 @@ bash ws_base/launch_poc_experiment.sh --skip-launch
 | Pre-flight | Checks `tmux`, `ssh`, `pyserial`, both serial ports, SSH reachability |
 | Start STM32 collector | Starts `collect_stm32_memory.py` in background — **before boards power on** |
 | ⏸ Interactive pause | Waits for you to physically power-cycle both STM32 boards |
-| Launch ROS2 nodes | SSHes into RPi → Jetson → launches base PC nodes during STM32 discovery wait |
+| Launch ROS2 nodes | SSHes into RPi (8 nodes, 2 s stagger) → waits 20 s → Jetson (4 nodes) → waits 10 s → base PC (2 nodes). Staggered to avoid saturating STM32 discovery. |
 | Start latency collectors | Runs `start_trace.sh` on RPi and Jetson via SSH |
 | Start topic-BW collector | Runs `collect_topic_bw.py` locally on base PC (auto-discovers all D5 topics) |
 | Start net-stats collectors | Runs `collect_net_stats.py` on both SBCs via SSH background `nohup` |

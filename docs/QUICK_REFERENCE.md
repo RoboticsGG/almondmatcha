@@ -1,6 +1,6 @@
 # Quick Reference: System Launch & Configuration
 
-**Last updated:** April 11, 2026  
+**Last updated:** April 12, 2026  
 **Configuration:** Single-domain POC — all nodes on D5; 16 participants + 14 margin  
 **Network:** All systems connected via Gigabit Ethernet switch (192.168.1.0/24)
 

@@ -1,7 +1,7 @@
 # STM32 Firmware Changes Summary — Single-Domain POC
 
 **Branch:** `single-domain`  
-**Last updated:** April 11, 2026  
+**Last updated:** April 12, 2026  
 **Boards:** 2× NUCLEO-F767ZI (chassis-dynamics @ 192.168.1.2, sensors-gnss @ 192.168.1.6)  
 **Upstream base:** mROS-base/mros2 v0.5.4 (commit `de70e01`)
 
@@ -118,15 +118,13 @@ Both boards' `platform/rtps/config.h` values changed from upstream defaults:
 
 | Parameter | Default | Set to | Rationale |
 |-----------|---------|--------|-----------|
-| `lwip.pbuf-pool-size` | 8 | **20** | More pbufs for SPDP/SEDP burst discovery |
+| `lwip.pbuf-pool-size` | 8 | **32** | Absorb SPDP/SEDP packet burst during 16-participant discovery. ~19.7 KB RAM (well within 371 KB free heap). Increased from 20→32 to prevent `pbuf_alloc()` → NULL during full POC launch. |
 | `lwip.socket-max` | 4 | **8** | Enough for RTPS multicast + unicast sockets |
 | `lwip.udp-socket-max` | 4 | **8** | Same |
 
-**Known limitation:** `PBUF_POOL_SIZE=20` can briefly exhaust during
-discovery bursts with 16+ DDS participants announcing simultaneously,
-causing `pbuf_alloc()` → NULL and silent packet drops.  This is the
-primary cause of intermittent discovery failures in connectivity checks.
-Retries in the check script absorb this.
+**Per-pbuf cost:** ~616 bytes (struct 16B + buffer 592B + MEMP overhead).
+Pool at 32 entries costs ~19.7 KB total.  Both boards report ~371 KB
+(chassis) / ~368 KB (sensors) heap free, so 32 pbufs is well within margins.
 
 ---
 
@@ -251,7 +249,51 @@ reducing participant churn. This brought consistent pass rate from ~50% to
 
 ---
 
-## 7. Build System
+## 7. POC Experiment Launch Timing
+
+**File:** `ws_base/launch_poc_experiment.sh` + per-machine subscripts
+
+The full POC creates 16 DDS participants on D5 (8 RPi + 4 Jetson + 2 Base +
+2 STM32). All 14 Linux participants must complete SPDP→SEDP with both STM32
+boards. The launch sequence staggers participants to avoid saturating the
+STM32's thread pool queue and lwIP pbuf pool:
+
+### Stagger delays
+
+| Machine | Nodes | Per-node delay | Total | Notes |
+|---------|-------|----------------|-------|-------|
+| RPi | 8 | **2 s** (was 1 s) | ~16 s | Doubled to halve SPDP burst rate |
+| Jetson | 4 | 3+2+2 s | ~7 s | Unchanged — already well-spaced |
+| Base PC | 2 | minimal | ~2 s | Only 2 nodes — low burst |
+
+### Inter-machine delays in master script
+
+| Transition | Delay | Rationale |
+|------------|-------|-----------|
+| RPi → Jetson | **20 s** (was 1 s) | Wait for all 8 RPi nodes to finish SPDP. RPi stagger = 16 s + 4 s margin. |
+| Jetson → Base | **10 s** (was 1 s) | Wait for all 4 Jetson nodes to finish SPDP. Jetson stagger = 7 s + 3 s margin. |
+| Base → topic probe | **5 s** (was 2 s) | Let 2 base nodes announce before probing STM32 topics. |
+
+**Total node launch window: ~35 s** (was ~4 s). The extra 30 s of startup
+time prevents overlapping discovery bursts that saturated the STM32's
+`THREAD_POOL_WORKLOAD_QUEUE_LENGTH=40` and caused `wait_stm32_topics` to
+spin indefinitely.
+
+### Step 3 — `wait_stm32_topics()` fix
+
+**Problem:** The old implementation used sequential `ros2 topic hz` calls —
+each creating an ephemeral DDS participant with a fresh SPDP→SEDP cycle.
+This was the same participant churn problem fixed in `check_connectivity.sh`.
+
+**Fix:** Replaced with parallel `ros2 topic echo --once` (same technique as
+`check_connectivity.sh` step 5). Both topics are checked simultaneously in
+background processes, sharing a single discovery window. Up to 6 retries
+with increasing timeout (12/18/24/30/36/42 s) to handle worst-case discovery
+convergence during full 16-participant POC.
+
+---
+
+## 8. Build System
 
 Both firmware trees use Docker-based builds:
 
@@ -279,9 +321,9 @@ sudo openocd -f interface/stlink.cfg \
 
 ---
 
-## 8. Verified Working State
+## 9. Verified Working State
 
-As of April 11, 2026, with all 5 patches applied:
+As of April 12, 2026, with all 5 patches applied:
 
 - `ros2 topic list` shows `/tpc_chassis_imu`, `/tpc_chassis_sensors`, `/tpc_chassis_cmd`
 - `ros2 topic info /tpc_chassis_imu` → Publisher count: 1

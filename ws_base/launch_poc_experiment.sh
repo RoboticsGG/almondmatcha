@@ -249,22 +249,31 @@ launch_ros2_nodes() {
     log "  Launching rover nodes on RPi ($RPI_HOST)..."
     ssh $SSH_OPTS "$RPI_HOST" "SKIP_ATTACH=1 bash ~/almondmatcha/ws_rpi/launch_rover_single_domain.sh" \
         >"$LOG_DIR/launch_rpi.log" 2>&1 &
-    sleep 1
-    ok "  RPi launch sent"
+    # RPi launches 8 nodes with 2 s stagger each (≈16 s total).
+    # Wait long enough for all RPi nodes to finish their SPDP announcements
+    # before adding Jetson participants — prevents overlapping discovery bursts
+    # that would saturate the STM32 thread pool queue (40 slots).
+    sleep 20
+    ok "  RPi launch sent (8 nodes, 2 s stagger = ~16 s)"
 
     log "  Launching Jetson nodes ($JETSON_HOST)..."
     ssh $SSH_OPTS "$JETSON_HOST" "SKIP_ATTACH=1 bash ~/almondmatcha/ws_jetson/launch_jetson_single_domain.sh" \
         >"$LOG_DIR/launch_jetson.log" 2>&1 &
-    sleep 1
-    ok "  Jetson launch sent"
+    # Jetson launches 4 nodes with 3+2+2 s stagger (≈7 s total).
+    # Wait for all Jetson nodes to announce before adding base PC nodes.
+    sleep 10
+    ok "  Jetson launch sent (4 nodes, 3+2+2 s stagger = ~7 s)"
 
     log "  Launching base PC nodes..."
     SKIP_ATTACH=1 bash "$WORKSPACE/ws_base/launch_base_single_domain.sh" \
         >"$LOG_DIR/launch_base.log" 2>&1 &
-    sleep 2
-    ok "  Base PC launch sent"
+    # Base PC launches 2 nodes with minimal delay.
+    # Give them time to announce and settle before probing STM32 topics.
+    sleep 5
+    ok "  Base PC launch sent (2 nodes)"
 
     log "  All ROS2 nodes launched — Linux participants now visible to STM32 discovery"
+    log "  Total: 14 Linux participants staggered over ~35 s to avoid STM32 overload"
 }
 
 # ============================================================================
@@ -275,81 +284,106 @@ launch_ros2_nodes() {
 #      the STM32 must process.  Starting collectors before topics are confirmed
 #      wastes the measurement window on "waiting for STM32 data" messages.
 #
-# HOW: Use ros2 topic hz on the base PC (which has FASTRTPS_DEFAULT_PROFILES_FILE
-#      set and metatrafficMulticastLocatorList configured to receive STM32 SPDP).
-#      We check that each topic has published at least a few messages.
+# HOW: Check both topics in parallel using ros2 topic echo --once.
+#      Each attempt creates background processes for all topics simultaneously,
+#      sharing a single discovery window instead of sequential per-topic
+#      ros2 topic hz calls that would create separate ephemeral DDS participants
+#      and churn the STM32's already-busy discovery queues.
 
 STM32_TOPICS=("/tpc_chassis_imu" "/tpc_chassis_sensors")
 
 wait_stm32_topics() {
     log "Step 3 — Waiting for STM32 topics to be discovered and flowing"
     log "  Required topics: ${STM32_TOPICS[*]}"
-    log "  No timeout — press Ctrl+C to abort"
+    log "  Retries with increasing timeout — press Ctrl+C to abort"
 
     local start_time
     start_time=$(date +%s)
 
-    # Track which topics have been confirmed
-    local -A topic_confirmed
-    for t in "${STM32_TOPICS[@]}"; do
-        topic_confirmed["$t"]=false
-    done
+    # Create a helper script that checks all topics in parallel.
+    # Each ros2 topic echo runs in the background so all topics share one
+    # SPDP→SEDP discovery cycle, avoiding sequential participant churn on
+    # the STM32 boards.
+    local echo_helper
+    echo_helper=$(mktemp)
+    cat > "$echo_helper" << 'WAITEOF'
+#!/bin/bash
+source /opt/ros/humble/setup.bash 2>/dev/null
+source "$1/ws_base/install/setup.bash" 2>/dev/null
+source "$1/common_ifaces/install/setup.bash" 2>/dev/null
+export ROS_DOMAIN_ID=5
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export FASTRTPS_DEFAULT_PROFILES_FILE="$1/ws_base/fastdds_base.xml"
+TIMEOUT=$2
+OUTDIR=$(mktemp -d)
+shift 2
+pids=()
+for topic in "$@"; do
+    (timeout "$TIMEOUT" ros2 topic echo "$topic" --once 2>/dev/null \
+        > "$OUTDIR/$(echo "$topic" | tr '/' '_')" ) &
+    pids+=($!)
+done
+wait "${pids[@]}" 2>/dev/null
+for topic in "$@"; do
+    fname="$OUTDIR/$(echo "$topic" | tr '/' '_')"
+    echo "=== $topic ==="
+    if [ -s "$fname" ]; then
+        echo "OK"
+        head -3 "$fname"
+    else
+        echo "=== TIMEOUT ==="
+    fi
+done
+rm -rf "$OUTDIR"
+WAITEOF
+    chmod +x "$echo_helper"
 
-    while true; do
+    # Up to 6 attempts with increasing timeout: 12/18/24/30/36/42s
+    # These timeouts are longer than check_connectivity because during a
+    # full POC launch the STM32 is processing SPDP/SEDP from 14+ new
+    # Linux participants simultaneously.
+    local max_attempts=6
+    for attempt in $(seq 1 $max_attempts); do
+        local echo_timeout=$(( 6 + attempt * 6 ))
         local elapsed=$(( $(date +%s) - start_time ))
+        log "  Attempt $attempt/$max_attempts (parallel echo, timeout ${echo_timeout}s, elapsed ${elapsed}s)..."
 
+        local combined_output
+        combined_output=$(bash "$echo_helper" "$WORKSPACE" "$echo_timeout" \
+            "${STM32_TOPICS[@]}" 2>/dev/null) || true
+
+        local all_ok=true
         for t in "${STM32_TOPICS[@]}"; do
-            if [[ "${topic_confirmed[$t]}" == "true" ]]; then
-                continue
-            fi
-
-            # Run ros2 topic hz for 3 seconds, count non-empty rate lines.
-            # timeout ensures we don't block forever if topic never appears.
-            local hz_output
-            hz_output=$(bash -c "
-                source /opt/ros/humble/setup.bash
-                source '$WORKSPACE/ws_base/install/setup.bash'
-                source '$WORKSPACE/common_ifaces/install/setup.bash'
-                export ROS_DOMAIN_ID=5
-                export FASTRTPS_DEFAULT_PROFILES_FILE='$WORKSPACE/ws_base/fastdds_base.xml'
-                timeout 4 ros2 topic hz '$t' --window 3 2>&1 | head -3
-            " 2>/dev/null) || true
-
-            # ros2 topic hz prints "average rate: X.XX" when messages are flowing
-            if echo "$hz_output" | grep -q "average rate"; then
-                local rate
-                rate=$(echo "$hz_output" | grep -oP 'average rate:\s*\K[0-9.]+' | head -1)
-                topic_confirmed["$t"]=true
-                ok "  $t confirmed flowing (${rate} Hz) after ${elapsed}s"
+            local block
+            block=$(echo "$combined_output" | sed -n "\\#^=== ${t} ===#,\\#^===#p" | head -5)
+            if echo "$block" | grep -q "^OK"; then
+                ok "  $t confirmed flowing after ${elapsed}s"
+            else
+                all_ok=false
             fi
         done
 
-        # Check if all topics confirmed
-        local all_found=true
-        for t in "${STM32_TOPICS[@]}"; do
-            if [[ "${topic_confirmed[$t]}" != "true" ]]; then
-                all_found=false
-                break
-            fi
-        done
-
-        if $all_found; then
+        if $all_ok; then
             echo ""
             ok "  All STM32 topics confirmed — experiment data will be clean from the start"
+            rm -f "$echo_helper"
             return 0
         fi
 
-        # Progress update every ~10s
-        if (( elapsed % 10 == 0 )) && (( elapsed > 0 )); then
+        if (( attempt < max_attempts )); then
             local pending=""
             for t in "${STM32_TOPICS[@]}"; do
-                [[ "${topic_confirmed[$t]}" != "true" ]] && pending+=" $t"
+                local block
+                block=$(echo "$combined_output" | sed -n "\\#^=== ${t} ===#,\\#^===#p" | head -5)
+                echo "$block" | grep -q "^OK" || pending+=" $t"
             done
-            log "  Still waiting (${elapsed}s)...  pending:${pending}"
+            log "  Not all topics received data — retrying in 3s... pending:${pending}"
+            sleep 3
         fi
-
-        sleep 1
     done
+
+    rm -f "$echo_helper"
+    die "STM32 topics not confirmed after $max_attempts attempts — check STM32 serial output"
 }
 
 # ============================================================================

@@ -67,9 +67,11 @@ tmux set-option -g pane-active-border-style fg=colour196 # red = POC mode
 # ── Staggered launch ─────────────────────────────────────────────────────────
 # STM32 boards run a 10-second SPDP discovery wait after boot before publishing.
 # All 8 RPi participants must announce SPDP within that window.
-# Script-level sleep 1 between each pane (8 × 1 s = 8 s total) keeps all nodes
+# Script-level sleep 2 between each pane (8 × 2 s = 16 s total) keeps all nodes
 # up before the STM32 discovery window closes, while preventing a simultaneous
 # SPDP burst that would overflow the STM32's MAX_NUM_UNMATCHED_REMOTE_* pools.
+# The 2 s gap (vs 1 s before) halves the SPDP burst rate, giving the STM32
+# thread pool more time to drain each SEDP exchange before the next arrives.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── LEFT column ───────────────────────────────────────────────────────────────
@@ -78,21 +80,21 @@ tmux send-keys   -t $SESSION_NAME:0.0 "$SRC" C-m
 tmux send-keys   -t $SESSION_NAME:0.0 "clear && echo -e '\\e[1;36m>>> [1/8] GNSS SPRESENSE  [POC D5] <<<\\e[0m'" C-m
 tmux send-keys   -t $SESSION_NAME:0.0 "ros2 run gnss_navigation gnss_spresense_node 2>&1 | tee ~/ros2_traces/poc_gnss_spresense.log" C-m
 echo "[$(date +%H:%M:%S)] [1/8] gnss_spresense_node sent to pane 0"
-sleep 1
+sleep 2
 
 tmux select-pane -t $SESSION_NAME:0.3 -T "GNSS_Ublox_RTK [D5]"
 tmux send-keys   -t $SESSION_NAME:0.3 "$SRC" C-m
 tmux send-keys   -t $SESSION_NAME:0.3 "clear && echo -e '\\e[1;32m>>> [2/8] GNSS UBLOX RTK  [POC D5] <<<\\e[0m'" C-m
 tmux send-keys   -t $SESSION_NAME:0.3 "ros2 run gnss_navigation gnss_ublox_node 2>&1 | tee ~/ros2_traces/poc_gnss_ublox.log" C-m
 echo "[$(date +%H:%M:%S)] [2/8] gnss_ublox_node sent to pane 3"
-sleep 1
+sleep 2
 
 tmux select-pane -t $SESSION_NAME:0.4 -T "GNSS_Mission [D5]"
 tmux send-keys   -t $SESSION_NAME:0.4 "$SRC" C-m
 tmux send-keys   -t $SESSION_NAME:0.4 "clear && echo -e '\\e[1;33m>>> [3/8] GNSS MISSION MONITOR  [POC D5] <<<\\e[0m'" C-m
 tmux send-keys   -t $SESSION_NAME:0.4 "ros2 run gnss_navigation gnss_mission_monitor_node --ros-args -p no_gnss_mode:=true 2>&1 | tee ~/ros2_traces/poc_gnss_mission.log" C-m
 echo "[$(date +%H:%M:%S)] [3/8] gnss_mission_monitor_node sent to pane 4 (no_gnss_mode=true)"
-sleep 1
+sleep 2
 
 # ── MIDDLE column ─────────────────────────────────────────────────────────────
 tmux select-pane -t $SESSION_NAME:0.1 -T "Chassis_Controller [D5]"
@@ -100,21 +102,21 @@ tmux send-keys   -t $SESSION_NAME:0.1 "$SRC" C-m
 tmux send-keys   -t $SESSION_NAME:0.1 "clear && echo -e '\\e[1;35m>>> [4/8] CHASSIS CONTROLLER  [POC D5] <<<\\e[0m'" C-m
 tmux send-keys   -t $SESSION_NAME:0.1 "ros2 run chassis_control chassis_controller_node 2>&1 | tee ~/ros2_traces/poc_chassis_ctrl.log" C-m
 echo "[$(date +%H:%M:%S)] [4/8] chassis_controller_node sent to pane 1"
-sleep 1
+sleep 2
 
 tmux select-pane -t $SESSION_NAME:0.5 -T "Chassis_IMU [D5]"
 tmux send-keys   -t $SESSION_NAME:0.5 "$SRC" C-m
 tmux send-keys   -t $SESSION_NAME:0.5 "clear && echo -e '\\e[1;34m>>> [5/8] CHASSIS IMU  [POC D5] <<<\\e[0m'" C-m
 tmux send-keys   -t $SESSION_NAME:0.5 "ros2 run chassis_sensors chassis_imu_node 2>&1 | tee ~/ros2_traces/poc_chassis_imu.log" C-m
 echo "[$(date +%H:%M:%S)] [5/8] chassis_imu_node sent to pane 5"
-sleep 1
+sleep 2
 
 tmux select-pane -t $SESSION_NAME:0.6 -T "Chassis_Sensors [D5]"
 tmux send-keys   -t $SESSION_NAME:0.6 "$SRC" C-m
 tmux send-keys   -t $SESSION_NAME:0.6 "clear && echo -e '\\e[1;31m>>> [6/8] CHASSIS SENSORS  [POC D5] <<<\\e[0m'" C-m
 tmux send-keys   -t $SESSION_NAME:0.6 "ros2 run chassis_sensors chassis_sensors_node 2>&1 | tee ~/ros2_traces/poc_chassis_sensors.log" C-m
 echo "[$(date +%H:%M:%S)] [6/8] chassis_sensors_node sent to pane 6"
-sleep 1
+sleep 2
 
 # ── RIGHT column ──────────────────────────────────────────────────────────────
 tmux select-pane -t $SESSION_NAME:0.2 -T "Mission_Monitor_RPi [D5]"
@@ -122,7 +124,7 @@ tmux send-keys   -t $SESSION_NAME:0.2 "$SRC" C-m
 tmux send-keys   -t $SESSION_NAME:0.2 "clear && echo -e '\\e[1;93m>>> [7/8] MISSION MONITORING  [POC D5] <<<\\e[0m'" C-m
 tmux send-keys   -t $SESSION_NAME:0.2 "ros2 run rover_monitoring mission_monitoring_node_rpi 2>&1 | tee ~/ros2_traces/poc_mission_monitor.log" C-m
 echo "[$(date +%H:%M:%S)] [7/8] mission_monitoring_node_rpi sent to pane 2"
-sleep 1
+sleep 2
 
 tmux select-pane -t $SESSION_NAME:0.7 -T "CSV_Logger [D5]"
 tmux send-keys   -t $SESSION_NAME:0.7 "$SRC" C-m
