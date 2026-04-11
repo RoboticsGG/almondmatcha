@@ -530,7 +530,10 @@ def main():
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument('--csv',            type=Path, help='Single CSV file to analyze')
+    ap.add_argument('--csv',            type=Path, nargs='+',
+                    help='One or more latency CSV files to analyze. '
+                         'Label is derived from filename stem (e.g. latency_rpi.csv → rpi). '
+                         'Single file uses label "run" for backward-compatibility.')
     ap.add_argument('--baseline',       type=Path, help='Baseline CSV (multi-domain)')
     ap.add_argument('--poc',            type=Path, help='POC CSV (single-domain)')
     ap.add_argument('--topics',         nargs='*', help='Filter to these topic names only')
@@ -596,6 +599,12 @@ def main():
         ] if val is not None]
         print(f'[INFO] --run-dir: found {len(found)} CSV(s): {found}')
 
+        # Also feed all latency CSVs into the summary path
+        latency_csvs = [p for p in [args.latency_rpi, args.latency_jetson]
+                        if p is not None]
+        if latency_csvs:
+            args.csv = latency_csvs
+
     topics_filter = set(args.topics) if args.topics else None
     out_dir = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -603,14 +612,23 @@ def main():
     summary_rows = []
     raw_jitter_per_label = {}   # {label: {topic: [interval_ms, ...]}}
 
-    # ── Single run ────────────────────────────────────────────────────────────
+    # ── Single or multi-file run ──────────────────────────────────────────────
     if args.csv:
-        lats, intvls, j, l = run_analysis(args.csv, 'run', topics_filter)
-        raw_jitter_per_label['run'] = intvls
-        for topic, s in j.items():
-            summary_rows.append(stats_to_row('run', topic, 'jitter', s))
-        for topic, s in l.items():
-            summary_rows.append(stats_to_row('run', topic, 'latency', s))
+        csv_list = args.csv if isinstance(args.csv, list) else [args.csv]
+        for csv_path in csv_list:
+            # Derive label from stem: latency_rpi.csv→rpi, latency_jetson.csv→jetson
+            # Single file keeps 'run' for backward-compatibility
+            if len(csv_list) == 1:
+                label = 'run'
+            else:
+                stem = csv_path.stem  # e.g. 'latency_rpi'
+                label = stem[len('latency_'):] if stem.startswith('latency_') else stem
+            lats, intvls, j, l = run_analysis(csv_path, label, topics_filter)
+            raw_jitter_per_label[label] = intvls
+            for topic, s in j.items():
+                summary_rows.append(stats_to_row(label, topic, 'jitter', s))
+            for topic, s in l.items():
+                summary_rows.append(stats_to_row(label, topic, 'latency', s))
 
     # ── Side-by-side comparison ───────────────────────────────────────────────
     if args.baseline:
