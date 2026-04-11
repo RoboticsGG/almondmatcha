@@ -83,6 +83,110 @@ Same five collectors as `single-domain` — see `POC_SINGLE_DOMAIN.md` section "
 
 ---
 
+## Prerequisites
+
+### Why a rebuild is required
+
+The `multi-domain` branch was reset from `single-domain` and carries the same C++ source code — no application logic changed. However, each machine must have compiled workspace artifacts in its local `build/` and `install/` directories before the launch scripts will work. If you are running this branch on a machine for the first time (fresh clone, or previously only built `single-domain`), the `install/` tree may be missing or stale.
+
+> **Note:** Because no C++ source was modified in this branch, an **incremental build** (`build_inc.sh`) is sufficient on machines where the workspace was already built on `single-domain`. A clean build is only needed on a fresh checkout.
+
+### Build order
+
+The workspaces have a dependency chain. Always follow this order:
+
+```
+common_ifaces  →  ws_rpi (RPi)
+                   ws_jetson (Jetson)
+                   ws_base (Base)
+```
+
+`ws_rpi` builds its own interface packages internally and does not depend on `common_ifaces`. `ws_jetson` and `ws_base` do depend on it.
+
+### Per-machine build commands
+
+**Base PC** (run once, or after any source change):
+```bash
+cd ~/almondmatcha
+
+# 1. Build shared interface packages (msgs, actions, services)
+cd common_ifaces
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install
+cd ..
+
+# 2. Incremental build of ws_base
+bash ws_base/build_inc.sh
+```
+
+**RPi** (run on the rover):
+```bash
+cd ~/almondmatcha
+
+# Builds interfaces + application packages in one step
+bash ws_rpi/build_inc.sh
+```
+
+**Jetson**:
+```bash
+cd ~/almondmatcha
+
+# 1. Build common_ifaces (same steps as Base PC above)
+cd common_ifaces
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install
+cd ..
+
+# 2. Incremental build of ws_jetson
+bash ws_jetson/build_inc.sh
+```
+
+### Verifying the build
+
+After building, confirm the key executables are discoverable before launching:
+
+```bash
+# On Base PC
+source ws_base/install/setup.bash
+ros2 pkg executables mission_control  # must list mission_command_node, mission_monitoring_node_pc
+
+# On RPi
+source ws_rpi/install/setup.bash
+ros2 pkg executables rover_bringup    # must list mission_monitoring_node_rpi, rover_monitoring_node
+
+# On Jetson
+source ws_jetson/install/setup.bash
+ros2 pkg executables rover_vision     # must list camera_stream_node, lane_detection_node
+ros2 pkg executables rover_navigation # must list rover_kinematic_control
+```
+
+### Switching to/from the single-domain branch
+
+**No rebuild is required when switching branches.** Both `multi-domain` and `single-domain` carry identical C++ source code — the only files that differ are launch scripts, docs, and `launch_poc_experiment.sh`. The compiled `build/` and `install/` trees are valid on both branches.
+
+```bash
+# On the base PC (and repeat on RPi / Jetson via SSH)
+git stash           # stash any local edits if needed
+git checkout single-domain
+```
+
+After switching:
+- **No rebuild needed** on any machine
+- **poc_run data is preserved** — `ws_base/tools/poc_run/single_domain/` and `multi_domain/` are gitignored subdirectories and are unaffected by `git checkout`
+- `launch_poc_experiment.sh` on the single-domain branch references `*_single_domain.sh` scripts and writes to `poc_run/single_domain/`
+
+To switch back:
+```bash
+git checkout multi-domain
+# No rebuild needed — launch scripts and poc_run path revert automatically
+```
+
+> **Important — keep the working trees in sync:** Each machine (RPi, Jetson) keeps its own
+> git working tree. When you switch branches on the base PC, SSH into each SBC and run
+> `git checkout <branch>` there as well. Otherwise the old launch scripts will be used.
+
+---
+
 ## Running the Experiment
 
 ### Option A — Automated (recommended): `launch_poc_experiment.sh`
