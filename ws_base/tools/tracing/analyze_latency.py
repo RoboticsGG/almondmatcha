@@ -585,12 +585,16 @@ def main():
         args.net_rpi        = _find('net_stats_rpi.csv')
         args.net_jetson     = _find('net_stats_jetson.csv')
         args.topic_bw       = _find('topic_bw.csv')
+        # Multi-domain only: D6 vision latency (latency_jetson_d6.csv).
+        # Silently absent on single-domain runs — no error.
+        latency_jetson_d6 = _find('latency_jetson_d6.csv')
         if args.out_dir == Path('.'):
             args.out_dir = rd
 
         found = [name for name, val in [
             ('latency_rpi.csv', args.latency_rpi),
             ('latency_jetson.csv', args.latency_jetson),
+            ('latency_jetson_d6.csv', latency_jetson_d6),
             ('stm32_chassis.csv', args.stm32),
             ('stm32_sensors.csv', args.stm32_sensors),
             ('net_stats_rpi.csv', args.net_rpi),
@@ -599,8 +603,8 @@ def main():
         ] if val is not None]
         print(f'[INFO] --run-dir: found {len(found)} CSV(s): {found}')
 
-        # Also feed all latency CSVs into the summary path
-        latency_csvs = [p for p in [args.latency_rpi, args.latency_jetson]
+        # Feed all latency CSVs (including D6 if present) into the summary path
+        latency_csvs = [p for p in [args.latency_rpi, args.latency_jetson, latency_jetson_d6]
                         if p is not None]
         if latency_csvs:
             args.csv = latency_csvs

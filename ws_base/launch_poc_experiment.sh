@@ -109,9 +109,11 @@ cleanup() {
     [[ -n "$STM32_COLLECTOR_PID" ]] && kill "$STM32_COLLECTOR_PID" 2>/dev/null || true
     [[ -n "$TOPIC_BW_PID"        ]] && kill "$TOPIC_BW_PID"        2>/dev/null || true
     # Stop latency collectors (cleanup path — best effort)
-    LOCAL_DEST_CSV="$RUN_DIR/latency_rpi.csv"    TARGET_HOST="$RPI_HOST"    TARGET_LABEL=rpi    SSH_OPTS="$SSH_OPTS" \
+    LOCAL_DEST_CSV="$RUN_DIR/latency_rpi.csv"        TARGET_HOST="$RPI_HOST"    TARGET_LABEL=rpi        SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh" 2>/dev/null || true
-    LOCAL_DEST_CSV="$RUN_DIR/latency_jetson.csv" TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson SSH_OPTS="$SSH_OPTS" \
+    LOCAL_DEST_CSV="$RUN_DIR/latency_jetson.csv"     TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson     SSH_OPTS="$SSH_OPTS" \
+        bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh" 2>/dev/null || true
+    LOCAL_DEST_CSV="$RUN_DIR/latency_jetson_d6.csv"  TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson_d6  SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh" 2>/dev/null || true
     # Close SSH control sockets
     ssh $SSH_OPTS -O exit "$RPI_HOST"    2>/dev/null || true
@@ -397,11 +399,16 @@ start_latency_collectors() {
 
     TARGET_HOST="$RPI_HOST"    TARGET_LABEL=rpi    SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/start_trace.sh"
-    ok "  RPi latency collector started"
+    ok "  RPi latency collector started (D5)"
 
     TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/start_trace.sh"
-    ok "  Jetson latency collector started"
+    ok "  Jetson latency collector started (D5)"
+
+    # Multi-domain only: second collector for D6 vision topics (shared memory, Jetson-localhost)
+    TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson_d6 SSH_OPTS="$SSH_OPTS" \
+        bash "$TOOLS_DIR/tracing/start_trace_d6.sh"
+    ok "  Jetson D6 latency collector started (D6: camera/lane)"
 }
 
 # ============================================================================
@@ -597,9 +604,14 @@ stop_and_collect() {
     RPI_PULL_PID=$!
 
     (
-        # Stop latency collector and pull latency CSV
+        # Stop D5 latency collector and pull CSV
         LOCAL_DEST_CSV="$RUN_DIR/latency_jetson.csv" TARGET_HOST="$JETSON_HOST" \
             TARGET_LABEL=jetson SSH_OPTS="$SSH_OPTS" \
+            bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh"
+
+        # Stop D6 latency collector (multi-domain only) and pull CSV
+        LOCAL_DEST_CSV="$RUN_DIR/latency_jetson_d6.csv" TARGET_HOST="$JETSON_HOST" \
+            TARGET_LABEL=jetson_d6 SSH_OPTS="$SSH_OPTS" \
             bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh"
 
         # Stop net-stats and pull CSV in one SSH round-trip
@@ -652,7 +664,8 @@ print_summary() {
     echo ""
     echo "  Data files:"
     echo "    $RUN_DIR/latency_rpi.csv"
-    echo "    $RUN_DIR/latency_jetson.csv"
+    echo "    $RUN_DIR/latency_jetson.csv      (D5 topics)"
+    echo "    $RUN_DIR/latency_jetson_d6.csv   (D6 vision topics: camera/lane)"
     echo "    $RUN_DIR/net_stats_rpi.csv"
     echo "    $RUN_DIR/net_stats_jetson.csv"
     echo "    $RUN_DIR/topic_bw.csv"
@@ -670,9 +683,12 @@ print_summary() {
     echo "    $LOG_DIR/rpi/poc_*.log       ← per-node logs from RPi"
     echo "    $LOG_DIR/jetson/poc_*.log    ← per-node logs from Jetson"
     echo ""
-    echo "  Analyze — jitter/latency summary:"
+    echo "  Analyze — all-machine latency/jitter summary (RPi + Jetson D5 + Jetson D6):"
     echo "    python3 ws_base/tools/tracing/analyze_latency.py \\"
-    echo "        --poc $RUN_DIR/latency_rpi.csv"
+    echo "        --csv $RUN_DIR/latency_rpi.csv \\"
+    echo "              $RUN_DIR/latency_jetson.csv \\"
+    echo "              $RUN_DIR/latency_jetson_d6.csv \\"
+    echo "        --out-dir $RUN_DIR/"
     echo ""
     echo "  Analyze — unified timeline (all sources, one command):"
     echo "    python3 ws_base/tools/tracing/analyze_latency.py --merge \\"
