@@ -1,3 +1,7 @@
-# Ignore all experiment run data directories — they are generated, not source.
+# Ignore all experiment run data — generated, not source.
 # The tools (merge_run_csv.py etc.) in this directory ARE tracked.
-run_*/
+# Run data is separated by branch configuration:
+#   single_domain/run_NNN/   ← single-domain POC runs
+#   multi_domain/run_NNN/    ← multi-domain POC runs
+single_domain/
+multi_domain/

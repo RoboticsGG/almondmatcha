@@ -19,15 +19,15 @@
 #   bash ws_base/launch_poc_experiment.sh --skip-launch    # skip ROS2 node launch (collectors only)
 #
 # Output files (all on base PC under a single per-run directory):
-#   ws_base/tools/poc_run/run_NNN/latency_rpi.csv
-#   ws_base/tools/poc_run/run_NNN/latency_jetson.csv
-#   ws_base/tools/poc_run/run_NNN/net_stats_rpi.csv
-#   ws_base/tools/poc_run/run_NNN/net_stats_jetson.csv
-#   ws_base/tools/poc_run/run_NNN/topic_bw.csv
-#   ws_base/tools/poc_run/run_NNN/stm32_chassis.csv
-#   ws_base/tools/poc_run/run_NNN/stm32_sensors.csv
-#   ws_base/tools/poc_run/run_NNN/merged_all.csv    ← time-bucketed union of all above
-#   ws_base/tools/poc_run/run_NNN/logs/             ← all sub-process logs
+#   ws_base/tools/poc_run/single_domain/run_NNN/latency_rpi.csv
+#   ws_base/tools/poc_run/single_domain/run_NNN/latency_jetson.csv
+#   ws_base/tools/poc_run/single_domain/run_NNN/net_stats_rpi.csv
+#   ws_base/tools/poc_run/single_domain/run_NNN/net_stats_jetson.csv
+#   ws_base/tools/poc_run/single_domain/run_NNN/topic_bw.csv
+#   ws_base/tools/poc_run/single_domain/run_NNN/stm32_chassis.csv
+#   ws_base/tools/poc_run/single_domain/run_NNN/stm32_sensors.csv
+#   ws_base/tools/poc_run/single_domain/run_NNN/merged_all.csv    ← time-bucketed union of all above
+#   ws_base/tools/poc_run/single_domain/run_NNN/logs/             ← all sub-process logs
 
 set -euo pipefail
 
@@ -46,7 +46,9 @@ WORKSPACE="$HOME/almondmatcha"
 
 # All experiment output lands in a single numbered run directory.
 # run_NNN is auto-incremented — each launch creates the next available number.
-POC_RUN_BASE="$WORKSPACE/ws_base/tools/poc_run"
+# Data is separated by branch: poc_run/single_domain/ vs poc_run/multi_domain/
+# so switching branches doesn't overwrite or mix experiment data.
+POC_RUN_BASE="$WORKSPACE/ws_base/tools/poc_run/single_domain"
 
 _next_run_dir() {
     local last

@@ -361,7 +361,7 @@ ws_base/
 │   ├── monitoring/             # collect_topic_bw.py, collect_net_stats.py
 │   ├── stm32_serial/           # collect_stm32_memory.py
 │   ├── tracing/                # collect_latency.py, start_trace.sh, stop_and_collect_trace.sh
-│   └── poc_run/                # merge_run_csv.py; run_NNN/ output dirs (git-ignored)
+│   └── poc_run/                # merge_run_csv.py; single_domain/ & multi_domain/ run dirs (git-ignored)
 └── src/
     ├── action_ifaces/          # DesData action (built here)
     ├── msgs_ifaces  -> ../../common_ifaces/msgs_ifaces  # symlink — NOT built here

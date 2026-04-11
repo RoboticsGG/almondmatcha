@@ -419,7 +419,7 @@ bash ws_base/launch_poc_experiment.sh --skip-launch
 
 **Output files — all in one numbered run directory on the base PC:**
 ```
-ws_base/tools/poc_run/run_NNN/
+ws_base/tools/poc_run/single_domain/run_NNN/
   latency_rpi.csv          # collect_latency.py — RPi inter-arrival + latency
   latency_jetson.csv       # collect_latency.py — Jetson inter-arrival + latency
   net_stats_rpi.csv        # collect_net_stats.py — RPi NIC counters
@@ -543,7 +543,7 @@ scp yupi@192.168.1.5:~/ros2_traces/net_stats_jetson.csv  /tmp/net_stats_jetson.c
 ```
 
 > **Tip:** the automated script (Option A) handles all of the above automatically,
-> including routing all files into `ws_base/tools/poc_run/run_NNN/` and calling
+> including routing all files into `ws_base/tools/poc_run/single_domain/run_NNN/` and calling
 > `merge_run_csv.py` at the end. The manual steps above write to `/tmp/` for brevity;
 > adjust destination paths as needed.
 
@@ -563,17 +563,17 @@ for `/tpc_telemetry_relay` — the only project message type that includes `head
 ```bash
 # Analyze POC run only (prints table to stdout + saves latency_summary.csv)
 python3 ws_base/tools/tracing/analyze_latency.py \
-  --csv ws_base/tools/poc_run/run_001/latency_rpi.csv
+  --csv ws_base/tools/poc_run/single_domain/run_001/latency_rpi.csv
 
 # Side-by-side comparison (requires baseline CSV from main branch)
 python3 ws_base/tools/tracing/analyze_latency.py \
   --baseline ws_base/tools/tracing/data/baseline_latency_rpi.csv \
-  --poc      ws_base/tools/poc_run/run_001/latency_rpi.csv \
+  --poc      ws_base/tools/poc_run/single_domain/run_001/latency_rpi.csv \
   --out-dir  ws_base/tools/tracing/results/
 
 # Filter to specific topics only
 python3 ws_base/tools/tracing/analyze_latency.py \
-  --poc ws_base/tools/poc_run/run_001/latency_rpi.csv \
+  --poc ws_base/tools/poc_run/single_domain/run_001/latency_rpi.csv \
   --topics /tpc_chassis_imu /tpc_chassis_sensors /tpc_rover_ctrl_cmd
 ```
 
@@ -592,21 +592,21 @@ has no RTC; its `wall_clock` column (base PC receive time) is used as the sync a
 **Recommended — using `--run-dir` (auto-discovers all CSVs):**
 ```bash
 python3 ws_base/tools/tracing/analyze_latency.py --merge \
-    --run-dir ws_base/tools/poc_run/run_001
-# Produces: ws_base/tools/poc_run/run_001/unified_timeline.png
+    --run-dir ws_base/tools/poc_run/single_domain/run_001
+# Produces: ws_base/tools/poc_run/single_domain/run_001/unified_timeline.png
 ```
 
 **Manual — specifying each file individually:**
 ```bash
 python3 ws_base/tools/tracing/analyze_latency.py --merge \
-    --latency-rpi    ws_base/tools/poc_run/run_001/latency_rpi.csv \
-    --latency-jetson ws_base/tools/poc_run/run_001/latency_jetson.csv \
-    --stm32          ws_base/tools/poc_run/run_001/stm32_chassis.csv \
-    --stm32-sensors  ws_base/tools/poc_run/run_001/stm32_sensors.csv \
-    --net-rpi        ws_base/tools/poc_run/run_001/net_stats_rpi.csv \
-    --net-jetson     ws_base/tools/poc_run/run_001/net_stats_jetson.csv \
-    --topic-bw       ws_base/tools/poc_run/run_001/topic_bw.csv \
-    --out-dir        ws_base/tools/poc_run/run_001/
+    --latency-rpi    ws_base/tools/poc_run/single_domain/run_001/latency_rpi.csv \
+    --latency-jetson ws_base/tools/poc_run/single_domain/run_001/latency_jetson.csv \
+    --stm32          ws_base/tools/poc_run/single_domain/run_001/stm32_chassis.csv \
+    --stm32-sensors  ws_base/tools/poc_run/single_domain/run_001/stm32_sensors.csv \
+    --net-rpi        ws_base/tools/poc_run/single_domain/run_001/net_stats_rpi.csv \
+    --net-jetson     ws_base/tools/poc_run/single_domain/run_001/net_stats_jetson.csv \
+    --topic-bw       ws_base/tools/poc_run/single_domain/run_001/topic_bw.csv \
+    --out-dir        ws_base/tools/poc_run/single_domain/run_001/
 ```
 
 Outputs `unified_timeline.png` in the output directory — up to 5 stacked panels sharing
@@ -629,11 +629,11 @@ at any time:
 
 ```bash
 python3 ws_base/tools/poc_run/merge_run_csv.py \
-    --run-dir ws_base/tools/poc_run/run_001
+    --run-dir ws_base/tools/poc_run/single_domain/run_001
 
 # Finer time resolution (0.5-second buckets):
 python3 ws_base/tools/poc_run/merge_run_csv.py \
-    --run-dir ws_base/tools/poc_run/run_001 --bucket-s 0.5
+    --run-dir ws_base/tools/poc_run/single_domain/run_001 --bucket-s 0.5
 ```
 
 `merged_all.csv` has one row per time bucket with all metrics as columns:
@@ -654,7 +654,7 @@ custom analysis, since all sources are already aligned to the same time axis.
 ```bash
 python3 - << 'EOF'
 import pandas as pd
-df = pd.read_csv("ws_base/tools/poc_run/run_001/merged_all.csv")
+df = pd.read_csv("ws_base/tools/poc_run/single_domain/run_001/merged_all.csv")
 print(df.head())
 print(df.describe())
 EOF
@@ -667,7 +667,7 @@ Open in any spreadsheet or:
 ```bash
 python3 - << 'EOF'
 import pandas as pd
-df = pd.read_csv("ws_base/tools/poc_run/run_001/net_stats_rpi.csv")
+df = pd.read_csv("ws_base/tools/poc_run/single_domain/run_001/net_stats_rpi.csv")
 print(df[["elapsed_s","rx_bps","tx_bps","udp_sockets","max_rx_queue","rx_drop"]].describe())
 EOF
 ```
@@ -685,8 +685,8 @@ Key columns:
 ```bash
 python3 - << 'EOF'
 import pandas as pd
-for f in ["ws_base/tools/poc_run/run_001/stm32_chassis.csv",
-          "ws_base/tools/poc_run/run_001/stm32_sensors.csv"]:
+for f in ["ws_base/tools/poc_run/single_domain/run_001/stm32_chassis.csv",
+          "ws_base/tools/poc_run/single_domain/run_001/stm32_sensors.csv"]:
     try:
         df = pd.read_csv(f)
         node = df["node"].iloc[0] if "node" in df.columns else f
