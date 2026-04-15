@@ -9,7 +9,7 @@ Metrics captured every INTERVAL_S seconds:
   - 'ss -u -a -n'    → number of UDP sockets + per-socket queues (summary)
 
 Run on the SBC (RPi / Jetson) during the POC experiment:
-    python3 collect_net_stats.py --iface eth0 --out /tmp/net_stats_rpi.csv
+    python3 collect_net_stats.py --out /tmp/net_stats_rpi.csv
 
 Then pull back to the base PC:
     scp pi@<rpi_ip>:/tmp/net_stats_rpi.csv ws_base/tools/monitoring/data/
@@ -19,7 +19,8 @@ Usage:
                                  [--duration SECS]
 
 Arguments:
-    --iface     Network interface to monitor (default: eth0)
+    --iface     Network interface to monitor.  Use 'auto' (default) to detect
+                the interface for the default route via 'ip route get 1.1.1.1'.
     --interval  Sampling interval in seconds (default: 0.5)
     --out       Output CSV file path (default: /tmp/net_stats_<hostname>.csv)
     --duration  How long to run in seconds; 0 = run until Ctrl-C (default: 0)
@@ -35,6 +36,37 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+
+
+def _detect_iface() -> str:
+    """
+    Return the name of the interface used for the default route.
+    Strategy:
+      1. 'ip route get 1.1.1.1' → parse 'dev <iface>'
+      2. Fallback: first non-loopback, non-virtual interface in /proc/net/dev
+    """
+    try:
+        out = subprocess.check_output(
+            ["ip", "route", "get", "1.1.1.1"], text=True, timeout=3
+        )
+        m = re.search(r"\bdev\s+(\S+)", out)
+        if m:
+            return m.group(1)
+    except (subprocess.TimeoutExpired, FileNotFoundError,
+            subprocess.CalledProcessError):
+        pass
+
+    # Fallback: scan /proc/net/dev
+    try:
+        with open("/proc/net/dev") as f:
+            for line in f:
+                name = line.split(":")[0].strip()
+                if name and name != "lo" and not name.startswith("docker"):
+                    return name
+    except FileNotFoundError:
+        pass
+
+    return "eth0"  # last-resort historic default
 
 
 def read_proc_net_dev(iface: str) -> dict:
@@ -110,13 +142,18 @@ def read_ss_summary() -> dict:
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--iface",    default="eth0")
+    parser.add_argument("--iface",    default="auto",
+                        help="Interface name, or 'auto' to detect from default route (default: auto)")
     parser.add_argument("--interval", type=float, default=0.5)
     parser.add_argument("--out",      type=Path,
                         default=Path(f"/tmp/net_stats_{socket.gethostname()}.csv"))
     parser.add_argument("--duration", type=float, default=0,
                         help="seconds to run (0 = infinite)")
     args = parser.parse_args()
+
+    if args.iface == "auto":
+        args.iface = _detect_iface()
+        print(f"[INFO] Auto-detected interface: {args.iface}")
 
     print(f"[INFO] Logging to: {args.out}")
     print(f"[INFO] Interface:  {args.iface}  |  Interval: {args.interval}s")
