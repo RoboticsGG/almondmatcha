@@ -1,7 +1,7 @@
 #!/bin/bash
 # launch_poc_experiment.sh — Full POC experiment launcher (run on base PC)
 #
-# Executes the complete single-domain POC measurement sequence in order:
+# Executes the complete multi-domain POC measurement sequence in order:
 #   1. Clean stale DDS participants on all machines
 #   2. Start STM32 memory collector (background)
 #   3. Launch ROS2 nodes on RPi, Jetson, and base PC
@@ -19,15 +19,15 @@
 #   bash ws_base/launch_poc_experiment.sh --skip-launch    # skip ROS2 node launch (collectors only)
 #
 # Output files (all on base PC under a single per-run directory):
-#   ws_base/tools/poc_run/single_domain/run_NNN/latency_rpi.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/latency_jetson.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/net_stats_rpi.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/net_stats_jetson.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/topic_bw.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/stm32_chassis.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/stm32_sensors.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/merged_all.csv    ← time-bucketed union of all above
-#   ws_base/tools/poc_run/single_domain/run_NNN/logs/             ← all sub-process logs
+#   ws_base/tools/poc_run/multi_domain/run_NNN/latency_rpi.csv
+#   ws_base/tools/poc_run/multi_domain/run_NNN/latency_jetson.csv
+#   ws_base/tools/poc_run/multi_domain/run_NNN/net_stats_rpi.csv
+#   ws_base/tools/poc_run/multi_domain/run_NNN/net_stats_jetson.csv
+#   ws_base/tools/poc_run/multi_domain/run_NNN/topic_bw.csv
+#   ws_base/tools/poc_run/multi_domain/run_NNN/stm32_chassis.csv
+#   ws_base/tools/poc_run/multi_domain/run_NNN/stm32_sensors.csv
+#   ws_base/tools/poc_run/multi_domain/run_NNN/merged_all.csv    ← time-bucketed union of all above
+#   ws_base/tools/poc_run/multi_domain/run_NNN/logs/             ← all sub-process logs
 
 set -euo pipefail
 
@@ -48,7 +48,7 @@ WORKSPACE="$HOME/almondmatcha"
 # run_NNN is auto-incremented — each launch creates the next available number.
 # Data is separated by branch: poc_run/single_domain/ vs poc_run/multi_domain/
 # so switching branches doesn't overwrite or mix experiment data.
-POC_RUN_BASE="$WORKSPACE/ws_base/tools/poc_run/single_domain"
+POC_RUN_BASE="$WORKSPACE/ws_base/tools/poc_run/multi_domain"
 
 _next_run_dir() {
     local last
@@ -101,17 +101,23 @@ done
 # ============================================================================
 
 STM32_COLLECTOR_PID=""
-TOPIC_BW_PID=""
+TOPIC_BW_PID=""       # D5 — base PC
+TOPIC_BW_D4_PID=""   # D4 — base PC
+# D6 bw runs remotely on Jetson — no local PID; killed via SSH in cleanup
 
 cleanup() {
     echo ""
     warn "Interrupted — stopping all background collectors..."
     [[ -n "$STM32_COLLECTOR_PID" ]] && kill "$STM32_COLLECTOR_PID" 2>/dev/null || true
     [[ -n "$TOPIC_BW_PID"        ]] && kill "$TOPIC_BW_PID"        2>/dev/null || true
+    [[ -n "$TOPIC_BW_D4_PID"    ]] && kill "$TOPIC_BW_D4_PID"    2>/dev/null || true
+    ssh $SSH_OPTS "$JETSON_HOST" "pkill -f 'collect_topic_bw' 2>/dev/null || true" 2>/dev/null || true
     # Stop latency collectors (cleanup path — best effort)
-    LOCAL_DEST_CSV="$RUN_DIR/latency_rpi.csv"    TARGET_HOST="$RPI_HOST"    TARGET_LABEL=rpi    SSH_OPTS="$SSH_OPTS" \
+    LOCAL_DEST_CSV="$RUN_DIR/latency_rpi.csv"        TARGET_HOST="$RPI_HOST"    TARGET_LABEL=rpi        SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh" 2>/dev/null || true
-    LOCAL_DEST_CSV="$RUN_DIR/latency_jetson.csv" TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson SSH_OPTS="$SSH_OPTS" \
+    LOCAL_DEST_CSV="$RUN_DIR/latency_jetson.csv"     TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson     SSH_OPTS="$SSH_OPTS" \
+        bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh" 2>/dev/null || true
+    LOCAL_DEST_CSV="$RUN_DIR/latency_jetson_d6.csv"  TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson_d6  SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh" 2>/dev/null || true
     # Close SSH control sockets
     ssh $SSH_OPTS -O exit "$RPI_HOST"    2>/dev/null || true
@@ -249,7 +255,7 @@ launch_ros2_nodes() {
     log "  (launch output redirected to $LOG_DIR/launch_<host>.log)"
 
     log "  Launching rover nodes on RPi ($RPI_HOST)..."
-    ssh $SSH_OPTS "$RPI_HOST" "SKIP_ATTACH=1 bash ~/almondmatcha/ws_rpi/launch_rover_single_domain.sh" \
+    ssh $SSH_OPTS "$RPI_HOST" "SKIP_ATTACH=1 bash ~/almondmatcha/ws_rpi/launch_rover_multi_domain.sh" \
         >"$LOG_DIR/launch_rpi.log" 2>&1 &
     # RPi launches 8 nodes with 2 s stagger each (≈16 s total).
     # Wait long enough for all RPi nodes to finish their SPDP announcements
@@ -259,7 +265,7 @@ launch_ros2_nodes() {
     ok "  RPi launch sent (8 nodes, 2 s stagger = ~16 s)"
 
     log "  Launching Jetson nodes ($JETSON_HOST)..."
-    ssh $SSH_OPTS "$JETSON_HOST" "SKIP_ATTACH=1 bash ~/almondmatcha/ws_jetson/launch_jetson_single_domain.sh" \
+    ssh $SSH_OPTS "$JETSON_HOST" "SKIP_ATTACH=1 bash ~/almondmatcha/ws_jetson/launch_jetson_multi_domain.sh" \
         >"$LOG_DIR/launch_jetson.log" 2>&1 &
     # Jetson launches 4 nodes with 3+2+2 s stagger (≈7 s total).
     # Wait for all Jetson nodes to announce before adding base PC nodes.
@@ -267,15 +273,15 @@ launch_ros2_nodes() {
     ok "  Jetson launch sent (4 nodes, 3+2+2 s stagger = ~7 s)"
 
     log "  Launching base PC nodes..."
-    SKIP_ATTACH=1 bash "$WORKSPACE/ws_base/launch_base_single_domain.sh" \
+    SKIP_ATTACH=1 bash "$WORKSPACE/ws_base/launch_base_multi_domain.sh" \
         >"$LOG_DIR/launch_base.log" 2>&1 &
     # Base PC launches 2 nodes with minimal delay.
     # Give them time to announce and settle before probing STM32 topics.
     sleep 5
     ok "  Base PC launch sent (2 nodes)"
 
-    log "  All ROS2 nodes launched — Linux participants now visible to STM32 discovery"
-    log "  Total: 14 Linux participants staggered over ~35 s to avoid STM32 overload"
+    log "  All ROS2 nodes launched — D5 Linux participants visible to STM32 discovery"
+    log "  Total: 14 Linux nodes (D5: 10, D6: 2, D4: 2) staggered over ~35 s"
 }
 
 # ============================================================================
@@ -397,11 +403,16 @@ start_latency_collectors() {
 
     TARGET_HOST="$RPI_HOST"    TARGET_LABEL=rpi    SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/start_trace.sh"
-    ok "  RPi latency collector started"
+    ok "  RPi latency collector started (D5)"
 
     TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/start_trace.sh"
-    ok "  Jetson latency collector started"
+    ok "  Jetson latency collector started (D5)"
+
+    # Multi-domain only: second collector for D6 vision topics (shared memory, Jetson-localhost)
+    TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson_d6 SSH_OPTS="$SSH_OPTS" \
+        bash "$TOOLS_DIR/tracing/start_trace_d6.sh"
+    ok "  Jetson D6 latency collector started (D6: camera/lane)"
 }
 
 # ============================================================================
@@ -409,13 +420,10 @@ start_latency_collectors() {
 # ============================================================================
 
 start_topic_bw_collector() {
-    log "Step 5 — Starting per-topic bandwidth collector (base PC)"
-    log "  output: $RUN_DIR/topic_bw.csv"
+    log "Step 5 — Starting per-topic bandwidth collectors (base PC: D5 + D4; Jetson: D6)"
 
-    # Source ROS2 env and exec python3 directly (exec replaces bash → PID is python3).
-    # FASTRTPS profile pins DDS to the base PC ethernet NIC (192.168.1.4).
-    # Source order: humble → ws_base → common_ifaces (last wins on AMENT_PREFIX_PATH)
-    # so msgs_ifaces from common_ifaces always overlays any stale ws_base copy.
+    # ── D5 collector — base PC, FastDDS XML pinned to NIC ────────────────────
+    log "  D5 output: $RUN_DIR/topic_bw.csv"
     bash -c "
         source /opt/ros/humble/setup.bash
         source '$WORKSPACE/ws_base/install/setup.bash'
@@ -427,11 +435,48 @@ start_topic_bw_collector() {
             --interval 1
     " </dev/null >"$LOG_DIR/topic_bw.log" 2>&1 &
     TOPIC_BW_PID=$!
-
     sleep 1
     kill -0 "$TOPIC_BW_PID" 2>/dev/null \
-        || die "Topic BW collector exited immediately — check $LOG_DIR/topic_bw.log"
-    ok "  Topic BW collector running (PID $TOPIC_BW_PID)"
+        || die "Topic BW (D5) exited immediately — check $LOG_DIR/topic_bw.log"
+    ok "  D5 Topic BW collector running (PID $TOPIC_BW_PID)"
+
+    # ── D4 collector — base PC, no FastDDS XML (no STM32 on D4) ─────────────
+    log "  D4 output: $RUN_DIR/topic_bw_d4.csv"
+    bash -c "
+        source /opt/ros/humble/setup.bash
+        source '$WORKSPACE/ws_base/install/setup.bash'
+        source '$WORKSPACE/common_ifaces/install/setup.bash'
+        export ROS_DOMAIN_ID=4
+        unset FASTRTPS_DEFAULT_PROFILES_FILE
+        exec python3 '$TOOLS_DIR/monitoring/collect_topic_bw.py' \
+            --out '$RUN_DIR/topic_bw_d4.csv' \
+            --interval 1
+    " </dev/null >"$LOG_DIR/topic_bw_d4.log" 2>&1 &
+    TOPIC_BW_D4_PID=$!
+    sleep 1
+    kill -0 "$TOPIC_BW_D4_PID" 2>/dev/null \
+        || die "Topic BW (D4) exited immediately — check $LOG_DIR/topic_bw_d4.log"
+    ok "  D4 Topic BW collector running (PID $TOPIC_BW_D4_PID)"
+
+    # ── D6 collector — remote Jetson, shared memory, no FastDDS XML ──────────
+    # D6 is Jetson-localhost only; must run on the Jetson itself.
+    log "  D6 output: $RUN_DIR/topic_bw_d6.csv  (collected on Jetson)"
+    ssh -T $SSH_OPTS "$JETSON_HOST" "
+        source /opt/ros/humble/setup.bash
+        source ~/almondmatcha/ws_jetson/install/setup.bash 2>/dev/null || true
+        source ~/almondmatcha/common_ifaces/install/setup.bash 2>/dev/null || true
+        export ROS_DOMAIN_ID=6
+        unset FASTRTPS_DEFAULT_PROFILES_FILE
+        mkdir -p ~/ros2_traces
+        pkill -f 'collect_topic_bw' 2>/dev/null || true
+        setsid nohup python3 ~/almondmatcha/ws_base/tools/monitoring/collect_topic_bw.py \
+            --out ~/ros2_traces/topic_bw_d6.csv \
+            --interval 1 \
+            </dev/null >~/ros2_traces/topic_bw_d6.log 2>&1 &
+        disown
+        echo [OK] D6 Topic BW collector PID: \$!
+    " && ok "  D6 Topic BW collector started on Jetson" \
+      || warn "  D6 Topic BW collector failed to start on Jetson (non-fatal)"
 }
 
 # ============================================================================
@@ -454,7 +499,7 @@ start_net_collectors() {
         ssh -T $SSH_OPTS "$host" "
             mkdir -p ~/ros2_traces
             setsid nohup python3 ~/almondmatcha/ws_base/tools/monitoring/collect_net_stats.py \
-                --iface eth0 --out $out \
+                --out $out \
                 </dev/null >$log_f 2>&1 &
             disown
             echo \$! > $pid_f
@@ -496,7 +541,7 @@ wait_for_run() {
     for (( i=0; i<DASH; i++ )); do echo ""; done
 
     local elapsed=0 bar filled empty pct i
-    local ch_line se_line ch_used ch_free ch_n se_used se_free se_n stm32_status
+    local ch_line se_line ch_used ch_free ch_n se_used se_free se_n stm32_status bw_status bw_d4_status
 
     while (( elapsed < RUN_DURATION )); do
         sleep 1
@@ -525,8 +570,11 @@ wait_for_run() {
             && stm32_status="\033[0;32m● running\033[0m" \
             || stm32_status="\033[0;31m● DIED\033[0m"
         kill -0 "$TOPIC_BW_PID" 2>/dev/null \
-            && bw_status="\033[0;32m● running\033[0m" \
-            || bw_status="\033[0;31m● DIED\033[0m"
+            && bw_status="\033[0;32m● D5\033[0m" \
+            || bw_status="\033[0;31m● D5 DIED\033[0m"
+        kill -0 "$TOPIC_BW_D4_PID" 2>/dev/null \
+            && bw_d4_status="\033[0;32m● D4\033[0m" \
+            || bw_d4_status="\033[0;31m● D4 DIED\033[0m"
 
         # --- Overwrite dashboard in place (cursor up DASH lines, carriage return, rewrite) ---
         printf "\033[%dA\r" "$DASH"
@@ -540,8 +588,8 @@ wait_for_run() {
                "$se_used" "$se_free" "$se_n" ""
         printf "%-70s\n" ""
         printf "  Collectors:%-59s\n" ""
-        printf "    STM32 %b  Topic BW %b  RPi lat \033[0;32m●\033[0m  Jetson lat \033[0;32m●\033[0m   \n" \
-               "$stm32_status" "$bw_status"
+        printf "    STM32 %b  BW %b %b  D6(Jetson)\033[0;32m●\033[0m  RPi lat \033[0;32m●\033[0m  Jetson lat \033[0;32m●\033[0m   \n" \
+               "$stm32_status" "$bw_status" "$bw_d4_status"
     done
 
     echo ""
@@ -560,6 +608,7 @@ stop_and_collect() {
     # ── Stop local collectors immediately (no network wait) ──────────────────
     [[ -n "$STM32_COLLECTOR_PID" ]] && kill "$STM32_COLLECTOR_PID" 2>/dev/null || true
     [[ -n "$TOPIC_BW_PID"        ]] && kill "$TOPIC_BW_PID"        2>/dev/null || true
+    [[ -n "$TOPIC_BW_D4_PID"    ]] && kill "$TOPIC_BW_D4_PID"    2>/dev/null || true
     sleep 0.5   # allow final flush before STM32 CSV rename
     local f
     f=$(ls "$RUN_DIR"/stm32_chassis_*.csv 2>/dev/null | tail -1) && [[ -n "$f" ]] && mv "$f" "$RUN_DIR/stm32_chassis.csv" || true
@@ -597,9 +646,14 @@ stop_and_collect() {
     RPI_PULL_PID=$!
 
     (
-        # Stop latency collector and pull latency CSV
+        # Stop D5 latency collector and pull CSV
         LOCAL_DEST_CSV="$RUN_DIR/latency_jetson.csv" TARGET_HOST="$JETSON_HOST" \
             TARGET_LABEL=jetson SSH_OPTS="$SSH_OPTS" \
+            bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh"
+
+        # Stop D6 latency collector (multi-domain only) and pull CSV
+        LOCAL_DEST_CSV="$RUN_DIR/latency_jetson_d6.csv" TARGET_HOST="$JETSON_HOST" \
+            TARGET_LABEL=jetson_d6 SSH_OPTS="$SSH_OPTS" \
             bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh"
 
         # Stop net-stats and pull CSV in one SSH round-trip
@@ -608,9 +662,15 @@ stop_and_collect() {
                 kill \$(cat ~/ros2_traces/net_stats_jetson.pid) 2>/dev/null || true
                 rm -f ~/ros2_traces/net_stats_jetson.pid
             fi
+            pkill -f 'collect_topic_bw' 2>/dev/null || true
         "
         scp $SSH_OPTS "$JETSON_HOST:~/ros2_traces/net_stats_jetson.csv" \
             "$RUN_DIR/net_stats_jetson.csv" 2>/dev/null || true
+
+        # Pull D6 topic BW CSV from Jetson
+        scp $SSH_OPTS "$JETSON_HOST:~/ros2_traces/topic_bw_d6.csv" \
+            "$RUN_DIR/topic_bw_d6.csv" 2>/dev/null \
+            || warn "  topic_bw_d6.csv not found on Jetson (non-fatal)"
 
         # Pull node logs
         scp $SSH_OPTS "$JETSON_HOST:~/ros2_traces/poc_*.log" \
@@ -652,10 +712,13 @@ print_summary() {
     echo ""
     echo "  Data files:"
     echo "    $RUN_DIR/latency_rpi.csv"
-    echo "    $RUN_DIR/latency_jetson.csv"
+    echo "    $RUN_DIR/latency_jetson.csv      (D5 topics)"
+    echo "    $RUN_DIR/latency_jetson_d6.csv   (D6 vision: camera/lane)"
     echo "    $RUN_DIR/net_stats_rpi.csv"
     echo "    $RUN_DIR/net_stats_jetson.csv"
-    echo "    $RUN_DIR/topic_bw.csv"
+    echo "    $RUN_DIR/topic_bw.csv            (D5 — base PC)"
+    echo "    $RUN_DIR/topic_bw_d4.csv         (D4 — base PC: telemetry relay)"
+    echo "    $RUN_DIR/topic_bw_d6.csv         (D6 — Jetson: camera/lane bandwidth)"
     echo "    $RUN_DIR/stm32_chassis.csv"
     echo "    $RUN_DIR/stm32_sensors.csv"
     echo ""
@@ -666,13 +729,17 @@ print_summary() {
     echo "    $LOG_DIR/stm32_collector.log"
     echo "    $LOG_DIR/raw_serial_chassis.log  ← full STM32 serial stream"
     echo "    $LOG_DIR/raw_serial_sensors.log  ← full STM32 serial stream"
-    echo "    $LOG_DIR/topic_bw.log"
+    echo "    $LOG_DIR/topic_bw.log            (D5)"
+    echo "    $LOG_DIR/topic_bw_d4.log         (D4)"
     echo "    $LOG_DIR/rpi/poc_*.log       ← per-node logs from RPi"
     echo "    $LOG_DIR/jetson/poc_*.log    ← per-node logs from Jetson"
     echo ""
-    echo "  Analyze — jitter/latency summary:"
+    echo "  Analyze — all-machine latency/jitter summary (RPi + Jetson D5 + Jetson D6):"
     echo "    python3 ws_base/tools/tracing/analyze_latency.py \\"
-    echo "        --poc $RUN_DIR/latency_rpi.csv"
+    echo "        --csv $RUN_DIR/latency_rpi.csv \\"
+    echo "              $RUN_DIR/latency_jetson.csv \\"
+    echo "              $RUN_DIR/latency_jetson_d6.csv \\"
+    echo "        --out-dir $RUN_DIR/"
     echo ""
     echo "  Analyze — unified timeline (all sources, one command):"
     echo "    python3 ws_base/tools/tracing/analyze_latency.py --merge \\"
@@ -687,8 +754,8 @@ print_summary() {
 
 main() {
     echo ""
-    echo -e "${BOLD}  Single-Domain POC Experiment Launcher${NC}"
-    echo -e "  Branch: single-domain | Domain ID: 5 | Duration: ${RUN_DURATION}s"
+    echo -e "${BOLD}  Multi-Domain POC Experiment Launcher${NC}"
+    echo -e "  Branch: multi-domain | Domains: D4/D5/D6 | Duration: ${RUN_DURATION}s"
     echo ""
 
     preflight
