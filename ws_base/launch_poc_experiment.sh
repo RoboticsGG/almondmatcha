@@ -499,7 +499,7 @@ start_net_collectors() {
         ssh -T $SSH_OPTS "$host" "
             mkdir -p ~/ros2_traces
             setsid nohup python3 ~/almondmatcha/ws_base/tools/monitoring/collect_net_stats.py \
-                --iface eth0 --out $out \
+                --out $out \
                 </dev/null >$log_f 2>&1 &
             disown
             echo \$! > $pid_f

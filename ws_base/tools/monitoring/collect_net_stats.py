@@ -20,7 +20,8 @@ Usage:
 
 Arguments:
     --iface     Network interface to monitor.  Use 'auto' (default) to detect
-                the interface for the default route via 'ip route get 1.1.1.1'.
+                the interface whose IP is on the DDS LAN (192.168.1.0/24).
+                Override with a literal name (e.g. eth0, enp3s0) if needed.
     --interval  Sampling interval in seconds (default: 0.5)
     --out       Output CSV file path (default: /tmp/net_stats_<hostname>.csv)
     --duration  How long to run in seconds; 0 = run until Ctrl-C (default: 0)
@@ -38,25 +39,33 @@ from datetime import datetime
 from pathlib import Path
 
 
-def _detect_iface() -> str:
+def _detect_iface(subnet: str = "192.168.1.") -> str:
     """
-    Return the name of the interface used for the default route.
+    Return the interface whose IPv4 address is on the DDS LAN subnet.
     Strategy:
-      1. 'ip route get 1.1.1.1' → parse 'dev <iface>'
+      1. 'ip -4 addr' → find an interface with an IP starting with *subnet*
       2. Fallback: first non-loopback, non-virtual interface in /proc/net/dev
     """
     try:
         out = subprocess.check_output(
-            ["ip", "route", "get", "1.1.1.1"], text=True, timeout=3
+            ["ip", "-4", "addr"], text=True, timeout=3
         )
-        m = re.search(r"\bdev\s+(\S+)", out)
-        if m:
-            return m.group(1)
+        # Lines alternate between interface headers ('2: enp3s0: ...') and
+        # address lines ('    inet 192.168.1.5/24 ...').
+        current_iface = None
+        for line in out.splitlines():
+            m_iface = re.match(r"^\d+:\s+(\S+):", line)
+            if m_iface:
+                current_iface = m_iface.group(1).rstrip(":@")
+                continue
+            m_addr = re.search(r"inet\s+(" + re.escape(subnet) + r"\d+)", line)
+            if m_addr and current_iface:
+                return current_iface
     except (subprocess.TimeoutExpired, FileNotFoundError,
             subprocess.CalledProcessError):
         pass
 
-    # Fallback: scan /proc/net/dev
+    # Fallback: first non-loopback interface in /proc/net/dev
     try:
         with open("/proc/net/dev") as f:
             for line in f:
@@ -153,7 +162,7 @@ def main():
 
     if args.iface == "auto":
         args.iface = _detect_iface()
-        print(f"[INFO] Auto-detected interface: {args.iface}")
+        print(f"[INFO] Auto-detected DDS interface: {args.iface}")
 
     print(f"[INFO] Logging to: {args.out}")
     print(f"[INFO] Interface:  {args.iface}  |  Interval: {args.interval}s")
