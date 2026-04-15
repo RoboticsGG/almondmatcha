@@ -17,6 +17,7 @@
 #   bash ws_base/launch_poc_experiment.sh
 #   bash ws_base/launch_poc_experiment.sh --duration 600   # 10-minute run (default: 300s)
 #   bash ws_base/launch_poc_experiment.sh --skip-launch    # skip ROS2 node launch (collectors only)
+#   bash ws_base/launch_poc_experiment.sh --skip-stm32     # skip STM32 serial collection
 #
 # Output files (all on base PC under a single per-run directory):
 #   ws_base/tools/poc_run/single_domain/run_NNN/latency_rpi.csv
@@ -38,8 +39,10 @@ set -euo pipefail
 RPI_HOST="curry@192.168.1.1"
 JETSON_HOST="yupi@192.168.1.5"
 
-CHASSIS_PORT="/dev/ttyACM1"   # verify with: minicom -b 115200 -D /dev/ttyACM1
-SENSORS_PORT="/dev/ttyACM0"   # verify with: minicom -b 115200 -D /dev/ttyACM0
+# STM32 serial ports — leave as 'auto' to let collect_stm32_memory.py detect them.
+# Override with --chassis / --sensors if auto-detect picks the wrong mapping.
+CHASSIS_PORT="auto"
+SENSORS_PORT="auto"
 
 TOOLS_DIR="$HOME/almondmatcha/ws_base/tools"
 WORKSPACE="$HOME/almondmatcha"
@@ -64,6 +67,7 @@ LOG_DIR="$RUN_DIR/logs"
 
 RUN_DURATION=300   # seconds — default 5 minutes
 SKIP_LAUNCH=false
+SKIP_STM32=false
 
 # SSH ControlMaster: authenticate once, reuse connection for all background ssh calls
 SSH_CONTROL_DIR="$(mktemp -d /tmp/poc_ssh_ctl.XXXXXX)"
@@ -90,6 +94,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --duration)  RUN_DURATION="$2"; shift 2 ;;
         --skip-launch) SKIP_LAUNCH=true; shift ;;
+        --skip-stm32)  SKIP_STM32=true; shift ;;
         --chassis)   CHASSIS_PORT="$2"; shift 2 ;;
         --sensors)   SENSORS_PORT="$2"; shift 2 ;;
         *) die "Unknown argument: $1" ;;
@@ -113,6 +118,9 @@ cleanup() {
         bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh" 2>/dev/null || true
     LOCAL_DEST_CSV="$RUN_DIR/latency_jetson.csv"     TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson     SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh" 2>/dev/null || true
+    # Stop net-stats collectors on SBCs (prevent orphaned processes)
+    ssh $SSH_OPTS "$RPI_HOST"    "pkill -f 'collect_net_stats' 2>/dev/null || true" 2>/dev/null || true
+    ssh $SSH_OPTS "$JETSON_HOST" "pkill -f 'collect_net_stats' 2>/dev/null || true" 2>/dev/null || true
     # Close SSH control sockets
     ssh $SSH_OPTS -O exit "$RPI_HOST"    2>/dev/null || true
     ssh $SSH_OPTS -O exit "$JETSON_HOST" 2>/dev/null || true
@@ -148,8 +156,35 @@ preflight() {
         || die "msgs_ifaces not importable — rebuild common_ifaces: cd $WORKSPACE/common_ifaces && colcon build"
     ok "  msgs_ifaces type support verified"
 
-    [[ -e "$CHASSIS_PORT" ]] || die "Chassis serial port $CHASSIS_PORT not found. Is the board plugged in?"
-    [[ -e "$SENSORS_PORT" ]] || die "Sensors serial port $SENSORS_PORT not found. Is the board plugged in?"
+    # STM32 serial port check
+    if [[ "$SKIP_STM32" == false ]]; then
+        if [[ "$CHASSIS_PORT" == "auto" || "$SENSORS_PORT" == "auto" ]]; then
+            local detected
+            detected=$(python3 -c "import glob; p=sorted(glob.glob('/dev/ttyACM*')); print(' '.join(p))" 2>/dev/null)
+            local port_count
+            port_count=$(echo "$detected" | wc -w)
+            if (( port_count >= 2 )); then
+                if [[ "$CHASSIS_PORT" == "auto" ]]; then CHASSIS_PORT=$(echo "$detected" | awk '{print $1}'); fi
+                if [[ "$SENSORS_PORT" == "auto" ]]; then SENSORS_PORT=$(echo "$detected" | awk '{print $2}'); fi
+                ok "  STM32 ports auto-detected: chassis=$CHASSIS_PORT  sensors=$SENSORS_PORT"
+                log "  Verify with: minicom -b 115200 -D $CHASSIS_PORT  (should show 'chassis' JSON)"
+            elif (( port_count == 1 )); then
+                warn "  Only one /dev/ttyACM* found: $detected — need two for both STM32 boards"
+                warn "  Run with --skip-stm32 to skip STM32 collection, or plug in both boards"
+                die "STM32 serial port auto-detect failed"
+            else
+                warn "  No /dev/ttyACM* ports found — STM32 boards not connected?"
+                warn "  Run with --skip-stm32 to skip STM32 collection"
+                die "STM32 serial port auto-detect failed"
+            fi
+        else
+            [[ -e "$CHASSIS_PORT" ]] || die "Chassis serial port $CHASSIS_PORT not found. Is the board plugged in?"
+            [[ -e "$SENSORS_PORT" ]] || die "Sensors serial port $SENSORS_PORT not found. Is the board plugged in?"
+            ok "  STM32 ports: chassis=$CHASSIS_PORT  sensors=$SENSORS_PORT"
+        fi
+    else
+        warn "  --skip-stm32: STM32 memory collection will be skipped"
+    fi
 
     # Open persistent SSH control sockets — prompts for password/passphrase once per host.
     # All subsequent SSH calls in this script reuse these sockets without re-authenticating.
@@ -206,6 +241,7 @@ clean_stale_participants() {
         pkill -f 'ros2 run' 2>/dev/null || true
         pkill -f 'collect_latency' 2>/dev/null || true
         pkill -f 'collect_net_stats' 2>/dev/null || true
+        pkill -f 'collect_topic_bw' 2>/dev/null || true
         tmux kill-session -t jetson_poc 2>/dev/null || true
     " 2>/dev/null || warn "  Jetson cleanup had errors (non-fatal)"
     ok "  Jetson cleaned"
@@ -221,9 +257,14 @@ clean_stale_participants() {
 # ============================================================================
 
 start_stm32_collector() {
+    if [[ "$SKIP_STM32" == true ]]; then
+        warn "Step 1 — STM32 memory collector SKIPPED (--skip-stm32)"
+        return
+    fi
+
     log "Step 1 — Starting STM32 memory collector"
-    log "  chassis port : $CHASSIS_PORT  (node=chassis)"
-    log "  sensors port : $SENSORS_PORT  (node=sensors)"
+    log "  chassis port : $CHASSIS_PORT"
+    log "  sensors port : $SENSORS_PORT"
     log "  output stem  : $RUN_DIR/stm32  →  stm32_chassis/sensors_YYYYMMDD_HHMMSS.csv"
 
     python3 "$TOOLS_DIR/stm32_serial/collect_stm32_memory.py" \
@@ -235,7 +276,7 @@ start_stm32_collector() {
 
     sleep 1
     kill -0 "$STM32_COLLECTOR_PID" 2>/dev/null \
-        || die "STM32 collector exited immediately — check serial ports"
+        || die "STM32 collector exited immediately — check $LOG_DIR/stm32_collector.log"
 
     ok "STM32 collector running (PID $STM32_COLLECTOR_PID)"
 }
@@ -516,9 +557,13 @@ wait_for_run() {
         se_n=$(grep -c '\[sensors\]' "$LOG_DIR/stm32_collector.log" 2>/dev/null) || se_n=0
 
         # --- Collector health ---
-        kill -0 "$STM32_COLLECTOR_PID" 2>/dev/null \
-            && stm32_status="\033[0;32m● running\033[0m" \
-            || stm32_status="\033[0;31m● DIED\033[0m"
+        if [[ -n "$STM32_COLLECTOR_PID" ]]; then
+            kill -0 "$STM32_COLLECTOR_PID" 2>/dev/null \
+                && stm32_status="\033[0;32m● running\033[0m" \
+                || stm32_status="\033[0;31m● DIED\033[0m"
+        else
+            stm32_status="\033[1;33m● skipped\033[0m"
+        fi
         kill -0 "$TOPIC_BW_PID" 2>/dev/null \
             && bw_status="\033[0;32m● running\033[0m" \
             || bw_status="\033[0;31m● DIED\033[0m"
