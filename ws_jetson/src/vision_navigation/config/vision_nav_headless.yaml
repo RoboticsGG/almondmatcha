@@ -12,6 +12,7 @@ camera_stream:
     open_cam: false              # Headless: no camera preview
     enable_depth: false
     video_path: ""               # Set to video file path for offline mode
+    fallback_video: "/home/yupi/Almond/ros2-jetson-ws/001.mp4"  # Auto-fallback if D415 fails
     loop_video: true
     json_config: ""
     device_serial: "806312060441" # Intel RealSense D415 (the D405 is 218622277831)

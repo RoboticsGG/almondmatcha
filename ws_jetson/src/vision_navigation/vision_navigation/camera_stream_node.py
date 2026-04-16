@@ -103,6 +103,7 @@ class CameraStreamNode(Node):
         self.declare_parameter('video_path', '')
         self.declare_parameter('loop_video', True)
         self.declare_parameter('device_serial', '')
+        self.declare_parameter('fallback_video', '')
 
         # ===================== Parameter Retrieval =====================
         self.w: int = int(self.get_parameter('width').value)
@@ -114,6 +115,7 @@ class CameraStreamNode(Node):
         self.video_path: str = str(self.get_parameter('video_path').value).strip()
         self.loop_video: bool = bool(self.get_parameter('loop_video').value)
         self.device_serial: str = str(self.get_parameter('device_serial').value).strip()
+        self.fallback_video: str = str(self.get_parameter('fallback_video').value).strip()
 
         # ===================== Mode Selection =====================
         self.use_video: bool = len(self.video_path) > 0
@@ -128,7 +130,19 @@ class CameraStreamNode(Node):
         if self.use_video:
             self._init_video_mode()
         else:
-            self._init_d415_mode()
+            try:
+                self._init_d415_mode()
+            except RuntimeError as e:
+                if self.fallback_video:
+                    self.get_logger().warn(
+                        f'D415 camera failed: {e}\n'
+                        f'Falling back to video: {self.fallback_video}'
+                    )
+                    self.video_path = self.fallback_video
+                    self.use_video = True
+                    self._init_video_mode()
+                else:
+                    raise
 
         # ===================== Timer Setup =====================
         self.timer = self.create_timer(1.0 / max(1, self.fps_use), self._on_timer)
