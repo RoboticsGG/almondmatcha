@@ -14,6 +14,7 @@ camera_stream:
     video_path: ""
     loop_video: true
     json_config: ""
+    device_serial: "806312060441" # Intel RealSense D415
 
 lane_detection:
   ros__parameters:

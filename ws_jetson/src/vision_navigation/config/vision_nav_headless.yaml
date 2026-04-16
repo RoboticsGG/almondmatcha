@@ -11,9 +11,10 @@ camera_stream:
     fps: 30
     open_cam: false              # Headless: no camera preview
     enable_depth: false
-    video_path: "/home/yupi/Almond/ros2-jetson-ws/001.mp4"
+    video_path: ""               # Set to video file path for offline mode
     loop_video: true
     json_config: ""
+    device_serial: "806312060441" # Intel RealSense D415 (the D405 is 218622277831)
 
 lane_detection:
   ros__parameters:
