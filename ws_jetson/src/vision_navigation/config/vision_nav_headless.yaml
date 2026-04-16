@@ -11,7 +11,7 @@ camera_stream:
     fps: 30
     open_cam: false              # Headless: no camera preview
     enable_depth: false
-    video_path: ""
+    video_path: "/home/yupi/Almond/ros2-jetson-ws/001.mp4"
     loop_video: true
     json_config: ""
 
