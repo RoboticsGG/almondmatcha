@@ -7,14 +7,14 @@
 
 ## Topology Change Summary
 
-| | Baseline (main) | POC (this branch) |
+| | Baseline (multi-domain) | POC (this branch) |
 |---|---|---|
-| Domain 4 | monitoring (Base + Jetson) | ✗ removed |
-| Domain 5 | 11 participants (rover control) | **15 participants** (all nodes) |
-| Domain 6 | vision (Jetson localhost) | ✗ removed |
-| camera/lane Images@30fps on network | no | **yes** (stress factor) |
-| STM32 MAX_NUM_PARTICIPANTS | 15 | **20** (5 margin) |
-| STM32 discovery wait | 8 s | **10 s** |
+| Domain 4 | monitoring (Base + Jetson + RPi pub) — 3 nodes | ✗ removed (all on D5) |
+| Domain 5 | ~12 participants (control + STM32) | **~16 participants** (all nodes) |
+| Domain 6 | vision (Jetson localhost, shared memory) — 2 nodes | ✗ removed (all on D5) |
+| Camera/lane images@30fps on network | **no** (D6 shared memory) | **yes** (D5 stress factor) |
+| STM32 sees D5 participants | ~12 | ~16 |
+| STM32 SPDP_MAX | 30 (18 margin) | 30 (14 margin) |
 
 ---
 
@@ -537,13 +537,15 @@ TARGET_HOST=yupi@192.168.1.5  TARGET_LABEL=jetson bash ws_base/tools/tracing/sta
 # Terminal A — RPi
 ssh curry@192.168.1.1 \
   "python3 ~/almondmatcha/ws_base/tools/monitoring/collect_net_stats.py \
-     --iface eth0 --out ~/ros2_traces/net_stats_rpi.csv"
+     --out ~/ros2_traces/net_stats_rpi.csv"
 
 # Terminal B — Jetson
 ssh yupi@192.168.1.5 \
   "python3 ~/almondmatcha/ws_base/tools/monitoring/collect_net_stats.py \
-     --iface eth0 --out ~/ros2_traces/net_stats_jetson.csv"
+     --out ~/ros2_traces/net_stats_jetson.csv"
 ```
+
+> **Note:** `--iface` is optional — the script auto-detects the correct network interface based on the 192.168.1.0/24 subnet.
 
 #### Step 5 — Let it run
 

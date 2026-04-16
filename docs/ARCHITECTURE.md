@@ -14,9 +14,9 @@ Almondmatcha rover system architecture: distributed heterogeneous computing with
 
 ## System Diagram
 
-> **Branch: `single-domain`** — All workspaces (ws_rpi, ws_jetson, ws_base) run on **ROS_DOMAIN_ID=5**. D4 and D6 do not exist in this branch.
+> **Branch: `single-domain`** — All workspaces (ws_rpi, ws_jetson, ws_base) run on **ROS_DOMAIN_ID=5**. D4 and D6 do not exist in this branch — all nodes communicate on a single domain.
 
-The rover uses **one DDS domain (D5)**: all nodes on all machines communicate on the same domain.
+The rover uses **one DDS domain (D5)**: all 16 nodes on all machines communicate on the same domain.
 
 ```mermaid
 graph LR
@@ -27,11 +27,11 @@ graph LR
     end
 
     subgraph JET ["Jetson Orin · 192.168.1.5"]
-        J2["D5 · rover_kinematic_control\nlane following @ 50 Hz"]
+        J1["D5 · 4 nodes\ncamera, lane detection,\nkinematic control, local monitoring"]
     end
 
-    subgraph BASE ["Base Station · 192.168.1.10"]
-        B1["D5 · mission_command_node + monitoring\nactions + services"]
+    subgraph BASE ["Base Station · 192.168.1.4"]
+        B1["D5 · 2 nodes\nmission_command + monitoring"]
     end
 
     subgraph CHS ["STM32 Chassis · 192.168.1.2"]
@@ -66,6 +66,8 @@ graph LR
 - Intel RealSense D415 RGB-D camera (1280×720 @ 30 FPS)
   - RGB stream for lane detection
   - Depth stream (reserved for obstacle avoidance)
+  - Configurable `device_serial` parameter (default: `806312060441`)
+  - Automatic `fallback_video` to local video file if camera unavailable
 
 **Navigation:**
 - Sony Spresense GNSS (USB to RPi) - 10 Hz position updates
@@ -85,48 +87,55 @@ graph LR
 ### Single-Domain Architecture (D5 only)
 
 **Domain 5 (All nodes):** Network-wide, ~16 participants
-- ws_rpi (8) + ws_base (2) + ws_jetson (1) + STM32 (2) = 16 nodes on one domain
-- All monitoring, vision relay, and control traffic share D5
-- STM32 firmware configured for `MAX_NUM_PARTICIPANTS=20`
+- ws_rpi (8) + ws_base (2) + ws_jetson (4) + STM32 (2) = 16 nodes on one domain
+- All monitoring, vision, and control traffic share D5
+- STM32 firmware configured for `SPDP_MAX_NUMBER_FOUND_PARTICIPANTS=30` (14 spare slots)
 
-**Rationale (POC):** Collapse D4+D5+D6 into D5 to measure latency, jitter, and STM32 memory impact of a flat topology versus the main-branch multi-domain architecture.
+**Rationale (POC):** Collapse D4+D5+D6 into D5 to measure latency, jitter, and STM32 memory impact of a flat topology versus the multi-domain branch architecture.
 
-### Node Distribution
+### Node Distribution (16 nodes total)
 
-**Raspberry Pi 4 (192.168.1.1 — D5):**
+**Raspberry Pi 4 (192.168.1.1) — 8 nodes, D5:**
 ```
-├── chassis_controller_node     - Motor command coordination
-├── chassis_imu_node            - IMU data relay (sub STM32)
-├── chassis_sensors_node        - Encoder/power relay (sub STM32)
-├── gnss_spresense_node         - Standard GPS position processing
-├── gnss_ublox_node             - RTK GNSS centimeter-level processing
-├── gnss_mission_monitor_node   - Waypoint navigation state machine
-├── mission_monitoring_node_rpi - Aggregates D5 topics + CSV logging
-└── rover_monitoring_node       - CSV data logger (all topics)
-```
-
-**Jetson Orin Nano (192.168.1.5 — D5):**
-```
-Domain 5 (all nodes):
-├── camera_stream_node      - D415 RGB/depth streaming @ 30 FPS (published to D5)
-├── lane_detection_node     - Lane feature extraction @ 30 FPS (published to D5)
-└── rover_kinematic_control - Bicycle-model PID: steering + speed @ 50 Hz
-    ├── Sub: tpc_rover_nav_lane (D5)
-    └── Pub: tpc_rover_ctrl_cmd [steer_angle, speed_cmd, detected] (D5)
+├── chassis_controller_node     - Motor command coordination (sub ctrl_cmd → pub chassis_cmd)
+├── chassis_imu_node            - IMU data relay (sub tpc_chassis_imu from STM32)
+├── chassis_sensors_node        - Encoder/power relay (sub tpc_chassis_sensors from STM32)
+├── gnss_spresense_node         - Spresense GPS via USB serial (pub tpc_gnss_spresense @ 10 Hz)
+├── gnss_ublox_node             - RTK GNSS via STM32 UART relay (pub tpc_gnss_ublox @ 10 Hz)
+├── gnss_mission_monitor_node   - Waypoint navigation state machine + action server /des_data
+├── mission_monitoring_node_rpi - Aggregates all D5 topics → pub tpc_telemetry_relay @ 5 Hz (D5)
+└── rover_monitoring_node       - CSV data logger (subscribes 8 D5 topics)
 ```
 
-**STM32 Chassis (192.168.1.2):**
+**Jetson Orin Nano (192.168.1.5) — 4 nodes, D5:**
 ```
-Domain 5 (mROS2):
+├── camera_stream_node          - D415 RGB/depth streaming @ 30 FPS (D5, network)
+│   └── Params: device_serial, fallback_video (auto-fallback to video file)
+├── lane_detection_node         - Lane feature extraction @ 25-30 FPS (D5, network)
+├── rover_kinematic_control     - Bicycle-model PID: steering + speed @ 50 Hz
+│   ├── Sub: tpc_rover_nav_lane (D5)
+│   └── Pub: tpc_rover_ctrl_cmd [steer_angle, speed_cmd, detected] (D5)
+└── rover_local_monitoring_node - CSV backup logger (sub tpc_telemetry_relay @ 5 Hz)
+```
+
+**Base Station (192.168.1.4) — 2 nodes, D5:**
+```
+├── mission_command_node        - Action client /des_data + service client /srv_spd_limit
+└── mission_monitoring_node_pc  - Telemetry display (sub tpc_telemetry_relay)
+```
+
+**STM32 Chassis (192.168.1.2) — D5:**
+```
+Domain 5 (mROS2 / embeddedRTPS):
 ├── Motor Control Task - 50 ms @ High Priority
 │   └── Subscribes: tpc_chassis_cmd
 └── IMU Reader Task - 10 ms @ Normal Priority
     └── Publishes: tpc_chassis_imu @ 10 Hz
 ```
 
-**STM32 Sensors (192.168.1.6):**
+**STM32 Sensors (192.168.1.6) — D5:**
 ```
-Domain 5 (mROS2):
+Domain 5 (mROS2 / embeddedRTPS):
 ├── Encoder Task - 100 ms
 ├── Power Monitor Task - 200 ms
 ├── GNSS Reader Task - 500 ms
@@ -135,12 +144,12 @@ Domain 5 (mROS2):
 
 ## Data Flow Architecture
 
-### Vision-Based Lane Following
+### Vision-Based Lane Following (all D5)
 
 ```mermaid
 flowchart LR
-    CAM["camera_stream_node\nD6 · 30 FPS"] -->|tpc_rover_d415_rgb| LANE["lane_detection_node\nD6 · 30 FPS"]
-    LANE -->|tpc_rover_nav_lane| CTRL["rover_kinematic_control\nD6 sub / D5 pub · 50 Hz"]
+    CAM["camera_stream_node\nD5 · 30 FPS"] -->|tpc_rover_d415_rgb| LANE["lane_detection_node\nD5 · 30 FPS"]
+    LANE -->|tpc_rover_nav_lane| CTRL["rover_kinematic_control\nD5 · 50 Hz"]
     CTRL -->|tpc_rover_ctrl_cmd| CC["chassis_controller_node\nD5 · 50 Hz"]
     CC -->|tpc_chassis_cmd| MTR["STM32 chassis_controller\nD5 · 20 Hz"]
 ```
@@ -153,40 +162,53 @@ flowchart LR
 - Motor actuation: 50 ms (20 Hz cycle)
 - **Total end-to-end: 100-150 ms**
 
+### Telemetry Aggregation (all D5)
+
+```mermaid
+flowchart LR
+    SNS["sensors_node\n(STM32, D5)"] -->|tpc_chassis_sensors| MON["mission_monitoring_node_rpi\n(RPi, D5)"]
+    IMU["chassis_controller\n(STM32, D5)"] -->|tpc_chassis_imu| MON
+    SPRES["gnss_spresense_node\n(RPi, D5)"] -->|tpc_gnss_spresense| MON
+    UBLOX["gnss_ublox_node\n(RPi, D5)"] -->|tpc_gnss_ublox| MON
+    RKC["rover_kinematic_control\n(Jetson, D5)"] -->|tpc_rover_ctrl_cmd| MON
+    MON -->|"tpc_telemetry_relay @ 5 Hz (D5)"| PC["mission_monitoring_node_pc\n(Base, D5)"]
+    MON -->|"tpc_telemetry_relay @ 5 Hz (D5)"| JL["rover_local_monitoring_node\n(Jetson, D5)"]
+```
+
 ### Message Flow Patterns
 
 **Publish-Subscribe:**
-- Vision stream: camera → lane_detection_node
-- Sensor data: STM32s → RPi logging nodes
-- Control commands: rover_kinematic_control → chassis_controller
+- Vision stream: camera → lane_detection_node (D5 network)
+- Sensor data: STM32s → RPi logging nodes (D5 network)
+- Control commands: rover_kinematic_control → chassis_controller (D5 network)
+- Telemetry: RPi → Base + Jetson (D5 network)
 
 **Request-Response (Services):**
-- Speed limit updates: base station → chassis controller
-- Navigation goals: base station → mission monitor
+- Speed limit updates: base station → chassis controller (D5)
 
 **Action (Goal-Based):**
-- Destination waypoints: base station → mission monitor
+- Destination waypoints: base station → mission monitor (D5)
 - Feedback: remaining distance
 
 ## Communication Architecture
 
 ### Network Topology
 
-| Device | IP | SSH | Domains | Role |
-|--------|-----|-----|---------|------|
-| Raspberry Pi | 192.168.1.1 | `curry@192.168.1.1` | D5 (8 nodes) | Coordination, sensing, mission, monitoring |
-| Jetson Orin | 192.168.1.5 | `yupi@192.168.1.5` | D5 (3 nodes) | Vision processing, kinematic control |
-| Base Station | 192.168.1.10 | `yupi@192.168.1.10` | D5 (2 nodes) | Mission command, telemetry monitoring |
-| STM32 Chassis | 192.168.1.2 | — (mROS2) | D5 only | Motor control, IMU |
-| STM32 Sensors | 192.168.1.6 | — (mROS2) | D5 only | GNSS, encoders, power |
+| Device | IP | SSH | Nodes | Role |
+|--------|-----|-----|-------|------|
+| Raspberry Pi | 192.168.1.1 | `curry@192.168.1.1` | 8 | Coordination, sensing, mission, monitoring |
+| Jetson Orin | 192.168.1.5 | `yupi@192.168.1.5` | 4 | Vision processing, kinematic control, CSV backup |
+| Base Station | 192.168.1.4 | `yupi@192.168.1.4` | 2 | Mission command, telemetry monitoring |
+| STM32 Chassis | 192.168.1.2 | — (mROS2) | 1 | Motor control, IMU |
+| STM32 Sensors | 192.168.1.6 | — (mROS2) | 1 | GNSS, encoders, power |
 
-**DDS:** Fast-RTPS on Linux; embeddedRTPS (mROS2) on STM32. Multicast discovery on 239.255.0.1, UDP 7400–7500. Critical commands use Reliable QoS; high-frequency sensor streams use Best-Effort.
+**All devices on Domain 5.** DDS: Fast-RTPS on Linux; embeddedRTPS (mROS2) on STM32. Multicast discovery on 239.255.0.1, UDP 7400–7500. Critical commands use Reliable QoS; high-frequency sensor streams use Best-Effort.
 
 ## Storage Architecture
 
 ### Data Logging
 
-**Primary — RPi** (`mission_monitoring_node_rpi`, ws_rpi/runs/run_NNN_YYYYMMDD_HHMMSS/):
+**Primary — RPi** (`rover_monitoring_node`, ws_rpi/runs/run_NNN_YYYYMMDD_HHMMSS/):
 - `rtk_gnss.csv` — RTK position, ~10 Hz
 - `spresense_gnss.csv` — Spresense GPS, ~10 Hz
 - `chassis_imu.csv` — Accel/gyro, ~10 Hz
@@ -194,10 +216,9 @@ flowchart LR
 - `chassis_cmd.csv` — Motor commands, ~50 Hz
 - `mission_state.csv` — Event-driven mission status
 
-**Secondary — Jetson** (`rover_local_monitoring_node`, ws_jetson/runs/run_NNN_YYYYMMDD_HHMMSS/):
+**Secondary — Jetson** (`rover_local_monitoring_node`, D5, ws_jetson/runs/run_NNN_YYYYMMDD_HHMMSS/):
 - `telemetry_unified.csv` — All fields, 5 Hz
 - `rtk_gnss.csv`, `spresense_gnss.csv`, `chassis_data.csv`, `mission_state.csv` — 5 Hz
-- Future: replaces CSV with SQLite/PostgreSQL backend
 
 See [CSV_LOGGING.md](CSV_LOGGING.md) for full schema and analysis guidance.
 
@@ -213,9 +234,9 @@ See [CSV_LOGGING.md](CSV_LOGGING.md) for full schema and analysis guidance.
 
 ## Scalability
 
-- Vision/AI nodes: add to Domain 6 — zero STM32 impact.
-- Control nodes: add to Domain 5; monitor `ros2 node list | wc -l` against `MAX_NUM_PARTICIPANTS`.
-- Additional computing boards: assign a static IP in 192.168.1.0/24, set `ROS_DOMAIN_ID=5`.
+- All new nodes join Domain 5; monitor `ros2 node list | wc -l` against `SPDP_MAX_NUMBER_FOUND_PARTICIPANTS` (currently 30)
+- Additional computing boards: assign a static IP in 192.168.1.0/24, set `ROS_DOMAIN_ID=5`
+- See the `multi-domain` branch for a D4/D5/D6 split that isolates vision and telemetry from STM32
 
 ## Performance Characteristics
 

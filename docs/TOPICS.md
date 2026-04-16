@@ -20,9 +20,9 @@ Complete topic reference for Almondmatcha rover system.
 **Subscribers:** `lane_detection_node`  
 **Rate:** 30 FPS  
 **QoS:** Best Effort, Depth 1  
-**Domain:** 6 (Jetson localhost only)  
+**Domain:** 5 (all nodes on D5)  
 
-RGB image stream from Intel RealSense D415 camera (`rgb8`, 1280×720).
+RGB image stream from Intel RealSense D415 camera (`rgb8`, 1280×720). Configurable via `device_serial` parameter; automatic `fallback_video` to local video file if camera unavailable.
 
 ---
 
@@ -33,7 +33,7 @@ RGB image stream from Intel RealSense D415 camera (`rgb8`, 1280×720).
 **Subscribers:** (reserved for obstacle avoidance)  
 **Rate:** 30 FPS  
 **QoS:** Best Effort, Depth 1  
-**Domain:** 6 (Jetson localhost only)  
+**Domain:** 5 (all nodes on D5)  
 
 Depth image from RealSense D415 (`16UC1`, mm units). Not currently subscribed.
 
@@ -42,13 +42,13 @@ Depth image from RealSense D415 (`16UC1`, mm units). Not currently subscribed.
 ### `tpc_rover_nav_lane`
 
 **Type:** `std_msgs/msg/Float32MultiArray`  
-**Publisher:** `lane_detection_node` (Domain 6)  
-**Subscribers:** `rover_kinematic_control` (Domain 5)  
+**Publisher:** `lane_detection_node` (Jetson, D5)  
+**Subscribers:** `rover_kinematic_control` (Jetson, D5)  
 **Rate:** 25-30 FPS  
 **QoS:** Reliable, Depth 10  
-**Domain:** 5 (published to control network)  
+**Domain:** 5  
 
-Lane detection parameters for steering control. Cross-domain topic published from Domain 6 to Domain 5.
+Lane detection parameters for steering control. On the single-domain branch, all vision nodes run on D5 (no D6 isolation).
 
 **Fields:**
 ```yaml
@@ -80,13 +80,13 @@ data: [theta, b, detected]
 ### `tpc_rover_ctrl_cmd`
 
 **Type:** `std_msgs/msg/Float32MultiArray`  
-**Publisher:** `rover_kinematic_control` (Jetson, dual-context D6→D5)  
+**Publisher:** `rover_kinematic_control` (Jetson, D5)  
 **Subscribers:** `chassis_controller_node` (RPi)  
 **Rate:** 50 Hz  
 **QoS:** Best Effort, Depth 10  
 **Domain:** 5  
 
-Combined kinematic control output: steering angle and chassis speed from the bicycle-model PID controller. Published directly to Domain 5 by the dual-context `rover_kinematic_control` node (no bridge).
+Combined kinematic control output: steering angle and chassis speed from the bicycle-model PID controller. On the single-domain branch, `rover_kinematic_control` runs entirely on D5 (no dual-context D6→D5 bridge).
 
 **Fields:**
 ```yaml
@@ -401,12 +401,12 @@ Commands from base station are sent directly via actions/services on Domain 5:
 
 **Type:** `msgs_ifaces/msg/TelemetryRelay`  
 **Publisher:** `mission_monitoring_node_rpi` (RPi, D5)  
-**Subscribers:** `mission_monitoring_node_pc` (Base, D5 display), `rover_local_monitoring_node` (Jetson, D5 CSV)  
+**Subscribers:** `mission_monitoring_node_pc` (Base, D5), `rover_local_monitoring_node` (Jetson, D5)  
 **Rate:** 5 Hz  
 **QoS:** Reliable, Depth 10  
-**Domain:** 5 (single-domain branch — visible to all nodes including STM32)
+**Domain:** 5 (visible to all nodes including STM32)
 
-Aggregated rover state published by RPi. Subscribes to all D5 sensor/command topics and republishes at 5 Hz.
+Aggregated rover state published by RPi on D5. Subscribes to all sensor/command topics and republishes at 5 Hz. On the single-domain branch, this topic is on D5 (no D4 relay).
 
 **Key Fields:**
 - Mission: `mission_active`, `distance_remaining_km`

@@ -13,8 +13,8 @@ The rover implements a **dual-tier CSV logging system** to ensure data redundanc
 
 ### Tier 1: RPi High-Fidelity Logging
 
-**Node**: `mission_monitoring_node_rpi` (rover_monitoring)  
-**Domain**: 5 (rover control domain)  
+**Node**: `rover_monitoring_node` (rover_monitoring)  
+**Domain**: 5 (all nodes on D5)  
 **Location**: ws_rpi/runs/  
 **Language**: C++
 
@@ -52,7 +52,7 @@ ws_rpi/runs/
 ### Tier 2: Jetson Aggregated Logging
 
 **Node**: `rover_local_monitoring_node` (rover_monitoring)  
-**Domain**: 4 (base telemetry domain)  
+**Domain**: 5 (all nodes on D5 in single-domain branch)  
 **Location**: ws_jetson/runs/  
 **Language**: Python
 
@@ -91,13 +91,13 @@ ws_jetson/runs/
 |--------|-------------|----------------|
 | **Data Rate** | 4-50 Hz (per-topic) | 5 Hz (aggregated) |
 | **Resolution** | Full-fidelity | Down-sampled |
-| **Subscriptions** | 10 topics (D5) | 1 topic (D4) |
+| **Subscriptions** | 10 topics (D5) | 1 topic (D5) |
 | **CSV Files** | 6 per-topic files | 5 files (1 unified + 4 categorical) |
 | **Storage** | Limited (SD card) | High-capacity (SSD/eMMC) |
 | **Language** | C++ | Python |
 | **DB Migration** | Difficult | Easy (SQLite/PostgreSQL) |
 | **Purpose** | Primary high-res logs | Redundancy + future DB backend |
-| **Domain Impact** | +0 (already in D5) | +0 (D4, not D5) |
+| **Domain Impact** | +0 (already in D5) | +0 (same D5) |
 
 ---
 
@@ -170,27 +170,27 @@ Both RPi and Jetson use synchronized run numbering:
 
 ### RPi (ws_rpi)
 
-CSV logging is **automatic** when `mission_monitoring_node_rpi` launches. No additional configuration needed.
+CSV logging is **automatic** when `rover_monitoring_node` launches. No additional configuration needed.
 
 ```bash
 cd ~/almondmatcha/ws_rpi
-./launch_rover_tmux.sh
+./launch_rover_single_domain.sh
 ```
 
 ### Jetson (ws_jetson)
 
-Add to launch script (Domain 4 context):
+Add to launch script (Domain 5 context):
 
 ```bash
-# Terminal: Rover Monitoring (Domain 4)
+# Terminal: Rover Monitoring (Domain 5)
 tmux new-window -t jetson:4 -n "RoveMon"
 tmux send-keys -t jetson:4 "source install/setup.bash" C-m
-tmux send-keys -t jetson:4 "export ROS_DOMAIN_ID=4" C-m
+tmux send-keys -t jetson:4 "export ROS_DOMAIN_ID=5" C-m
 tmux send-keys -t jetson:4 "ros2 run rover_monitoring rover_local_monitoring_node" C-m
 ```
 
 ### Base Station (ws_base)
 
-No CSV logging on base station (display-only). Monitoring node subscribes to Domain 4 telemetry relay for real-time display.
+No CSV logging on base station (display-only). Monitoring node subscribes to `tpc_telemetry_relay` on Domain 5 for real-time display.
 
 

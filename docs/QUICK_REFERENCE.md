@@ -1,7 +1,7 @@
 # Quick Reference: System Launch & Configuration
 
-**Last updated:** April 12, 2026  
-**Configuration:** Single-domain POC — all nodes on D5; 16 participants + 14 margin  
+**Last updated:** June 2026  
+**Branch:** `single-domain` — All nodes on D5; ~16 participants, SPDP_MAX=30 (14 margin)  
 **Network:** All systems connected via Gigabit Ethernet switch (192.168.1.0/24)
 
 ---
@@ -72,24 +72,23 @@ Monitor serial consoles (115200 baud) for confirmation.
 ```bash
 # On RPi or via SSH: ssh curry@192.168.1.1
 cd ~/almondmatcha/ws_rpi
-./launch_rover_tmux.sh
+./launch_rover_single_domain.sh
 # Wait 3-5 seconds before next system
 ```
 
 ### 4. ws_jetson (15-20s)
 ```bash
 # On Jetson or via SSH: ssh yupi@192.168.1.5
-ssh yupi@192.168.1.5
 cd ~/almondmatcha/ws_jetson
-./launch_headless.sh  # or ./launch_gui.sh
+./launch_jetson_single_domain.sh
 # Wait 3-5 seconds before next system
 ```
 
 ### 5. ws_base (20-25s)
 ```bash
-# On base PC (192.168.1.10, username: yupi)
+# On base PC (192.168.1.4, username: yupi)
 cd ~/almondmatcha/ws_base
-./launch_base_tmux.sh
+./launch_base_single_domain.sh
 # System fully operational
 ```
 
@@ -99,14 +98,14 @@ cd ~/almondmatcha/ws_base
 
 **Domain 5 (all nodes — single-domain POC):**
 
-| System | Nodes | D5 Total |
-|--------|-------|----------|
-| STM32 boards | chassis + sensors | 2 |
-| ws_rpi | 8 rover/GNSS nodes | 10 |
-| ws_jetson | camera_stream, lane_detection, rover_kinematic_control, rover_local_monitoring | 14 |
-| ws_base | 2 base nodes | **16** |
-| **Headroom** | | **+4** |
-| **STM32 capacity (`MAX_NUM_PARTICIPANTS`)** | | **20** |
+| System | Nodes | D5 Running Total |
+|--------|-------|-------------------|
+| STM32 boards | chassis + sensors = 2 | 2 |
+| ws_rpi | 8 nodes (GNSS, chassis, monitoring) | 10 |
+| ws_jetson | 4 nodes (camera, lane, kinematic, local_monitoring) | 14 |
+| ws_base | 2 nodes (mission_command, mission_monitoring_pc) | **16** |
+| **STM32 SPDP_MAX** | | **30** |
+| **Headroom** | | **+14** |
 
 > All nodes run on D5. No D4/D6 domain separation — this is the single-domain POC configuration.
 
@@ -145,7 +144,7 @@ sudo timeout 5 tcpdump -i enp0s31f6 \
 # Check participant count in D5
 export ROS_DOMAIN_ID=5
 export FASTRTPS_DEFAULT_PROFILES_FILE=~/almondmatcha/ws_base/fastdds_base.xml
-ros2 node list | wc -l  # Should be 16 (all D5 nodes including STM32 boards)
+ros2 node list | wc -l  # Should be 16 (all D5 nodes: RPi 8, Jetson 4, Base 2, STM32 2)
 
 # Verify data flow (from any machine on switch)
 ros2 topic hz /tpc_chassis_imu      # ~10 Hz
