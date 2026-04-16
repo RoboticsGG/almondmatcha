@@ -13,8 +13,8 @@ The rover implements a **dual-tier CSV logging system** to ensure data redundanc
 
 ### Tier 1: RPi High-Fidelity Logging
 
-**Node**: `mission_monitoring_node_rpi` (rover_monitoring)  
-**Domain**: 5 (rover control domain)  
+**Node**: `rover_monitoring_node` (rover_monitoring)  
+**Domain**: 5 (control domain)  
 **Location**: ws_rpi/runs/  
 **Language**: C++
 
@@ -170,11 +170,11 @@ Both RPi and Jetson use synchronized run numbering:
 
 ### RPi (ws_rpi)
 
-CSV logging is **automatic** when `mission_monitoring_node_rpi` launches. No additional configuration needed.
+CSV logging is **automatic** when `rover_monitoring_node` launches. No additional configuration needed.
 
 ```bash
 cd ~/almondmatcha/ws_rpi
-./launch_rover_tmux.sh
+./launch_rover_multi_domain.sh
 ```
 
 ### Jetson (ws_jetson)

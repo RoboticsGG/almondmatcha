@@ -46,6 +46,9 @@
 | 7 | `mission_monitoring_node_rpi` | RPi | D5→D4 | `fastdds_rover.xml` |
 | 8 | `rover_monitoring_node` | RPi | D5 | `fastdds_rover.xml` |
 | 9 | `camera_stream_node` | Jetson | D6 | none (shared memory) |
+
+> **Camera configuration:** `camera_stream_node` uses the `device_serial` parameter (default `806312060441`, D415) and supports `fallback_video` for automatic fallback to a local video file when the camera is unavailable.
+
 | 10 | `lane_detection_node` | Jetson | D6 | none (shared memory) |
 | 11 | `rover_kinematic_control` | Jetson | D6→D5 | none (default DDS) |
 | 12 | `rover_local_monitoring_node` | Jetson | D4 | none |

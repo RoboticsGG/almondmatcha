@@ -1,7 +1,7 @@
 # Quick Reference: System Launch & Configuration
 
-**Last updated:** April 12, 2026  
-**Configuration:** Multi-domain POC — D4 (telemetry) / D5 (control+STM32) / D6 (vision); ~12 D5 participants + 18 margin  
+**Last updated:** June 2026  
+**Branch:** `multi-domain` — D4 (telemetry) / D5 (control+STM32) / D6 (vision); ~12 D5 participants, SPDP_MAX=30 (18 margin)  
 **Network:** All systems connected via Gigabit Ethernet switch (192.168.1.0/24)
 
 ---
@@ -72,24 +72,23 @@ Monitor serial consoles (115200 baud) for confirmation.
 ```bash
 # On RPi or via SSH: ssh curry@192.168.1.1
 cd ~/almondmatcha/ws_rpi
-./launch_rover_tmux.sh
+./launch_rover_multi_domain.sh
 # Wait 3-5 seconds before next system
 ```
 
 ### 4. ws_jetson (15-20s)
 ```bash
 # On Jetson or via SSH: ssh yupi@192.168.1.5
-ssh yupi@192.168.1.5
 cd ~/almondmatcha/ws_jetson
-./launch_headless.sh  # or ./launch_gui.sh
+./launch_jetson_multi_domain.sh
 # Wait 3-5 seconds before next system
 ```
 
 ### 5. ws_base (20-25s)
 ```bash
-# On base PC (192.168.1.10, username: yupi)
+# On base PC (192.168.1.4, username: yupi)
 cd ~/almondmatcha/ws_base
-./launch_base_tmux.sh
+./launch_base_multi_domain.sh
 # System fully operational
 ```
 
@@ -145,7 +144,7 @@ sudo timeout 5 tcpdump -i enp0s31f6 \
 # Check D5 participant count (STM32 + control nodes)
 export ROS_DOMAIN_ID=5
 export FASTRTPS_DEFAULT_PROFILES_FILE=~/almondmatcha/ws_base/fastdds_base.xml
-ros2 node list | wc -l  # Should be ~12 (D5 nodes including STM32 boards)
+ros2 node list | wc -l  # Should be ~12 (D5 nodes: RPi 8, Jetson kinematic 1, Base mission_cmd 1, STM32 2)
 
 # Check D4 telemetry
 export ROS_DOMAIN_ID=4
