@@ -102,6 +102,7 @@ class CameraStreamNode(Node):
         self.declare_parameter('enable_depth', False)
         self.declare_parameter('video_path', '')
         self.declare_parameter('loop_video', True)
+        self.declare_parameter('device_serial', '')
 
         # ===================== Parameter Retrieval =====================
         self.w: int = int(self.get_parameter('width').value)
@@ -112,6 +113,7 @@ class CameraStreamNode(Node):
         self.enable_depth: bool = bool(self.get_parameter('enable_depth').value)
         self.video_path: str = str(self.get_parameter('video_path').value).strip()
         self.loop_video: bool = bool(self.get_parameter('loop_video').value)
+        self.device_serial: str = str(self.get_parameter('device_serial').value).strip()
 
         # ===================== Mode Selection =====================
         self.use_video: bool = len(self.video_path) > 0
@@ -164,8 +166,12 @@ class CameraStreamNode(Node):
         self.pipeline = rs.pipeline()
         self.config = rs.config()
 
-        # Enable specific D415 device by serial number
-        self.config.enable_device('806312060441')
+        # Enable specific D415 device by serial number (if provided)
+        if self.device_serial:
+            self.config.enable_device(self.device_serial)
+            self.get_logger().info(f'Using D415 serial: {self.device_serial}')
+        else:
+            self.get_logger().info('No device_serial set — using first available RealSense device')
 
         # Stream configuration: RGB
         self.config.enable_stream(
@@ -185,7 +191,27 @@ class CameraStreamNode(Node):
             )
 
         # Start pipeline
-        self.profile = self.pipeline.start(self.config)
+        try:
+            self.profile = self.pipeline.start(self.config)
+        except RuntimeError as e:
+            # List available devices to help debug
+            ctx = rs.context()
+            devs = ctx.devices
+            if len(devs) == 0:
+                raise RuntimeError(
+                    "No RealSense devices detected. Check USB connection and permissions "
+                    "(sudo usermod -a -G video $USER && reboot)."
+                ) from e
+            dev_list = ", ".join(
+                f"{d.get_info(rs.camera_info.name)} [{d.get_info(rs.camera_info.serial_number)}]"
+                for d in devs
+            )
+            raise RuntimeError(
+                f"Failed to start pipeline: {e}\n"
+                f"  Requested serial: '{self.device_serial or '(any)'}'\n"
+                f"  Available devices: {dev_list}\n"
+                f"  Stream: {self.w}x{self.h} @ {self.fps_param} FPS"
+            ) from e
 
         # ===== Optional Advanced Configuration =====
         if self.json_path and os.path.exists(self.json_path):
