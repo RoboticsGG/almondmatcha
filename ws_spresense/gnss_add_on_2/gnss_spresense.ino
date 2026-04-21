@@ -1,30 +1,37 @@
 /**
- * @file gnss_addon_arduinojson.ino
- * @brief Professional telemetry output using ArduinoJson for Spresense Add-on
+ * @file gnss_addon_arduinojson_legacy_compat.ino
+ * @brief GNSS Telemetry Output (JSON) for Spresense
+ * (100% Backwards compatible keys + Extended Telemetry & Dual Blinking LEDs)
  */
 
-/** 
-    here is an example of json string output */
-    /** {"timestamp":"2023-04-01T12:34:56",
-"usec":123456,"fix_mode":3,"num_sat":8,"lat":37.7749,
-"lon":-122.4194,"alt":10.5,"speed_ms":5.2,"heading":45.0,
-"pdop":1.2,"hdop":1.0,"vdop":1.5} */
-
 #include <GNSS.h>
-#include <ArduinoJson.h> // Install via Arduino Library Manager
+
+// Disable PROGMEM to fix Sony Spresense compilation error
+#define ARDUINOJSON_ENABLE_PROGMEM 0
+#include <ArduinoJson.h> 
 
 static SpGnssAddon Gnss;
+static bool streamLedState = false; 
+static bool fixLedState = false; 
 
 void setup() {
   Serial.begin(115200);
 
-  // Initialize Add-on hardware
+  // Initialize LEDs
+  pinMode(LED0, OUTPUT); // LED0: Serial Streaming Heartbeat
+  pinMode(LED1, OUTPUT); // LED1: GNSS Fix Status
+  digitalWrite(LED0, LOW);
+  digitalWrite(LED1, LOW);
+
+  // EXACT OLD CODE STARTUP MSG
+  Serial.println("{\"status\":\"GNSS USB0 Output Ready\"}");
+
   if (Gnss.begin() != 0) {
-    Serial.println("{\"error\":\"GNSS Add-on initialization failed\"}");
+    Serial.println("{\"error\":\"GNSS initialization failed\"}"); // EXACT OLD CODE ERROR MSG
     while (1);
   }
 
-  // Enable all constellations to maximize Dual-Band (L1/L5) performance
+  // Enable all constellations for maximum accuracy
   Gnss.select(GPS);
   Gnss.select(GLONASS);
   Gnss.select(GALILEO);
@@ -33,9 +40,12 @@ void setup() {
   Gnss.select(QZ_L1S);
 
   if (Gnss.start(COLD_START) != 0) {
-    Serial.println("{\"error\":\"GNSS start failed\"}");
+    Serial.println("{\"error\":\"GNSS start failed\"}"); // EXACT OLD CODE ERROR MSG
     while (1);
   }
+
+  // EXACT OLD CODE SETUP OK MSG
+  Serial.println("{\"status\":\"GNSS setup OK\"}");
 }
 
 void loop() {
@@ -43,44 +53,74 @@ void loop() {
     SpNavData nav;
     Gnss.getNavData(&nav);
 
-    // Create a JSON document (ArduinoJson 7 syntax)
     JsonDocument doc;
 
-    // Time & Status
+    // Format time strictly as "YYYY-MM-DD HH:MM:SS" (Matches old code)
     char timeStr[32];
-    snprintf(timeStr, sizeof(timeStr), "%04d-%02d-%02dT%02d:%02d:%02d",
+    snprintf(timeStr, sizeof(timeStr), "%04d-%02d-%02d %02d:%02d:%02d",
              nav.time.year, nav.time.month, nav.time.day,
              nav.time.hour, nav.time.minute, nav.time.sec);
     
-    doc["timestamp"] = timeStr;
-    doc["usec"] = nav.time.usec;
-    doc["fix_mode"] = nav.posFixMode; // 1:No Fix, 2:2D, 3:3D
-    doc["num_sat"] = nav.numSatellites;
+    // --- DUAL BLINKING LED LOGIC ---
+    // 1. Streaming Heartbeat (LED0): Toggles every time a valid loop completes
+    streamLedState = !streamLedState;
+    digitalWrite(LED0, streamLedState ? HIGH : LOW);
 
-    // Position, Motion, and Precision
-    if (nav.posDataExist) {
-      doc["lat"] = nav.latitude;
-      doc["lon"] = nav.longitude;
-      doc["alt"] = nav.altitude;
-      doc["speed_ms"] = nav.velocity;   // Speed over ground
-      doc["heading"] = nav.direction;   // Course over ground in degrees
-      doc["pdop"] = nav.pdop;           // Position Dilution of Precision
-      doc["hdop"] = nav.hdop;           // Horizontal Dilution of Precision
-      doc["vdop"] = nav.vdop;           // Vertical Dilution of Precision
+    // 2. Fix Status (LED1): Toggles only if a fix is present, otherwise forced OFF
+    bool hasFix = (nav.posFixMode != FixInvalid);
+    if (hasFix) {
+      fixLedState = !fixLedState;
+      digitalWrite(LED1, fixLedState ? HIGH : LOW);
     } else {
-      // Explicitly set nulls for a consistent schema
-      doc["lat"] = JsonVariant();
-      doc["lon"] = JsonVariant();
-      doc["alt"] = JsonVariant();
-      doc["speed_ms"] = JsonVariant();
-      doc["heading"] = JsonVariant();
-      doc["pdop"] = JsonVariant();
-      doc["hdop"] = JsonVariant();
-      doc["vdop"] = JsonVariant();
+      fixLedState = false;
+      digitalWrite(LED1, LOW);
+    }
+    // -------------------------------
+
+    // ==========================================
+    // 1. EXACT OLD CODE KEYS (Guaranteed compatible)
+    // ==========================================
+    doc["time"] = timeStr;          
+    doc["numSatellites"] = nav.numSatellites; 
+    doc["fix"] = hasFix; 
+
+    if (nav.posDataExist) {
+      doc["latitude"] = nav.latitude;  
+      doc["longitude"] = nav.longitude; 
+      doc["altitude"] = nav.altitude;  
+    } else {
+      doc["latitude"] = nullptr;
+      doc["longitude"] = nullptr;
+      doc["altitude"] = nullptr;
     }
 
-    // Serialize and send
+    // ==========================================
+    // 2. NEW EXTENDED KEYS (Safe additions)
+    // ==========================================
+    doc["usec"] = nav.time.usec;
+    if (nav.posDataExist) {
+      doc["speed_ms"] = nav.velocity;   
+      doc["heading"] = nav.direction;   
+      doc["pdop"] = nav.pdop;           
+      doc["hdop"] = nav.hdop;           
+      doc["vdop"] = nav.vdop;           
+    } else {
+      doc["speed_ms"] = nullptr;
+      doc["heading"] = nullptr;
+      doc["pdop"] = nullptr;
+      doc["hdop"] = nullptr;
+      doc["vdop"] = nullptr;
+    }
+
+    // Serialize and send the complete JSON string
     serializeJson(doc, Serial);
     Serial.println();
+    
+  } else {
+    // EXACT OLD CODE FALLBACK MSG
+    Serial.println("{\"error\":\"GNSS data not updated\"}");
   }
+
+  // EXACT OLD CODE DELAY (1Hz loop cycle)
+  delay(1000); 
 }
