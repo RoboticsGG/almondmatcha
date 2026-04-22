@@ -47,11 +47,11 @@ private:
         qos_profile.best_effort();
 
         sub_chassis_sensors_ = this->create_subscription<msgs_ifaces::msg::ChassisSensors>(
-            "/tpc_chassis_sensors", qos_profile,
+            "tpc_chassis_sensors", qos_profile,
             std::bind(&ChassisSensorsNode::sensorsCallback, this, std::placeholders::_1)
         );
         
-        RCLCPP_INFO(this->get_logger(), "Subscribed to /tpc_chassis_sensors");
+        RCLCPP_INFO(this->get_logger(), "Subscribed to tpc_chassis_sensors");
     }
 
     void sensorsCallback(const msgs_ifaces::msg::ChassisSensors::SharedPtr msg) {

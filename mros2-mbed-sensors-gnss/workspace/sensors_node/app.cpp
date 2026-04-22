@@ -27,13 +27,19 @@
 #include <cstdlib>
 #include <cstring>
 
+// Build timestamp baked in at compile time
+#define FW_BUILD_DATE __DATE__
+#define FW_BUILD_TIME __TIME__
+#define FW_BOARD_NAME "sensors-gnss"
+#define FW_BOARD_IP   "192.168.1.6"
+
 // ============================================================================
 // SAMPLING RATE CONSTANTS
 // ============================================================================
 
 const uint32_t ENCODER_SAMPLE_PERIOD_MS = 100;    // Encoder task @ 10 Hz
 const uint32_t POWER_SAMPLE_PERIOD_MS = 200;      // Power monitor task @ 5 Hz
-const uint32_t GNSS_SAMPLE_PERIOD_MS = 100;       // GNSS reader task @ 10 Hz
+const uint32_t GNSS_SAMPLE_PERIOD_MS = 500;       // GNSS reader task @ 2 Hz
 const uint32_t MAIN_LOOP_PERIOD_MS = 250;         // Main publishing loop @ 4 Hz
 const uint32_t GNSS_PRINT_INTERVAL = 4;           // Print GNSS every 4 main loops (1 second)
 
@@ -170,15 +176,16 @@ int main()
 
   // ---- Platform and mROS2 Initialization ----
   MROS2_INFO("========================================");
-  MROS2_INFO("  Firmware: sensors-gnss");
-  MROS2_INFO("  Board IP: 192.168.1.6");
+  MROS2_INFO("  Firmware: %s", FW_BOARD_NAME);
+  MROS2_INFO("  Built:    %s %s", FW_BUILD_DATE, FW_BUILD_TIME);
+  MROS2_INFO("  Board IP: %s", FW_BOARD_IP);
   MROS2_INFO("  Platform: %s", MROS2_PLATFORM_NAME);
   MROS2_INFO("  Domain:   %d", rtps::Config::DOMAIN_ID);
   MROS2_INFO("  SPDP max: %d  HB: %d ms  SPDP: %d ms",
              rtps::Config::SPDP_MAX_NUMBER_FOUND_PARTICIPANTS,
              rtps::Config::SF_WRITER_HB_PERIOD_MS,
              rtps::Config::SPDP_RESEND_PERIOD_MS);
-  MROS2_INFO("  Node: mros2_node_sensors");
+  MROS2_INFO("  Node: mros2_node_sensors_d6");
   MROS2_INFO("  Pub:  tpc_chassis_sensors (4 Hz)");
   MROS2_INFO("  Sub:  (none)");
   MROS2_INFO("========================================");
@@ -193,13 +200,14 @@ int main()
   mros2::Publisher PubSensData = 
     node.create_publisher<msgs_ifaces::msg::ChassisSensors>("tpc_chassis_sensors", 10);
 
-  // ===== MULTICAST DISCOVERY WAIT =====
-  // embeddedRTPS only supports multicast discovery on 239.255.0.1 (port 8650).
-  // 3 s gives bidirectional SPDP+SEDP exchange at 500 ms SPDP period before first publish.
-  MROS2_INFO("Waiting 3 s for multicast SPDP exchange...");
-  osDelay(3000);  // 3 s = 6 SPDP cycles @ 500ms — sufficient for 11-node D5 topology
-  MROS2_INFO("Discovery wait done -- initializing sensors");
-  // =====================================
+  // ===== DISCOVERY NOTE =====
+  // mros2::spin() is NOT the main loop here — the publish while(true) below
+  // serves as the spin equivalent.  embeddedRTPS only supports multicast
+  // discovery on 239.255.0.1 (port 8650 for domain 5).  The RTPS stack starts
+  // processing incoming multicast SPDP as soon as the tasks are launched.
+  // A 3 s wait inside the publish loop gives SPDP+SEDP time to exchange
+  // before the first message is published.
+  // ==========================
 
   // ---- Initialize All Sensor Modules ----
   MROS2_INFO("Initializing sensor modules...");
@@ -226,7 +234,7 @@ int main()
   
   Thread gnss_thread(osPriorityNormal, 4096);     // 4KB stack
   gnss_thread.start(gnss_reader_task);
-  MROS2_INFO("GNSS reader task launched");
+  MROS2_INFO("GNSS reader task launched (2 Hz)");
 
   osDelay(1000);  // Wait for initialization to complete
   MROS2_INFO("ready to pub/sub message\r\n---");
@@ -236,6 +244,15 @@ int main()
   // and publishing to ROS2 at 4 Hz (250ms interval).
   bool sensors_first_print_done = false;
 
+  // Wait for multicast SPDP exchange before first publish.
+  // embeddedRTPS only supports multicast discovery (239.255.0.1, port 8650
+  // for domain 5).  FastDDS nodes join the same multicast group via
+  // metatrafficMulticastLocatorList in fastdds_*.xml.
+  // 3 s covers 6 SPDP cycles @ 500 ms.
+  MROS2_INFO("[sensors] Waiting 3 s for multicast SPDP exchange...");
+  ThisThread::sleep_for(chrono::milliseconds(3000));
+  MROS2_INFO("[sensors] Discovery wait done — starting publish");
+
   while (true) {
     // Read all sensor data from shared structure with mutex protection
     sensor_data_mutex.lock();
@@ -243,9 +260,6 @@ int main()
     int32_t enc_B = sensor_data.encoder_B;
     float vbus = sensor_data.bus_voltage;
     float curr = sensor_data.current;
-    char gnss_data[GNSS_NMEA_BUFFER_SIZE];
-    strncpy(gnss_data, sensor_data.nmea_sentence, GNSS_NMEA_BUFFER_SIZE - 1);
-    gnss_data[GNSS_NMEA_BUFFER_SIZE - 1] = '\0';
     sensor_data_mutex.unlock();
 
     // Prepare and publish sensor data message
@@ -258,8 +272,8 @@ int main()
 
     // Print once on first publish to confirm sensors are alive, then stay silent
     if (!sensors_first_print_done) {
-      printf("\r\n[SENSORS] First sample -- Enc(A:%ld B:%ld) Power(%.2fV %.2fA)",
-           enc_A, enc_B, vbus, curr);
+      printf("\r\n[SENSORS] First sample — Enc(A:%ld B:%ld) Power(%.2fV %.2fA)\r\n",
+         enc_A, enc_B, vbus, curr);
       fflush(stdout);
       sensors_first_print_done = true;
     }

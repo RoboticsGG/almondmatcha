@@ -47,11 +47,11 @@ private:
         qos_profile.best_effort();
 
         sub_chassis_imu_ = this->create_subscription<msgs_ifaces::msg::ChassisIMU>(
-            "/tpc_chassis_imu", qos_profile,
+            "tpc_chassis_imu", qos_profile,
             std::bind(&ChassisIMUNode::imuCallback, this, std::placeholders::_1)
         );
         
-        RCLCPP_INFO(this->get_logger(), "Subscribed to /tpc_chassis_imu");
+        RCLCPP_INFO(this->get_logger(), "Subscribed to tpc_chassis_imu");
     }
 
     void imuCallback(const msgs_ifaces::msg::ChassisIMU::SharedPtr msg) {

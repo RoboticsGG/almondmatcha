@@ -86,22 +86,43 @@ private:
         }
 
         buffer[bytes_read] = '\0';
-        nmea_buffer_ += std::string(buffer);
+        nmea_buffer_ += std::string(buffer, bytes_read);
 
-        // Process complete NMEA sentences
-        size_t pos;
-        while ((pos = nmea_buffer_.find('\n')) != std::string::npos) {
-            std::string sentence = nmea_buffer_.substr(0, pos);
-            nmea_buffer_ = nmea_buffer_.substr(pos + 1);
-            
-            // Remove \r if present
-            if (!sentence.empty() && sentence.back() == '\r') {
-                sentence.pop_back();
+        // Safety cap: binary UBX frames can bloat the buffer if no '$' arrives
+        if (nmea_buffer_.size() > 4096) {
+            nmea_buffer_.clear();
+            return;
+        }
+
+        // Scan for complete NMEA sentences anchored at '$'.
+        // Binary UBX frames (0xB5 0x62 ...) are silently skipped — they don't
+        // start with '$' so the find() below jumps past them automatically.
+        size_t search_from = 0;
+        while (true) {
+            size_t dollar = nmea_buffer_.find('$', search_from);
+            if (dollar == std::string::npos) {
+                nmea_buffer_.clear();
+                break;
             }
-
-            if (!sentence.empty() && sentence[0] == '$') {
+            // Find end of this sentence (\r or \n after the '$')
+            size_t end = nmea_buffer_.find_first_of("\r\n", dollar + 1);
+            if (end == std::string::npos) {
+                // Incomplete sentence — keep from '$' onwards for next read
+                nmea_buffer_ = nmea_buffer_.substr(dollar);
+                break;
+            }
+            std::string sentence = nmea_buffer_.substr(dollar, end - dollar);
+            // Advance past the line terminator (handle \r\n pair)
+            search_from = end + 1;
+            if (search_from < nmea_buffer_.size() && nmea_buffer_[search_from] == '\n') {
+                ++search_from;
+            }
+            if (sentence.size() > 5) {
                 processNMEASentence(sentence);
             }
+        }
+        if (search_from > 0 && search_from <= nmea_buffer_.size()) {
+            nmea_buffer_ = nmea_buffer_.substr(search_from);
         }
     }
 
@@ -113,6 +134,8 @@ private:
         // GGA - Global Positioning System Fix Data
         if (tokens[0].find("GGA") != std::string::npos && tokens.size() >= 15) {
             parseGGA(tokens);
+        } else if (tokens[0].find("GGA") != std::string::npos) {
+            RCLCPP_WARN(this->get_logger(), "[DBG] GGA skipped: only %zu tokens: %s", tokens.size(), sentence.c_str());
         }
         // GSA - GPS DOP and active satellites
         else if (tokens[0].find("GSA") != std::string::npos && tokens.size() >= 18) {
@@ -130,13 +153,17 @@ private:
 
     void parseGGA(const std::vector<std::string> &tokens) {
         // $GPGGA,time,lat,N/S,lon,E/W,quality,numSV,HDOP,alt,M,geoidal_sep,M,age,stnID
-        
-        if (tokens[2].empty() || tokens[4].empty()) return;
 
-        current_data_.time = parseTime(tokens[1]);
-        current_data_.latitude = parseLatitude(tokens[2], tokens[3]);
-        current_data_.longitude = parseLongitude(tokens[4], tokens[5]);
-        
+        if (!tokens[1].empty()) {
+            current_data_.time = parseTime(tokens[1]);
+        }
+
+        // lat/lon may be empty before fix — keep last known value (default 0.0)
+        if (!tokens[2].empty() && !tokens[4].empty()) {
+            current_data_.latitude  = parseLatitude(tokens[2], tokens[3]);
+            current_data_.longitude = parseLongitude(tokens[4], tokens[5]);
+        }
+
         if (!tokens[6].empty()) {
             int quality = std::stoi(tokens[6]);
             current_data_.fix_quality = getFixQuality(quality);
@@ -179,7 +206,9 @@ private:
         if (tokens.size() >= 16 && !tokens[15].empty()) {
             float hdop = std::stof(tokens[15]);
             // Rough conversion: HDOP * 5 meters = error in cm
-            current_data_.centimeter_error = hdop * 500.0f;
+            // Cap at 9999 cm for invalid/placeholder HDOP values (e.g. 99.99)
+            float err = hdop * 500.0f;
+            current_data_.centimeter_error = (err > 9999.0f) ? 9999.0f : err;
         }
     }
 
@@ -277,11 +306,19 @@ private:
         msg.centimeter_error = current_data_.centimeter_error;
 
         pub_gnss_ublox_->publish(msg);
-        
-        RCLCPP_INFO(this->get_logger(), 
+
+        // Format date YYYYMMDD → YYYY-MM-DD and time HHMMSS → HH:MM:SS for display
+        std::string disp_date = (msg.date.size() == 8)
+            ? msg.date.substr(0,4) + "-" + msg.date.substr(4,2) + "-" + msg.date.substr(6,2)
+            : msg.date;
+        std::string disp_time = (msg.time.size() >= 6)
+            ? msg.time.substr(0,2) + ":" + msg.time.substr(2,2) + ":" + msg.time.substr(4,2)
+            : msg.time;
+
+        RCLCPP_INFO(this->get_logger(),
             "u-blox RTK GNSS - Date=%s, Time=%s, Sats=%d, Fix=%s, Lat=%.6f, Lon=%.6f, Alt=%.2f, SNR=%.1f, Speed=%.2f m/s, Err=%.1f cm",
-            msg.date.c_str(), msg.time.c_str(), msg.satellites_tracked, msg.fix_quality.c_str(),
-            msg.latitude, msg.longitude, msg.altitude, 
+            disp_date.c_str(), disp_time.c_str(), msg.satellites_tracked, msg.fix_quality.c_str(),
+            msg.latitude, msg.longitude, msg.altitude,
             msg.snr, msg.speed, msg.centimeter_error);
     }
 
