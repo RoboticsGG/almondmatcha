@@ -44,7 +44,7 @@ fi
 
 DOCKERCMD_PRE="docker run --rm -it --mount type=bind,source=$(pwd),destination=/var/mbed \
   -w /var/mbed -e APPNAME=${APPNAME} ghcr.io/armmbed/mbed-os-env \
-  /bin/bash -c \""
+  /bin/bash -c \"git config --global --add safe.directory '*' && "
 DOCKERCMD_SUF="\""
 if [ $# == 4 ];
 then
@@ -73,8 +73,22 @@ echo "      APPNAME=${APPNAME}"
 
 
 ### build a project ###
-# deploy mbed environment by mbed-tools
-eval ${DOCKERCMD_PRE}mbed-tools deploy${DOCKERCMD_SUF}
+# Deploy libraries: clone mbed-os and mros2 directly from the refs in .lib files.
+# mbed-tools deploy fails on a clean directory (needs existing git repos to work).
+# Direct clone is idempotent — skips if directory already exists.
+DEPLOY_CMD='([ -d mbed-os ] || (git clone https://github.com/ARMmbed/mbed-os.git mbed-os && git -C mbed-os checkout d723bf9e55415433e108124ee6d36337feddf1b8)) && ([ -d mros2 ] || git clone --branch v0.5.4 https://github.com/mROS-base/mros2.git mros2) && git -C mros2 submodule update --init'
+eval ${DOCKERCMD_PRE}${DEPLOY_CMD}${DOCKERCMD_SUF}
+
+# Apply embeddedRTPS patches (e.g. AckNack bitmap overflow fix)
+if [ -d platform/patches ] && [ -d mros2/embeddedRTPS ]; then
+  for p in platform/patches/*.patch; do
+    [ -f "$p" ] || continue
+    abspath="$(cd "$(dirname "$p")" && pwd)/$(basename "$p")"
+    if ! git -C mros2/embeddedRTPS apply --check --reverse "$abspath" 2>/dev/null; then
+      git -C mros2/embeddedRTPS apply "$abspath" && echo "INFO: applied patch $(basename $p)"
+    fi
+  done
+fi
 
 # configure mbed project by mbed-tools (output to build directory)
 eval ${DOCKERCMD_PRE}mbed-tools configure -m ${TARGET} -t GCC_ARM -o build${DOCKERCMD_SUF}
@@ -92,4 +106,10 @@ then
 elif [ ${MAKECMD} = "clean" ];
 then
   eval ${DOCKERCMD_PRE}cmake --build build --target clean${DOCKERCMD_SUF}
+fi
+
+# Docker runs as root -> all generated files (mbed-os/, mros2/, build/) are owned by
+# root.  Fix ownership back to the invoking user so the next run works without sudo.
+if [ -n "${SUDO_USER:-}" ]; then
+  chown -R "${SUDO_USER}":"${SUDO_USER}" build/ mros2/ mbed-os/ platform/ 2>/dev/null || true
 fi

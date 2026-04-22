@@ -169,8 +169,19 @@ int main()
   }
 
   // ---- Platform and mROS2 Initialization ----
-  MROS2_INFO("%s start!", MROS2_PLATFORM_NAME);
-  MROS2_INFO("app name: STM32 Sensors Node (Domain 5)");
+  MROS2_INFO("========================================");
+  MROS2_INFO("  Firmware: sensors-gnss");
+  MROS2_INFO("  Board IP: 192.168.1.6");
+  MROS2_INFO("  Platform: %s", MROS2_PLATFORM_NAME);
+  MROS2_INFO("  Domain:   %d", rtps::Config::DOMAIN_ID);
+  MROS2_INFO("  SPDP max: %d  HB: %d ms  SPDP: %d ms",
+             rtps::Config::SPDP_MAX_NUMBER_FOUND_PARTICIPANTS,
+             rtps::Config::SF_WRITER_HB_PERIOD_MS,
+             rtps::Config::SPDP_RESEND_PERIOD_MS);
+  MROS2_INFO("  Node: mros2_node_sensors");
+  MROS2_INFO("  Pub:  tpc_chassis_sensors (4 Hz)");
+  MROS2_INFO("  Sub:  (none)");
+  MROS2_INFO("========================================");
 
   mros2::init(0, NULL);
   MROS2_DEBUG("mROS 2 initialization is completed");
@@ -182,17 +193,13 @@ int main()
   mros2::Publisher PubSensData = 
     node.create_publisher<msgs_ifaces::msg::ChassisSensors>("tpc_chassis_sensors", 10);
 
-  // ===== DDS DISCOVERY COORDINATION FIX =====
-  // Wait for DDS/RTPS participant discovery to complete
-  // SPDP announcements sent every 500ms (SPDP_RESEND_PERIOD_MS)
-  // Need at least 8-10 cycles for reliable discovery across all nodes
-  // (ws_rpi(5) + ws_base(2) + ws_jetson(3) + STM32(2) = 12 participants)
-  // This fixes intermittent "no messages received" and "[Memory pool] resource limit exceed"
-  // by ensuring publishers/subscribers are fully matched before data transmission starts
-  MROS2_INFO("Waiting 8 seconds for DDS participant discovery (12 participants)...");
-  osDelay(8000);  // 8 seconds = 16 SPDP cycles @ 500ms for robust discovery
-  MROS2_INFO("Discovery wait complete - initializing sensors");
-  // ==========================================
+  // ===== MULTICAST DISCOVERY WAIT =====
+  // embeddedRTPS only supports multicast discovery on 239.255.0.1 (port 8650).
+  // 3 s gives bidirectional SPDP+SEDP exchange at 500 ms SPDP period before first publish.
+  MROS2_INFO("Waiting 3 s for multicast SPDP exchange...");
+  osDelay(3000);  // 3 s = 6 SPDP cycles @ 500ms — sufficient for 11-node D5 topology
+  MROS2_INFO("Discovery wait done -- initializing sensors");
+  // =====================================
 
   // ---- Initialize All Sensor Modules ----
   MROS2_INFO("Initializing sensor modules...");
@@ -219,7 +226,7 @@ int main()
   
   Thread gnss_thread(osPriorityNormal, 4096);     // 4KB stack
   gnss_thread.start(gnss_reader_task);
-  MROS2_INFO("GNSS reader task launched (10 Hz)");
+  MROS2_INFO("GNSS reader task launched");
 
   osDelay(1000);  // Wait for initialization to complete
   MROS2_INFO("ready to pub/sub message\r\n---");
@@ -227,7 +234,8 @@ int main()
   // ---- Main Sensor Publishing Loop ----
   // Main loop focuses on aggregating data from the three independent tasks
   // and publishing to ROS2 at 4 Hz (250ms interval).
-  
+  bool sensors_first_print_done = false;
+
   while (true) {
     // Read all sensor data from shared structure with mutex protection
     sensor_data_mutex.lock();
@@ -248,14 +256,13 @@ int main()
     msgs.sys_volt_msg = vbus;           // Bus voltage (V)
     PubSensData.publish(msgs);
 
-    // Print sensor status (compact format) - overwrite previous line
-    // This will overwrite the previous line, but if the new text is shorter, remnants may remain.
-    // To fully clear the line, pad with spaces to the end.
-    printf("\r[SENSORS] Enc(A:%ld B:%ld) Power(%.2fV %.2fA) GNSS:%s", 
-       enc_A, enc_B, vbus, curr, gnss_data);
-    // Pad with spaces to clear any leftover characters from previous output
-    printf("%*s", 20, ""); // Adjust 20 to be enough for your longest line
-    fflush(stdout);
+    // Print once on first publish to confirm sensors are alive, then stay silent
+    if (!sensors_first_print_done) {
+      printf("\r\n[SENSORS] First sample -- Enc(A:%ld B:%ld) Power(%.2fV %.2fA)",
+           enc_A, enc_B, vbus, curr);
+      fflush(stdout);
+      sensors_first_print_done = true;
+    }
 
     // Main loop runs at MAIN_LOOP_PERIOD_MS (4 Hz)
     ThisThread::sleep_for(chrono::milliseconds(MAIN_LOOP_PERIOD_MS));

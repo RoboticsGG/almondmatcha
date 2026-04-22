@@ -49,21 +49,38 @@ const uint8_t DOMAIN_ID = 5; // 230 possible with UDP
 const uint8_t NUM_STATELESS_WRITERS = 4;
 const uint8_t NUM_STATELESS_READERS = 4;
 
-// OPTIMIZED CONFIGURATION - Domain 4/5/6 architecture
-// Domain 5 participants: 11 actual (ws_rpi×7, ws_jetson×1, ws_base×1, STM32×2)
-// Memory usage: ~180-200 KB, Free: ~310-330 KB (60%+ headroom)
-const uint8_t NUM_STATEFUL_READERS = 32;              // Max endpoints for all remote writers
-const uint8_t NUM_STATEFUL_WRITERS = 28;              // Max endpoints for all remote readers
-const uint8_t MAX_NUM_PARTICIPANTS = 15;              // Domain 5: 11 actual + 4 margin (sufficient)
-const uint8_t NUM_WRITERS_PER_PARTICIPANT = 20;       // Max publishers per node (ws_base heavy)
-const uint8_t NUM_READERS_PER_PARTICIPANT = 20;       // Max subscribers per node (ws_base heavy)
-const uint8_t NUM_WRITER_PROXIES_PER_READER = 28;     // Track all possible remote writers
-const uint8_t NUM_READER_PROXIES_PER_WRITER = 28;     // Track all possible remote readers (GNSS monitoring)
+// PRODUCTION CONFIGURATION — sensors/GNSS board (NUCLEO-F767ZI, 192.168.1.6)
+// This board: 1 publisher (tpc_chassis_sensors), 0 subscribers
+//
+// System topology (D5, tri-domain D4/D5/D6):
+//   RPi: 7 nodes | Jetson: 1 node | Base: 1 node | STM32×2: 1 each = 11 total D5 participants
+//   Heaviest node by writers: gnss_mission_monitor (10) | by readers: mission_monitoring_rpi (11)
+//
+// MAX_NUM_PARTICIPANTS = local participant pool (STM32 creates exactly 1).
+// Remote participant tracking uses SPDP_MAX_NUMBER_FOUND_PARTICIPANTS (separate).
+// Upstream embedded configs (config_stm.h, config_r5.h) all use 1.
+//
+// OVERALL_HEAP_SIZE (thread stacks only):
+//   1×4096 + 1×8192  (thread pool writer+reader)
+//  + 1×4096           (SPDP writer per local participant)
+//  + 3×4096           (heartbeat per stateful writer)
+//  = 4096+8192+4096+12288 = 28,672 B  — fits easily in Nucleo-F767ZI heap
+const uint8_t NUM_STATEFUL_READERS = 2;               // SEDP: 2 internal; 0 app subscribers
+const uint8_t NUM_STATEFUL_WRITERS = 3;               // SEDP: 2 internal + 1 app publisher (tpc_chassis_sensors)
+const uint8_t MAX_NUM_PARTICIPANTS = 1;               // local participant pool — STM32 creates exactly 1
+const uint8_t NUM_WRITERS_PER_PARTICIPANT = 16;       // max DDS writers per remote node (10 actual + margin)
+const uint8_t NUM_READERS_PER_PARTICIPANT = 16;       // max DDS readers per remote node (11 actual + margin)
+const uint8_t NUM_WRITER_PROXIES_PER_READER = 30;     // SEDP readers: 1 WriterProxy per remote participant
+const uint8_t NUM_READER_PROXIES_PER_WRITER = 30;     // SEDP writers: 1 ReaderProxy per remote participant
 
-// Discovery burst handling - Critical for preventing [MemoryPool] errors
-const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 60;  // Handles simultaneous discovery
-const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 80;  // Handles ws_base monitoring burst
-    
+// SEDP unmatched endpoint pools — disabled for static topology.
+// These only serve late-joining local endpoints (never happens on STM32).
+// addUnmatchedRemote*() has its own isFull() guard, so these never trigger
+// the [MemoryPool] RESSOURCE LIMIT EXCEEDED error even if undersized.
+// SEDP_VERBOSE=0 (patch 003) compiles out the tracking entirely.
+const uint8_t MAX_NUM_UNMATCHED_REMOTE_WRITERS = 2;   // unused — static topology
+const uint8_t MAX_NUM_UNMATCHED_REMOTE_READERS = 2;   // unused — static topology
+
 const uint8_t MAX_NUM_READER_CALLBACKS = 2;  // This board has no callbacks (publish-only)
 
 
@@ -75,15 +92,16 @@ const uint8_t MAX_TOPICNAME_LENGTH = 40;
 
 const int HEARTBEAT_STACKSIZE = 4096;              // byte - Halved from 8192, sufficient for mbed
 const int THREAD_POOL_WRITER_STACKSIZE = 4096;     // byte - Halved from 8192, sufficient for mbed
-const int THREAD_POOL_READER_STACKSIZE = 4096;     // byte - Halved from 8192, sufficient for mbed
+const int THREAD_POOL_READER_STACKSIZE = 8192;     // byte - Restored to 8192: 4096 causes HardFault
+                                                   // during SEDP burst (3+ Linux nodes joining)
 const uint16_t SPDP_WRITER_STACKSIZE = 4096;       // byte - Halved from 8192, critical memory savings
 
-const uint16_t SF_WRITER_HB_PERIOD_MS = 2000; // 2s heartbeat for writer detection
+const uint16_t SF_WRITER_HB_PERIOD_MS = 1000; // 1s heartbeat — faster SEDP convergence
 const uint16_t SPDP_RESEND_PERIOD_MS = 500;   // 500ms SPDP announcements for faster discovery
 const uint8_t SPDP_CYCLECOUNT_HEARTBEAT =
     2; // skip x SPDP rounds before checking liveliness
 const uint8_t SPDP_WRITER_PRIO = 24;
-const uint8_t SPDP_MAX_NUMBER_FOUND_PARTICIPANTS = 14; // MAX_NUM_PARTICIPANTS - 1 (excludes self)
+const uint8_t SPDP_MAX_NUMBER_FOUND_PARTICIPANTS = 30; // 11 D5 nodes + ros2 CLI tools + margin
 const uint8_t SPDP_MAX_NUM_LOCATORS = 5;
 const Duration_t SPDP_DEFAULT_REMOTE_LEASE_DURATION = {
     100, 0}; // Default lease duration for remote participants, usually
@@ -100,7 +118,7 @@ const int THREAD_POOL_NUM_WRITERS = 1;
 const int THREAD_POOL_NUM_READERS = 1;
 const int THREAD_POOL_WRITER_PRIO = 24;
 const int THREAD_POOL_READER_PRIO = 24;
-const int THREAD_POOL_WORKLOAD_QUEUE_LENGTH = 20;
+const int THREAD_POOL_WORKLOAD_QUEUE_LENGTH = 40; // Doubled from 20 to absorb discovery burst
 
 constexpr int OVERALL_HEAP_SIZE =
     THREAD_POOL_NUM_WRITERS * THREAD_POOL_WRITER_STACKSIZE +

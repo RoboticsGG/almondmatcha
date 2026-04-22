@@ -115,6 +115,17 @@ void imu_reader_task() {
     int32_t local_accel[3] = {0};
     int32_t local_gyro[3] = {0};
     uint32_t sample_count = 0;
+    bool imu_first_print_done = false;
+
+    // ===== MULTICAST DISCOVERY WAIT =====
+    // mros2::spin() is already running so the RTPS stack processes incoming
+    // SPDP multicast packets from FastDDS on 239.255.0.1 (port 8650 for domain 5).
+    // embeddedRTPS only supports multicast discovery — no unicast initial peers.
+    // 3 s is enough for bidirectional SPDP+SEDP exchange at 500 ms SPDP period.
+    MROS2_INFO("[imu_reader_task] Waiting 3 s for multicast SPDP exchange...");
+    ThisThread::sleep_for(chrono::milliseconds(3000));
+    MROS2_INFO("[imu_reader_task] Discovery wait done -- starting IMU publish");
+    // ====================================
     
     while (1) {
         // Read IMU sensor data
@@ -146,12 +157,15 @@ void imu_reader_task() {
             
             // Publish to ROS2
             imu_pub_ptr->publish(imu_msg);
-            
-            // Print IMU values in the same line (overwrite previous output)
-            printf("\r[imu_reader_task] Accel: X=%ld\tY=%ld\tZ=%ld\t| Gyro: X=%ld\tY=%ld\tZ=%ld",
-                   imu_msg.accel_x, imu_msg.accel_y, imu_msg.accel_z,
-                   imu_msg.gyro_x, imu_msg.gyro_y, imu_msg.gyro_z);
-            fflush(stdout);
+
+            // Print once on first publish to confirm sensor is alive, then stay silent
+            if (!imu_first_print_done) {
+                printf("\r\n[imu_reader_task] First sample -- Accel: X=%ld\tY=%ld\tZ=%ld\t| Gyro: X=%ld\tY=%ld\tZ=%ld",
+                       imu_msg.accel_x, imu_msg.accel_y, imu_msg.accel_z,
+                       imu_msg.gyro_x, imu_msg.gyro_y, imu_msg.gyro_z);
+                fflush(stdout);
+                imu_first_print_done = true;
+            }
         }
         
         // IMU polling rate
@@ -205,11 +219,19 @@ int main()
     }
     MROS2_INFO("Network connected successfully");
 
-    MROS2_INFO("================================");
-    MROS2_INFO("Platform: %s", MROS2_PLATFORM_NAME);
-    MROS2_INFO("Node: RoverWithIMU (Domain 5)");
-    MROS2_INFO("Tasks: 2 (Motor Control + IMU Reader)");
-    MROS2_INFO("================================");
+    MROS2_INFO("========================================");
+    MROS2_INFO("  Firmware: chassis-dynamics");
+    MROS2_INFO("  Board IP: 192.168.1.2");
+    MROS2_INFO("  Platform: %s", MROS2_PLATFORM_NAME);
+    MROS2_INFO("  Domain:   %d", rtps::Config::DOMAIN_ID);
+    MROS2_INFO("  SPDP max: %d  HB: %d ms  SPDP: %d ms",
+               rtps::Config::SPDP_MAX_NUMBER_FOUND_PARTICIPANTS,
+               rtps::Config::SF_WRITER_HB_PERIOD_MS,
+               rtps::Config::SPDP_RESEND_PERIOD_MS);
+    MROS2_INFO("  Node: RoverWithIMU");
+    MROS2_INFO("  Pub:  tpc_chassis_imu (10 Hz)");
+    MROS2_INFO("  Sub:  tpc_chassis_cmd");
+    MROS2_INFO("========================================");
     
     // Initialize ROS2
     mros2::init(0, NULL);
@@ -227,18 +249,6 @@ int main()
     imu_pub_ptr = &pub;
     
     MROS2_INFO("ROS2 Node initialized - Ready to publish/subscribe");
-
-    // ===== DDS DISCOVERY COORDINATION FIX =====
-    // Wait for DDS/RTPS participant discovery to complete
-    // SPDP announcements sent every 500ms (SPDP_RESEND_PERIOD_MS)
-    // Need at least 8-10 cycles for reliable discovery across all nodes
-    // (ws_rpi(5) + ws_base(2) + ws_jetson(3) + STM32(2) = 12 participants)
-    // This fixes intermittent "no messages received" and "[Memory pool] resource limit exceed"
-    // by ensuring publishers/subscribers are fully matched before data transmission starts
-    MROS2_INFO("Waiting 8 seconds for DDS participant discovery (12 participants)...");
-    osDelay(8000);  // 8 seconds = 16 SPDP cycles @ 500ms for robust discovery
-    MROS2_INFO("Discovery wait complete - initializing sensors");
-    // ==========================================
     
     // Initialize IMU sensor
     lsm6dsv16x.begin();
