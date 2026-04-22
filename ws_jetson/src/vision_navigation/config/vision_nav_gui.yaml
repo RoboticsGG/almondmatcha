@@ -9,6 +9,8 @@ camera_stream:
     width: 1280
     height: 720
     fps: 30
+    device_serial: "806312060441"
+    fallback_video: "/home/yupi/Almond/ros2-jetson-ws/001.mp4"
     open_cam: true               # GUI: camera preview enabled
     enable_depth: false
     video_path: ""

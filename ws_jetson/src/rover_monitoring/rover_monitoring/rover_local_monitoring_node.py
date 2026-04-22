@@ -38,14 +38,14 @@ class RoverLocalMonitoringNode(Node):
         # Subscribe to telemetry relay (Domain 4)
         self.sub_telemetry_relay = self.create_subscription(
             TelemetryRelay,
-            '/tpc_telemetry_relay',
+            'tpc_telemetry_relay',
             self.telemetry_relay_callback,
             10
         )
         
         self.get_logger().info('=== Local Rover Monitoring Node (Jetson) ===')
         self.get_logger().info('Domain: 4 (base telemetry)')
-        self.get_logger().info('Subscribes to: /tpc_telemetry_relay (5 Hz)')
+        self.get_logger().info('Subscribes to: tpc_telemetry_relay (5 Hz)')
         self.get_logger().info(f'CSV logging to: {self.log_dir}')
         self.get_logger().info('CSV files:')
         self.get_logger().info('  - telemetry_unified.csv (all data at 5 Hz)')

@@ -102,6 +102,8 @@ class CameraStreamNode(Node):
         self.declare_parameter('enable_depth', False)
         self.declare_parameter('video_path', '')
         self.declare_parameter('loop_video', True)
+        self.declare_parameter('device_serial', '')
+        self.declare_parameter('fallback_video', '')
 
         # ===================== Parameter Retrieval =====================
         self.w: int = int(self.get_parameter('width').value)
@@ -112,6 +114,8 @@ class CameraStreamNode(Node):
         self.enable_depth: bool = bool(self.get_parameter('enable_depth').value)
         self.video_path: str = str(self.get_parameter('video_path').value).strip()
         self.loop_video: bool = bool(self.get_parameter('loop_video').value)
+        self.device_serial: str = str(self.get_parameter('device_serial').value).strip()
+        self.fallback_video: str = str(self.get_parameter('fallback_video').value).strip()
 
         # ===================== Mode Selection =====================
         self.use_video: bool = len(self.video_path) > 0
@@ -126,7 +130,17 @@ class CameraStreamNode(Node):
         if self.use_video:
             self._init_video_mode()
         else:
-            self._init_d415_mode()
+            try:
+                self._init_d415_mode()
+            except Exception as e:
+                self.get_logger().error(f"D415 init failed: {e}")
+                if self.fallback_video:
+                    self.get_logger().warn(f"Falling back to video: {self.fallback_video}")
+                    self.video_path = self.fallback_video
+                    self.use_video = True
+                    self._init_video_mode()
+                else:
+                    raise
 
         # ===================== Timer Setup =====================
         self.timer = self.create_timer(1.0 / max(1, self.fps_use), self._on_timer)
@@ -164,8 +178,12 @@ class CameraStreamNode(Node):
         self.pipeline = rs.pipeline()
         self.config = rs.config()
 
-        # Enable specific D415 device by serial number
-        self.config.enable_device('806312060441')
+        # Enable specific device by serial number (if provided)
+        if self.device_serial:
+            self.get_logger().info(f"Enabling RealSense device serial: {self.device_serial}")
+            self.config.enable_device(self.device_serial)
+        else:
+            self.get_logger().warn("No device_serial configured — connecting to first available RealSense device.")
 
         # Stream configuration: RGB
         self.config.enable_stream(
@@ -185,7 +203,16 @@ class CameraStreamNode(Node):
             )
 
         # Start pipeline
-        self.profile = self.pipeline.start(self.config)
+        try:
+            self.profile = self.pipeline.start(self.config)
+        except RuntimeError as e:
+            connected = [d.get_info(rs.camera_info.serial_number)
+                         for d in rs.context().devices]
+            self.get_logger().error(
+                f"Failed to start RealSense pipeline: {e}. "
+                f"Connected devices: {connected or ['none']}"
+            )
+            raise
 
         # ===== Optional Advanced Configuration =====
         if self.json_path and os.path.exists(self.json_path):

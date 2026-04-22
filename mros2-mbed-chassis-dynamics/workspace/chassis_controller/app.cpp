@@ -28,6 +28,12 @@
 #include "motor_control.h"
 #include "led_status.h"
 
+// Build timestamp baked in at compile time
+#define FW_BUILD_DATE __DATE__
+#define FW_BUILD_TIME __TIME__
+#define FW_BOARD_NAME "chassis-dynamics"
+#define FW_BOARD_IP   "192.168.1.2"
+
 #include <tuple>
 
 /* =====================================
@@ -110,12 +116,6 @@ void imu_reader_task() {
         MROS2_ERROR("[imu_reader_task] Publisher not initialized!");
         return;
     }
-    
-    // IMU variables for local buffering
-    int32_t local_accel[3] = {0};
-    int32_t local_gyro[3] = {0};
-    uint32_t sample_count = 0;
-    bool imu_first_print_done = false;
 
     // ===== MULTICAST DISCOVERY WAIT =====
     // mros2::spin() is already running so the RTPS stack processes incoming
@@ -124,8 +124,14 @@ void imu_reader_task() {
     // 3 s is enough for bidirectional SPDP+SEDP exchange at 500 ms SPDP period.
     MROS2_INFO("[imu_reader_task] Waiting 3 s for multicast SPDP exchange...");
     ThisThread::sleep_for(chrono::milliseconds(3000));
-    MROS2_INFO("[imu_reader_task] Discovery wait done -- starting IMU publish");
-    // ====================================
+    MROS2_INFO("[imu_reader_task] Discovery wait done — starting IMU publish");
+    // ==================================
+
+    // IMU variables for local buffering
+    int32_t local_accel[3] = {0};
+    int32_t local_gyro[3] = {0};
+    uint32_t sample_count = 0;
+    bool imu_first_print_done = false;
     
     while (1) {
         // Read IMU sensor data
@@ -160,7 +166,7 @@ void imu_reader_task() {
 
             // Print once on first publish to confirm sensor is alive, then stay silent
             if (!imu_first_print_done) {
-                printf("\r\n[imu_reader_task] First sample -- Accel: X=%ld\tY=%ld\tZ=%ld\t| Gyro: X=%ld\tY=%ld\tZ=%ld",
+                printf("\r\n[imu_reader_task] First sample — Accel: X=%ld\tY=%ld\tZ=%ld\t| Gyro: X=%ld\tY=%ld\tZ=%ld",
                        imu_msg.accel_x, imu_msg.accel_y, imu_msg.accel_z,
                        imu_msg.gyro_x, imu_msg.gyro_y, imu_msg.gyro_z);
                 fflush(stdout);
@@ -220,8 +226,9 @@ int main()
     MROS2_INFO("Network connected successfully");
 
     MROS2_INFO("========================================");
-    MROS2_INFO("  Firmware: chassis-dynamics");
-    MROS2_INFO("  Board IP: 192.168.1.2");
+    MROS2_INFO("  Firmware: %s", FW_BOARD_NAME);
+    MROS2_INFO("  Built:    %s %s", FW_BUILD_DATE, FW_BUILD_TIME);
+    MROS2_INFO("  Board IP: %s", FW_BOARD_IP);
     MROS2_INFO("  Platform: %s", MROS2_PLATFORM_NAME);
     MROS2_INFO("  Domain:   %d", rtps::Config::DOMAIN_ID);
     MROS2_INFO("  SPDP max: %d  HB: %d ms  SPDP: %d ms",
@@ -249,7 +256,16 @@ int main()
     imu_pub_ptr = &pub;
     
     MROS2_INFO("ROS2 Node initialized - Ready to publish/subscribe");
-    
+
+    // ===== DISCOVERY NOTE =====
+    // mros2::spin() is called immediately below — the RTPS stack starts
+    // processing multicast SPDP on 239.255.0.1 as soon as spin runs.
+    // embeddedRTPS only supports multicast discovery (no unicast initial peers).
+    // imu_reader_task() contains a 3 s internal wait before publishing.
+    // No osDelay() here: blocking here would silence mros2 and delay
+    // multicast SPDP exchange.
+    // ==========================
+
     // Initialize IMU sensor
     lsm6dsv16x.begin();
     lsm6dsv16x.Enable_X();  // Enable accelerometer
@@ -265,7 +281,10 @@ int main()
     MROS2_INFO("Motor Control Task started (osPriorityHigh)");
     
     // Launch Task 2: IMU Reader (Normal Priority)
-    Thread imu_thread(osPriorityNormal, 2048, NULL, "imu_read");
+    // 4096 B required: mros2 publish() traverses CDR serialization → embeddedRTPS → lwIP UDP
+    // send, which consumes ~1.5–2 KB of call stack on top of local variables and printf.
+    // 2048 B caused a stack overflow → NULL-ptr HardFault (UFSR INVSTATE, PC=0x00000000).
+    Thread imu_thread(osPriorityNormal, 4096, NULL, "imu_read");
     imu_thread.start(callback(imu_reader_task));
     MROS2_INFO("IMU Reader Task started (osPriorityNormal)");
     

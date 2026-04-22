@@ -71,47 +71,47 @@ public:
         
         // Chassis sensors (from STM32)
         sub_chassis_sensors_ = this->create_subscription<msgs_ifaces::msg::ChassisSensors>(
-            "/tpc_chassis_sensors", qos_stm32,
+            "tpc_chassis_sensors", qos_stm32,
             std::bind(&MissionMonitoringNodeRpi::chassis_sensors_callback, this, std::placeholders::_1)
         );
         
         // Chassis IMU (from STM32)
         sub_chassis_imu_ = this->create_subscription<msgs_ifaces::msg::ChassisIMU>(
-            "/tpc_chassis_imu", qos_stm32,
+            "tpc_chassis_imu", qos_stm32,
             std::bind(&MissionMonitoringNodeRpi::chassis_imu_callback, this, std::placeholders::_1)
         );
         
         // Chassis commands (from RPi chassis controller)
         sub_chassis_cmd_ = this->create_subscription<msgs_ifaces::msg::ChassisCtrl>(
-            "/tpc_chassis_cmd", qos_reliable,
+            "tpc_chassis_cmd", qos_reliable,
             std::bind(&MissionMonitoringNodeRpi::chassis_cmd_callback, this, std::placeholders::_1)
         );
         
         // Mission control
         sub_mission_active_ = this->create_subscription<std_msgs::msg::Bool>(
-            "/tpc_gnss_mission_active", qos_reliable,
+            "tpc_gnss_mission_active", qos_reliable,
             std::bind(&MissionMonitoringNodeRpi::mission_active_callback, this, std::placeholders::_1)
         );
         
         sub_distance_remaining_ = this->create_subscription<std_msgs::msg::Float64>(
-            "/tpc_gnss_mission_remain_dist", qos_reliable,
+            "tpc_gnss_mission_remain_dist", qos_reliable,
             std::bind(&MissionMonitoringNodeRpi::distance_remaining_callback, this, std::placeholders::_1)
         );
         
         // GNSS data
         sub_spresense_gnss_ = this->create_subscription<msgs_ifaces::msg::SpresenseGNSS>(
-            "/tpc_gnss_spresense", qos_reliable,
+            "tpc_gnss_spresense", qos_reliable,
             std::bind(&MissionMonitoringNodeRpi::spresense_gnss_callback, this, std::placeholders::_1)
         );
         
         sub_ublox_gnss_ = this->create_subscription<msgs_ifaces::msg::UbloxGNSS>(
-            "/tpc_gnss_ublox", qos_reliable,
+            "tpc_gnss_ublox", qos_reliable,
             std::bind(&MissionMonitoringNodeRpi::ublox_gnss_callback, this, std::placeholders::_1)
         );
         
         // Destination coordinate
         sub_destination_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
-            "/tpc_rover_dest_coordinate", qos_reliable,
+            "tpc_rover_dest_coordinate", qos_reliable,
             std::bind(&MissionMonitoringNodeRpi::destination_callback, this, std::placeholders::_1)
         );
         
@@ -119,13 +119,13 @@ public:
         // Format: Float32MultiArray [steer_angle, speed_cmd, detected]
         // BEST_EFFORT to match rover_kinematic_control_node.py publisher QoS
         sub_steering_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
-            "/tpc_rover_ctrl_cmd", qos_stm32,
+            "tpc_rover_ctrl_cmd", qos_stm32,
             std::bind(&MissionMonitoringNodeRpi::steering_callback, this, std::placeholders::_1)
         );
         
         // Lane detection (from Jetson - D6->D5 bridge)
         sub_lane_detection_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
-            "/tpc_rover_nav_lane", qos_reliable,
+            "tpc_rover_nav_lane", qos_reliable,
             std::bind(&MissionMonitoringNodeRpi::lane_detection_callback, this, std::placeholders::_1)
         );
 
@@ -139,7 +139,7 @@ public:
         
         // Publisher for aggregated telemetry relay (on Domain 4)
         pub_telemetry_relay_ = domain4_node_->create_publisher<msgs_ifaces::msg::TelemetryRelay>(
-            "/tpc_telemetry_relay", 10
+            "tpc_telemetry_relay", 10
         );
 
         // Timer for publishing aggregated telemetry (5 Hz)

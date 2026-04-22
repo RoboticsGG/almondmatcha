@@ -9,9 +9,11 @@ camera_stream:
     width: 1280
     height: 720
     fps: 30
+    device_serial: "806312060441"  # (the D405 is 218622277831)
+    fallback_video: "/home/yupi/Almond/ros2-jetson-ws/001.mp4"
     open_cam: false              # Headless: no camera preview
     enable_depth: false
-    video_path: ""
+    video_path: ""               # Set to video file path for offline mode
     loop_video: true
     json_config: ""
 
