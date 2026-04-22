@@ -24,9 +24,9 @@ Complete guide to launching the Almondmatcha rover system across all platforms.
 
 ### Domain 5 Participants (Network-Wide, visible to STM32)
 
-Total: 11 nodes
+Total: 12 nodes
 
-- ws_rpi: 7 nodes (gnss_spresense_node, gnss_ublox_node, gnss_mission_monitor_node, chassis_controller_node, chassis_imu_node, chassis_sensors_node, mission_monitoring_node_rpi)
+- ws_rpi: 8 nodes (gnss_spresense_node, gnss_ublox_node, gnss_mission_monitor_node, chassis_controller_node, chassis_imu_node, chassis_sensors_node, mission_monitoring_node_rpi, rover_monitoring_node)
 - ws_base: 1 node (mission_command_node)
 - ws_jetson: 1 node (rover_kinematic_control)
 - STM32: 2 nodes (chassis_controller, sensors_node)
@@ -66,28 +66,77 @@ minicom -D /dev/ttyACM0  # Chassis board
 minicom -D /dev/ttyACM1  # Sensors board
 ```
 
-Expected startup messages:
+Expected startup messages on chassis board (192.168.1.2):
 ```
-[MROS2] Network initialized
-[MROS2] ROS_DOMAIN_ID: 5
-[MROS2] Publisher initialized: tpc_chassis_imu
-[MROS2] Publisher initialized: tpc_gnss_spresense
+[MROS2] ========================================
+[MROS2]   Firmware: chassis-dynamics
+[MROS2]   Board IP: 192.168.1.2
+[MROS2]   Platform: NUCLEO_F767ZI
+[MROS2]   Domain:   5
+[MROS2]   SPDP max: 30  HB: 1000 ms  SPDP: 500 ms
+[MROS2]   Node: RoverWithIMU
+[MROS2]   Pub:  tpc_chassis_imu (10 Hz)
+[MROS2]   Sub:  tpc_chassis_cmd
+[MROS2] ========================================
+```
+Expected startup messages on sensors board (192.168.1.6):
+```
+[MROS2] ========================================
+[MROS2]   Firmware: sensors-gnss
+[MROS2]   Board IP: 192.168.1.6
+[MROS2]   Platform: NUCLEO_F767ZI
+[MROS2]   Domain:   5
+[MROS2]   SPDP max: 30  HB: 1000 ms  SPDP: 500 ms
+[MROS2]   Node: mros2_node_sensors
+[MROS2]   Pub:  tpc_chassis_sensors (4 Hz)
+[MROS2]   Sub:  (none)
+[MROS2] ========================================
+```
+> **Note:** Discovery happens automatically once RPi nodes join D5 and send SPDP announcements.
+> The firmware waits 3 s internally (inside IMU/sensors tasks, with `spin()` already running)
+> before sending its first SPDP announcement — no manual wait needed.
+
+### Step 2: Launch ws_rpi Control System
+
+> **Launch RPi before Jetson.** RPi D5 nodes must be advertising on the network before
+> Jetson's `rover_kinematic_control` joins D5, otherwise kinematic control misses SPDP.
+
+**On Raspberry Pi** (`ssh curry@192.168.1.1`):
+```bash
+cd ~/almondmatcha/ws_rpi
+source install/setup.bash
+./launch_rover_tmux.sh
 ```
 
-### Step 2: Launch ws_jetson Vision System
+This creates a 9-pane tmux session (`rover`) running 8 nodes:
+- Pane 0: `gnss_spresense_node` — Spresense GPS (D5 pub)
+- Pane 1: `chassis_controller_node` — motor command relay (D5 sub/pub)
+- Pane 2: `mission_monitoring_node_rpi` — telemetry bridge (D5 sub / D4 pub)
+- Pane 3: `gnss_ublox_node` — RTK GNSS centimeter-level (D5 pub)
+- Pane 4: `gnss_mission_monitor_node` — waypoint state machine (D5)
+- Pane 5: `chassis_imu_node` — IMU data relay (D5 sub)
+- Pane 6: `chassis_sensors_node` — encoder/power relay (D5 sub)
+- Pane 7: `rover_monitoring_node` — CSV logger (D5 sub)
+- Pane 8: spare shell
+
+**Tmux:** `Ctrl+b`+arrows / `z` zoom / `d` detach / `tmux attach -t rover`
+
+Wait 3–5 seconds before launching Jetson.
+
+### Step 3: Launch ws_jetson Vision System
 
 **Option A: Tmux launch (recommended):**
 ```bash
 cd ~/almondmatcha/ws_jetson
 source install/setup.bash
-# Note: Script handles Domain 6 (vision) and Domain 5 (control) automatically
 ./launch_jetson_tmux.sh
 ```
 
-This creates a 3-pane tmux session:
-- Pane 0: Camera stream (Domain 6)
-- Pane 1: Lane detection (Domain 6)
-- Pane 2: Rover kinematic control (dual-context D6 sub / D5 pub)
+This creates a 4-pane tmux session (`jetson_vision`):
+- Pane 0: `camera_stream_node` — D415 RGB/depth streaming (Domain 6)
+- Pane 1: `lane_detection_node` — Lane feature extraction (Domain 6)
+- Pane 2: `rover_kinematic_control` — bicycle-model PID (D6 sub / D5 pub)
+- Pane 3: `rover_local_monitoring_node` — telemetry CSV logger (Domain 4)
 
 **Tmux controls:** `Ctrl+b` + arrows to navigate · `z` to zoom · `d` to detach
 
@@ -95,7 +144,6 @@ This creates a 3-pane tmux session:
 ```bash
 cd ~/almondmatcha/ws_jetson
 source install/setup.bash
-# Note: Script handles Domain 6 (vision) and Domain 5 (control) automatically
 ./launch_headless.sh
 ```
 
@@ -122,27 +170,10 @@ ros2 launch vision_navigation control_domain5.launch.py
 [camera_stream_node]: Starting camera stream at 30 FPS
 [lane_detection_node]: Lane detection pipeline initialized
 [rover_kinematic_control]: Waiting for lane detection data...
-[rover_kinematic_control]: Rover Kinematic Control node initialized on Domain 6
+[rover_kinematic_control]: Rover Kinematic Control node initialized
 ```
 
 Wait for all nodes to be ready (30 FPS messages flowing).
-
-### Step 3: Launch ws_rpi Control System
-
-**On Raspberry Pi** (`ssh curry@192.168.1.1`):
-```bash
-cd ~/almondmatcha/ws_rpi
-source install/setup.bash
-export ROS_DOMAIN_ID=5
-./launch_rover_tmux.sh
-```
-
-This launches 7 nodes in a tmux session (`rover`):
-- GNSS Spresense, GNSS mission monitor, Chassis controller
-- Chassis IMU, Chassis sensors, Mission monitoring node
-- gnss_ublox_node
-
-**Tmux:** `Ctrl+b`+arrows / `z` zoom / `d` detach / `tmux attach -t rover`
 
 ### Step 4: Launch ws_base Mission Control (Optional)
 
@@ -179,7 +210,7 @@ ros2 topic hz /tpc_rover_nav_lane
 ```bash
 export ROS_DOMAIN_ID=5
 ros2 node list
-# Expected: 11 nodes total (9 without ws_base, 11 with ws_base)
+# Expected: 12 nodes total (11 without ws_base, 12 with ws_base)
 # /rover_kinematic_control        (Jetson — dual-context D6 sub / D5 pub)
 # /chassis_controller_node        (ws_rpi)
 # /gnss_mission_monitor_node      (ws_rpi)
@@ -187,7 +218,8 @@ ros2 node list
 # /gnss_ublox_node                (ws_rpi)
 # /chassis_imu_node               (ws_rpi)
 # /chassis_sensors_node           (ws_rpi)
-# /mission_monitoring_node_rpi    (ws_rpi — D5 sub / D4 pub + CSV)
+# /mission_monitoring_node_rpi    (ws_rpi — D5 sub / D4 pub)
+# /rover_monitoring_node          (ws_rpi — D5 CSV logger)
 # /chassis_controller             (STM32 chassis)
 # /sensors_node                   (STM32 sensors)
 # /mission_command_node           (ws_base, if launched)
@@ -252,4 +284,4 @@ ping 192.168.1.1             # RPi reachable?
 
 ---
 
-**See Also:** [DOMAINS.md](DOMAINS.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [TOPICS.md](TOPICS.md)
+**See Also:** [DOMAINS.md](DOMAINS.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [TOPICS.md](TOPICS.md) · [STM32_CHANGES_SUMMARY.md](STM32_CHANGES_SUMMARY.md) · [EMBEDDEDRTPS_PATCHES.md](EMBEDDEDRTPS_PATCHES.md)

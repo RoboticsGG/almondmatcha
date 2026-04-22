@@ -21,7 +21,7 @@ graph LR
     SW[["Gigabit Ethernet Switch\n192.168.1.0/24"]]
 
     subgraph RPi ["Raspberry Pi · 192.168.1.1"]
-        R1["D5 · 7 control nodes\nGNSS, chassis, mission"]
+        R1["D5 · 8 nodes\nGNSS, chassis, mission, monitoring"]
         R2["D4 · mission_monitoring_node_rpi\ntelemetry relay + CSV"]
     end
 
@@ -86,8 +86,8 @@ graph LR
 
 ### ROS2 Multi-Domain Strategy
 
-**Domain 5 (Control Network):** Network-wide, 11 nodes
-- ws_rpi (7) + ws_base (1) + ws_jetson (1) + STM32 (2) = 11 nodes
+**Domain 5 (Control Network):** Network-wide, 12 nodes
+- ws_rpi (8) + ws_base (1) + ws_jetson (1) + STM32 (2) = 12 nodes
 - Low-frequency control messages optimized for STM32 memory constraints
 - Native action/service support across all systems
 
@@ -114,10 +114,11 @@ graph LR
 ├── gnss_spresense_node         - Standard GPS position processing (D5 pub)
 ├── gnss_ublox_node             - RTK GNSS centimeter-level processing (D5 pub)
 ├── gnss_mission_monitor_node   - Waypoint navigation state machine (D5)
-└── mission_monitoring_node_rpi - Aggregates 10 D5 topics:
-                                    Sub: D5 (all sensor/command topics)
-                                    Pub: D4 /tpc_telemetry_relay (5 Hz)
-                                    CSV: 6 per-topic files, native rates (4–50 Hz)
+├── mission_monitoring_node_rpi - Telemetry bridge:
+│                                   Sub: D5 (all sensor/command topics)
+│                                   Pub: D4 /tpc_telemetry_relay (5 Hz)
+│                                   CSV: 6 per-topic files, native rates (4–50 Hz)
+└── rover_monitoring_node       - CSV logger (D5 sub, all topics)
 ```
 
 **Jetson Orin Nano (192.168.1.5 — Multi-Domain):**
@@ -197,7 +198,7 @@ flowchart LR
 
 | Device | IP | SSH | Domains | Role |
 |--------|-----|-----|---------|------|
-| Raspberry Pi | 192.168.1.1 | `curry@192.168.1.1` | D5 (7 nodes) + D4 (relay) | Coordination, sensing, mission |
+| Raspberry Pi | 192.168.1.1 | `curry@192.168.1.1` | D5 (8 nodes) + D4 (relay) | Coordination, sensing, mission |
 | Jetson Orin | 192.168.1.5 | `yupi@192.168.1.5` | D6 (vision) + D5 (control) + D4 (logging) | Vision processing, kinematic control |
 | Base Station | 192.168.1.10 | `yupi@192.168.1.10` | D5 (command) + D4 (display) | Mission command, telemetry monitoring |
 | STM32 Chassis | 192.168.1.2 | — (mROS2) | D5 only | Motor control, IMU |
@@ -237,7 +238,7 @@ See [CSV_LOGGING.md](CSV_LOGGING.md) for full schema and analysis guidance.
 ## Scalability
 
 - Vision/AI nodes: add to Domain 6 — zero STM32 impact.
-- Control nodes: add to Domain 5; monitor `ros2 node list | wc -l` against `MAX_NUM_PARTICIPANTS`.
+- Control nodes: add to Domain 5; monitor `ros2 node list | wc -l` against SPDP_MAX in `platform/rtps/config.h`.
 - Additional computing boards: assign a static IP in 192.168.1.0/24, set `ROS_DOMAIN_ID=5`.
 
 ## Performance Characteristics

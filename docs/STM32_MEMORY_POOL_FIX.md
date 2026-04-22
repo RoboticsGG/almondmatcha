@@ -1,7 +1,28 @@
-# STM32 Memory Pool Fix
+# STM32 Memory Pool Fix (Historical — Superseded)
+
+> **⚠️ This document is outdated.** It reflects the November 2025 intermediate configuration.
+> The configuration values shown here are NOT the current production values.
+>
+> **For current documentation see:**
+> - [STM32_CHANGES_SUMMARY.md](STM32_CHANGES_SUMMARY.md) — all changes from baseline to production
+> - [EMBEDDEDRTPS_PATCHES.md](EMBEDDEDRTPS_PATCHES.md) — root cause analysis of all 5 embeddedRTPS patches
+> - [RTPS_CONFIG_REFERENCE.md](RTPS_CONFIG_REFERENCE.md) — current `config.h` values and tuning guide
+> - [STM32_RTPS_MEMORY_CALCULATION.md](STM32_RTPS_MEMORY_CALCULATION.md) — memory budget worksheet
+>
+> **Key differences from this document:**
+> - `MAX_NUM_PARTICIPANTS = 1` (not 15) — the participant *pool* was 15 which consumed 525 KB BSS
+> - `THREAD_POOL_READER_STACKSIZE = 8192` (not 4096) — 4096 causes HardFault during SEDP burst
+> - `NUM_WRITER_PROXIES_PER_READER = 30` (not 6) — 6 < 12 D5 nodes → proxy pool overflow
+> - Discovery wait: 3 seconds inside IMU task (not 8 s blocking `main()`)
+> - 5 embeddedRTPS source patches applied at build time (none existed in Nov 2025)
+> - D5 participants: 12 nodes (was documented as 11 — `rover_monitoring_node` was missed)
+
+---
+
+## Original Document (November 2025 — For Historical Reference Only)
 
 **Issue:** `[Memory pool] resource limit exceed` causing intermittent STM32 communication failures  
-**Status:** ✅ RESOLVED  
+**Status:** ✅ RESOLVED (superseded by further investigation)  
 **Date:** November 10, 2025
 
 ---
