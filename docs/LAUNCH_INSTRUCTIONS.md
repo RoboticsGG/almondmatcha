@@ -6,13 +6,16 @@ Complete guide to launching the Almondmatcha rover system across all platforms.
 
 **Recommended tmux-based launch (organized terminal sessions):**
 
-1. **Jetson (ws_jetson):** `./launch_jetson_tmux.sh` → 3 panes (camera, detection, control)
-2. **Raspberry Pi (ws_rpi):** `./launch_rover_tmux.sh` → 5 panes (GNSS, chassis nodes)
-3. **Base Station (ws_base):** Manual launch (optional)
+1. **STM32 boards:** power on and wait for network readiness
+2. **Raspberry Pi (ws_rpi):** `./launch_rover_tmux.sh` → 8 active panes + 1 spare
+3. **Jetson (ws_jetson):** `./launch_jetson_tmux.sh` → 4 panes (D6 camera, D6 lane, D6->D5 control, D4 monitor)
+4. **Base Station (ws_base):** `./launch_base_tmux.sh` (optional)
 
 **Alternative background scripts:**
 - Jetson headless: `./launch_headless.sh`
 - Jetson with GUI: `./launch_gui.sh`
+
+> **Production note:** `main` branch does not ship POC tracing collectors or memory/bandwidth tracing workflow. Launch only runtime nodes.
 
 ## System Overview
 
@@ -238,7 +241,7 @@ ros2 node info /rover_kinematic_control  # Confirm D5 subscription
 export ROS_DOMAIN_ID=5
 ros2 node list | wc -l  # Should be 9–11
 ```
-See [STM32_MEMORY_POOL_FIX.md](STM32_MEMORY_POOL_FIX.md) for config details.
+Check `mros2-mbed-*/platform/rtps/config.h` for production participant limits and pool sizing.
 
 ### Topics Not Visible
 ```bash

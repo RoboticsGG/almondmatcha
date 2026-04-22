@@ -14,6 +14,11 @@ Distributed ROS2 outdoor autonomous rover with vision-based lane following, cent
 - Base station dual-domain: command/action on D5, monitoring on D4
 - STM32 memory optimized: 11 D5 participants, ~60% free RAM
 
+**Production Policy (`main` branch):**
+- Keep tri-domain runtime architecture (D4/D5/D6)
+- Do not include POC tracing collectors/bandwidth tracing workflow in this branch
+- Do not enable STM32 memory telemetry printouts for normal operation
+
 ## System Architecture
 
 **Platform**: Heterogeneous distributed computing (Raspberry Pi 4B, Jetson Orin Nano, STM32 NUCLEO-F767ZI)  

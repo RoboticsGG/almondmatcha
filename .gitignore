@@ -23,3 +23,6 @@ __pycache__/
 *.swp
 *.swo
 *~
+
+# Production main policy: keep local POC/tracing outputs untracked
+ws_base/tools/

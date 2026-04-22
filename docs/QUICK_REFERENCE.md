@@ -1,7 +1,7 @@
 # Quick Reference: System Launch & Configuration
 
-**Date:** February 26, 2026  
-**Status:** Optimized for 11 D5 participants + 4 headroom  
+**Date:** April 22, 2026  
+**Status:** Production (`main`) — tri-domain runtime, no POC tracing toolchain  
 **Network:** All systems connected via Gigabit Ethernet switch (192.168.1.0/24)
 
 ---
@@ -132,7 +132,8 @@ ros2 multicast receive # On another - should see messages
 
 ## Documentation
 
-- **Memory fix details:** [docs/STM32_MEMORY_POOL_FIX.md](STM32_MEMORY_POOL_FIX.md)
 - **Launch guide:** [docs/LAUNCH_INSTRUCTIONS.md](LAUNCH_INSTRUCTIONS.md)
 - **Architecture:** [docs/ARCHITECTURE.md](ARCHITECTURE.md)
 - **Domains:** [docs/DOMAINS.md](DOMAINS.md)
+
+> Production note: Keep tracing/POC workflow out of `main`; use feature branches for profiling experiments.
