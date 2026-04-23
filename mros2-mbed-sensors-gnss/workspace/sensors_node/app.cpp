@@ -287,19 +287,9 @@ int main()
       strncpy(gnss_snap, sensor_data.nmea_sentence, GNSS_NMEA_BUFFER_SIZE - 1);
       gnss_snap[GNSS_NMEA_BUFFER_SIZE - 1] = '\0';
       sensor_data_mutex.unlock();
-      // Extract NMEA type field (between '$' and first ',')
-      char nmea_type[8] = "?";
-      const char* comma = strchr(gnss_snap, ',');
-      if (gnss_snap[0] == '$' && comma != NULL) {
-        int type_len = (int)(comma - gnss_snap) - 1;
-        if (type_len > 0 && type_len < 7) {
-          strncpy(nmea_type, gnss_snap + 1, type_len);
-          nmea_type[type_len] = '\0';
-        }
-      }
-      int nmea_len = (int)strlen(gnss_snap);
-      printf("[HB#%lu] Enc(A:%ld B:%ld) Pwr(%.2fV %.2fA) GNSS:%s len=%d\r\n",
-             loop_count / 8, enc_A, enc_B, vbus, curr, nmea_type, nmea_len);
+      printf("[HB#%lu] Enc(A:%ld B:%ld) Pwr(%.2fV %.2fA) GNSS[%d]:%s\r\n",
+             loop_count / 8, enc_A, enc_B, vbus, curr,
+             (int)strlen(gnss_snap), gnss_snap);
       fflush(stdout);
     }
 
