@@ -283,12 +283,23 @@ int main()
     loop_count++;
     if ((loop_count % 8) == 0) {
       sensor_data_mutex.lock();
-      char gnss_snap[32];
-      strncpy(gnss_snap, sensor_data.nmea_sentence, 31);
-      gnss_snap[31] = '\0';
+      char gnss_snap[GNSS_NMEA_BUFFER_SIZE];
+      strncpy(gnss_snap, sensor_data.nmea_sentence, GNSS_NMEA_BUFFER_SIZE - 1);
+      gnss_snap[GNSS_NMEA_BUFFER_SIZE - 1] = '\0';
       sensor_data_mutex.unlock();
-      printf("[HB#%lu] Enc(A:%ld B:%ld) Pwr(%.2fV %.2fA) GNSS:%.20s\r\n",
-             loop_count / 8, enc_A, enc_B, vbus, curr, gnss_snap);
+      // Extract NMEA type field (between '$' and first ',')
+      char nmea_type[8] = "?";
+      const char* comma = strchr(gnss_snap, ',');
+      if (gnss_snap[0] == '$' && comma != NULL) {
+        int type_len = (int)(comma - gnss_snap) - 1;
+        if (type_len > 0 && type_len < 7) {
+          strncpy(nmea_type, gnss_snap + 1, type_len);
+          nmea_type[type_len] = '\0';
+        }
+      }
+      int nmea_len = (int)strlen(gnss_snap);
+      printf("[HB#%lu] Enc(A:%ld B:%ld) Pwr(%.2fV %.2fA) GNSS:%s len=%d\r\n",
+             loop_count / 8, enc_A, enc_B, vbus, curr, nmea_type, nmea_len);
       fflush(stdout);
     }
 
