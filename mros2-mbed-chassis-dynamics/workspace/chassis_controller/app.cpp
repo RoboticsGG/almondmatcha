@@ -131,6 +131,7 @@ void imu_reader_task() {
     int32_t local_accel[3] = {0};
     int32_t local_gyro[3] = {0};
     uint32_t sample_count = 0;
+    uint32_t hb_pub_count = 0;
     bool imu_first_print_done = false;
     
     while (1) {
@@ -164,13 +165,30 @@ void imu_reader_task() {
             // Publish to ROS2
             imu_pub_ptr->publish(imu_msg);
 
-            // Print once on first publish to confirm sensor is alive, then stay silent
+            // Print once on first publish to confirm sensor is alive
             if (!imu_first_print_done) {
                 printf("\r\n[imu_reader_task] First sample — Accel: X=%ld\tY=%ld\tZ=%ld\t| Gyro: X=%ld\tY=%ld\tZ=%ld",
                        imu_msg.accel_x, imu_msg.accel_y, imu_msg.accel_z,
                        imu_msg.gyro_x, imu_msg.gyro_y, imu_msg.gyro_z);
                 fflush(stdout);
                 imu_first_print_done = true;
+            }
+
+            // Heartbeat: print status every 10 publishes (~1 Hz)
+            hb_pub_count++;
+            if ((hb_pub_count % 10) == 0) {
+                rover_cmd_mutex.lock();
+                uint8_t last_fdr = rover_cmd.front_direction;
+                float   last_ang = rover_cmd.steering_angle;
+                uint8_t last_bdr = rover_cmd.back_direction;
+                uint8_t last_spd = rover_cmd.motor_speed;
+                rover_cmd_mutex.unlock();
+                printf("[HB#%lu] Accel(%ld,%ld,%ld) Gyro(%ld,%ld,%ld) Cmd(fdr=%d ang=%.1f bdr=%d spd=%d)\r\n",
+                       hb_pub_count / 10,
+                       imu_msg.accel_x, imu_msg.accel_y, imu_msg.accel_z,
+                       imu_msg.gyro_x,  imu_msg.gyro_y,  imu_msg.gyro_z,
+                       last_fdr, last_ang, last_bdr, last_spd);
+                fflush(stdout);
             }
         }
         

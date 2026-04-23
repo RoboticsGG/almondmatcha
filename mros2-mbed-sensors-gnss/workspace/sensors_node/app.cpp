@@ -243,6 +243,7 @@ int main()
   // Main loop focuses on aggregating data from the three independent tasks
   // and publishing to ROS2 at 4 Hz (250ms interval).
   bool sensors_first_print_done = false;
+  uint32_t loop_count = 0;
 
   // Wait for multicast SPDP exchange before first publish.
   // embeddedRTPS only supports multicast discovery (239.255.0.1, port 8650
@@ -270,12 +271,25 @@ int main()
     msgs.sys_volt_msg = vbus;           // Bus voltage (V)
     PubSensData.publish(msgs);
 
-    // Print once on first publish to confirm sensors are alive, then stay silent
+    // Print once on first publish to confirm sensors are alive
     if (!sensors_first_print_done) {
       printf("\r\n[SENSORS] First sample — Enc(A:%ld B:%ld) Power(%.2fV %.2fA)\r\n",
          enc_A, enc_B, vbus, curr);
       fflush(stdout);
       sensors_first_print_done = true;
+    }
+
+    // Heartbeat: print status every 8 loops (~2 s at 4 Hz)
+    loop_count++;
+    if ((loop_count % 8) == 0) {
+      sensor_data_mutex.lock();
+      char gnss_snap[32];
+      strncpy(gnss_snap, sensor_data.nmea_sentence, 31);
+      gnss_snap[31] = '\0';
+      sensor_data_mutex.unlock();
+      printf("[HB#%lu] Enc(A:%ld B:%ld) Pwr(%.2fV %.2fA) GNSS:%.20s\r\n",
+             loop_count / 8, enc_A, enc_B, vbus, curr, gnss_snap);
+      fflush(stdout);
     }
 
     // Main loop runs at MAIN_LOOP_PERIOD_MS (4 Hz)
