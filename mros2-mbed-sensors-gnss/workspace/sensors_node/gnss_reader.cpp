@@ -1,38 +1,36 @@
 /**
  * @file gnss_reader.cpp
- * @brief SimpleRTK2b GNSS reader implementation using Mbed OS UnbufferedSerial
- * 
- * Pin Configuration for Arduino Shield Mount: 
+ * @brief SimpleRTK2b GNSS reader implementation using Mbed OS BufferedSerial
+ *
+ * Pin Configuration for Arduino Shield Mount:
  * - Arduino D0 (PG_9)  = USART6_RX (receives data FROM SimpleRTK2b UART1)
  * - Arduino D1 (PG_14) = USART6_TX (sends data TO SimpleRTK2b UART1)
- * 
- * NOTE: SimpleRTK2b as Arduino shield uses D0/D1, cannot use alternate pins
+ *
+ * NOTE: Uses BufferedSerial (not UnbufferedSerial) so that bytes arriving
+ * during the 500 ms task sleep are stored in the interrupt-driven ring
+ * buffer and not lost.  The serial object is created inside gnss_reader_init()
+ * (after main() / RTOS started) to avoid static-init-order issues.
  */
 
 #include "gnss_reader.h"
 #include "mbed.h"
 #include <cstring>
 
-// Include STM32 HAL for direct GPIO configuration
-#include "stm32f7xx_hal.h"
-
 // ============================================================================
 // SERIAL INTERFACE & BUFFERS
 // ============================================================================
 
-/** 
- * @brief USART6 serial port instance
- * Arduino Shield Configuration:
- * - D0 (PG_9)  = USART6_RX (AF8)
- * - D1 (PG_14) = USART6_TX (AF8)
- * 
- * Constructor order: (TX, RX, baudrate)
- * Try both TX,RX and RX,TX if one doesn't work
+/**
+ * @brief USART6 BufferedSerial instance (interrupt-driven RX ring buffer).
+ * Allocated in gnss_reader_init() — pointer is NULL until then.
+ *
+ * Arduino Shield:
+ *   TX = PG_14 (D1), RX = PG_9 (D0), AF8 = USART6
+ * Constructor: BufferedSerial(TX, RX, baud)
  */
-static UnbufferedSerial gnss_serial(PG_14, PG_9, GNSS_USART_BAUD_RATE);
-// Alternative if swapped: static UnbufferedSerial gnss_serial(PG_9, PG_14, GNSS_USART_BAUD_RATE);
+static BufferedSerial* gnss_serial = nullptr;
 
-/** @brief Internal NMEA sentence buffer */
+/** @brief Internal NMEA sentence assembly buffer */
 static char nmea_buffer[GNSS_NMEA_BUFFER_SIZE];
 
 /** @brief Current write position in nmea_buffer */
@@ -45,49 +43,30 @@ static const char* default_nmea = "$GNRMC,,,,,,,,,,,N*71";
 // GNSS INITIALIZATION
 // ============================================================================
 
-/**
- * @brief Configure GPIO pins for USART6 using STM32 HAL
- * Must be called before gnss_serial operations
- */
-static void configure_usart6_gpio() {
-    GPIO_InitTypeDef GPIO_InitStruct = {0};
-    
-    // Enable GPIO Port G clock
-    __HAL_RCC_GPIOG_CLK_ENABLE();
-    
-    // Configure PG9 (USART6_RX) - Arduino D0
-    GPIO_InitStruct.Pin = GPIO_PIN_9;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;        // Alternate Function Push-Pull
-    GPIO_InitStruct.Pull = GPIO_PULLUP;            // Enable pull-up resistor
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-    GPIO_InitStruct.Alternate = GPIO_AF8_USART6;   // AF8 for USART6
-    HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
-    
-    // Configure PG14 (USART6_TX) - Arduino D1
-    GPIO_InitStruct.Pin = GPIO_PIN_14;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;        // Alternate Function Push-Pull
-    GPIO_InitStruct.Pull = GPIO_NOPULL;            // No pull-up needed for TX
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-    GPIO_InitStruct.Alternate = GPIO_AF8_USART6;   // AF8 for USART6
-    HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
-}
-
 void gnss_reader_init() {
-    // Configure GPIO pins using STM32 HAL (explicit AF8)
-    configure_usart6_gpio();
-    
-    // Configure serial port
-    gnss_serial.baud(GNSS_USART_BAUD_RATE);
-    gnss_serial.format(
-        /* bits */ 8,
-        /* parity */ SerialBase::None,
+    // Create BufferedSerial here (after RTOS is running) so the interrupt
+    // handler is registered cleanly.  Mbed's pinmap already configures
+    // PG_14/PG_9 as USART6 AF8 — no manual HAL GPIO setup needed.
+    gnss_serial = new BufferedSerial(PG_14, PG_9, GNSS_USART_BAUD_RATE);
+
+    // Non-blocking reads: gnss_serial->read() returns -EAGAIN when the
+    // ring buffer is empty, allowing the polling loop to exit cleanly.
+    gnss_serial->set_blocking(false);
+
+    gnss_serial->set_format(
+        /* bits */      8,
+        /* parity */    SerialBase::None,
         /* stop bits */ 1
     );
-    
-    printf("[GNSS] USART6 initialized on Arduino D0/D1 (115200 bps, 8N1)\r\n");
-    
-    // Give interface time to stabilize
-    osDelay(100);
+
+    printf("[GNSS] USART6 BufferedSerial on D0/D1 (PG9/PG14), 115200 8N1\r\n");
+
+    // Flush any garbage bytes from line-capacitance on startup
+    osDelay(200);
+    {
+        uint8_t discard;
+        while (gnss_serial->read(&discard, 1) > 0) { /* drain */ }
+    }
 }
 
 // ============================================================================
@@ -95,19 +74,19 @@ void gnss_reader_init() {
 // ============================================================================
 
 size_t gnss_reader_read_nmea(char* output_buffer, size_t buffer_size) {
-    if (output_buffer == NULL || buffer_size == 0) {
-        return 0;  // Invalid parameters
+    if (output_buffer == NULL || buffer_size == 0 || gnss_serial == nullptr) {
+        return 0;
     }
 
-    // Read all available data from serial port without checking readable() repeatedly
-    // This prevents us from sleeping mid-sentence
-    static const int MAX_READ_ITERATIONS = 200;  // Safety limit to prevent infinite loop
+    // Drain all bytes currently in the BufferedSerial ring buffer.
+    // Because set_blocking(false) is set, read() returns -EAGAIN (negative)
+    // when the buffer is empty, so the loop exits cleanly.
+    static const int MAX_READ_ITERATIONS = 512;
     int iterations = 0;
-    
+
     while (iterations++ < MAX_READ_ITERATIONS) {
-        // Try to read one byte
         uint8_t ch_buffer;
-        ssize_t read_result = gnss_serial.read(&ch_buffer, 1);
+        ssize_t read_result = gnss_serial->read(&ch_buffer, 1);
         
         if (read_result <= 0) {
             // No more data available
