@@ -22,21 +22,21 @@
 #   bash ws_base/launch_poc_experiment.sh --skip-stm32     # skip STM32 serial collection
 #
 # Output files (all on base PC under a single per-run directory):
-#   ws_base/tools/poc_run/single_domain/run_NNN/latency_rpi.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/latency_jetson.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/net_stats_rpi.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/net_stats_jetson.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/topic_bw.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/stm32_chassis.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/stm32_sensors.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/cpu_rpi.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/cpu_jetson_tegrastats.txt
-#   ws_base/tools/poc_run/single_domain/run_NNN/softirq_rpi.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/softirq_jetson.csv
-#   ws_base/tools/poc_run/single_domain/run_NNN/hz_report_rpi.txt
-#   ws_base/tools/poc_run/single_domain/run_NNN/hz_report_jetson.txt
-#   ws_base/tools/poc_run/single_domain/run_NNN/merged_all.csv    ← time-bucketed union of all above
-#   ws_base/tools/poc_run/single_domain/run_NNN/logs/             ← all sub-process logs
+#   ws_base/runs/single_domain/run_NNN/latency_rpi.csv
+#   ws_base/runs/single_domain/run_NNN/latency_jetson.csv
+#   ws_base/runs/single_domain/run_NNN/net_stats_rpi.csv
+#   ws_base/runs/single_domain/run_NNN/net_stats_jetson.csv
+#   ws_base/runs/single_domain/run_NNN/topic_bw.csv
+#   ws_base/runs/single_domain/run_NNN/stm32_chassis.csv
+#   ws_base/runs/single_domain/run_NNN/stm32_sensors.csv
+#   ws_base/runs/single_domain/run_NNN/cpu_rpi.csv
+#   ws_base/runs/single_domain/run_NNN/cpu_jetson_tegrastats.txt
+#   ws_base/runs/single_domain/run_NNN/softirq_rpi.csv
+#   ws_base/runs/single_domain/run_NNN/softirq_jetson.csv
+#   ws_base/runs/single_domain/run_NNN/hz_report_rpi.txt
+#   ws_base/runs/single_domain/run_NNN/hz_report_jetson.txt
+#   ws_base/runs/single_domain/run_NNN/merged_all.csv    ← time-bucketed union of all above
+#   ws_base/runs/single_domain/run_NNN/logs/             ← all sub-process logs
 
 set -euo pipefail
 
@@ -57,9 +57,9 @@ WORKSPACE="$HOME/almondmatcha"
 
 # All experiment output lands in a single numbered run directory.
 # run_NNN is auto-incremented — each launch creates the next available number.
-# Data is separated by branch: poc_run/single_domain/ vs poc_run/multi_domain/
+# Data is separated by branch: runs/single_domain/ vs runs/multi_domain/
 # so switching branches doesn't overwrite or mix experiment data.
-POC_RUN_BASE="$WORKSPACE/ws_base/tools/poc_run/single_domain"
+POC_RUN_BASE="$WORKSPACE/ws_base/runs/single_domain"
 
 _next_run_dir() {
     local last
@@ -286,7 +286,7 @@ start_stm32_collector() {
     log "  sensors port : $SENSORS_PORT"
     log "  output stem  : $RUN_DIR/stm32  →  stm32_chassis/sensors_YYYYMMDD_HHMMSS.csv"
 
-    python3 "$TOOLS_DIR/stm32_serial/collect_stm32_memory.py" \
+    python3 "$TOOLS_DIR/collect_stm32_memory.py" \
         --chassis "$CHASSIS_PORT" \
         --sensors "$SENSORS_PORT" \
         --out     "$RUN_DIR/stm32" \
@@ -478,7 +478,7 @@ start_topic_bw_collector() {
         source '$WORKSPACE/common_ifaces/install/setup.bash'
         export ROS_DOMAIN_ID=5
         export FASTRTPS_DEFAULT_PROFILES_FILE='$WORKSPACE/ws_base/fastdds_base.xml'
-        exec python3 '$TOOLS_DIR/monitoring/collect_topic_bw.py' \
+        exec python3 '$TOOLS_DIR/collect_topic_bw.py' \
             --out '$RUN_DIR/topic_bw.csv' \
             --interval 1
     " </dev/null >"$LOG_DIR/topic_bw.log" 2>&1 &
@@ -508,7 +508,7 @@ start_net_collectors() {
         # disown: removes job from shell table before exit (belt and suspenders)
         ssh -T $SSH_OPTS "$host" "
             mkdir -p ~/ros2_traces
-            setsid nohup python3 ~/almondmatcha/ws_base/tools/monitoring/collect_net_stats.py \
+            setsid nohup python3 ~/almondmatcha/ws_base/tools/collect_net_stats.py \
                 --out $out \
                 </dev/null >$log_f 2>&1 &
             disown
@@ -834,7 +834,7 @@ stop_and_collect() {
 
     # ── Build the time-bucketed merged CSV from all individual CSVs ──────────
     log "  Building merged_all.csv..."
-    python3 "$TOOLS_DIR/poc_run/merge_run_csv.py" --run-dir "$RUN_DIR" \
+    python3 "$TOOLS_DIR/merge_run_csv.py" --run-dir "$RUN_DIR" \
         && ok "  merged_all.csv written" \
         || warn "  merge_run_csv.py failed — individual CSVs are still intact"
 }
