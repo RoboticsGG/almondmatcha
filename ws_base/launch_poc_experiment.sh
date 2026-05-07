@@ -917,53 +917,33 @@ stop_and_collect() {
 print_summary() {
     echo ""
     echo -e "${BOLD}======================================================${NC}"
-    echo -e "${GREEN}  EXPERIMENT COMPLETE — all files in run directory${NC}"
+    echo -e "${GREEN}  EXPERIMENT COMPLETE${NC}"
     echo -e "${BOLD}======================================================${NC}"
     echo ""
     echo "  Run directory: $RUN_DIR"
     echo ""
-    echo "  Data files:"
-    echo "    $RUN_DIR/latency_rpi.csv"
-    echo "    $RUN_DIR/latency_jetson.csv      (D5 topics)"
-    echo "    $RUN_DIR/latency_jetson_d6.csv   (D6 vision: camera/lane)"
-    echo "    $RUN_DIR/net_stats_rpi.csv"
-    echo "    $RUN_DIR/net_stats_jetson.csv"
-    echo "    $RUN_DIR/topic_bw.csv            (D5 — base PC)"
-    echo "    $RUN_DIR/topic_bw_d4.csv         (D4 — base PC: telemetry relay)"
-    echo "    $RUN_DIR/topic_bw_d6.csv         (D6 — Jetson: camera/lane bandwidth)"
-    echo "    $RUN_DIR/stm32_chassis.csv"
-    echo "    $RUN_DIR/stm32_sensors.csv"
-    echo "    $RUN_DIR/cpu_rpi.csv"
-    echo "    $RUN_DIR/cpu_jetson_tegrastats.txt"
-    echo "    $RUN_DIR/softirq_rpi.csv"
-    echo "    $RUN_DIR/softirq_jetson.csv"
-    echo "    $RUN_DIR/hz_report_rpi.txt"
-    echo "    $RUN_DIR/hz_report_jetson.txt"
-    echo "    $RUN_DIR/hz_report_jetson_d6.txt"
+    echo "  Raw CSVs:"
+    for f in latency_rpi.csv latency_jetson.csv latency_jetson_d6.csv \
+              net_stats_rpi.csv net_stats_jetson.csv \
+              topic_bw.csv topic_bw_d4.csv topic_bw_d6.csv \
+              stm32_chassis.csv stm32_sensors.csv \
+              cpu_rpi.csv softirq_rpi.csv softirq_jetson.csv; do
+        [[ -f "$RUN_DIR/$f" ]] && echo "    $RUN_DIR/$f"
+    done
     echo ""
-    echo "  Merged (time-bucketed union):"
-    echo "    $RUN_DIR/merged_all.csv"
+    echo "  Processed results (from post_run.sh):"
+    for f in merged_all.csv merged_flat.csv latency_summary.csv \
+              unified_timeline.png; do
+        [[ -f "$RUN_DIR/$f" ]] && echo "    $RUN_DIR/$f"
+    done
     echo ""
-    echo "  Logs:"
-    echo "    $LOG_DIR/stm32_collector.log"
-    echo "    $LOG_DIR/raw_serial_chassis.log  ← full STM32 serial stream"
-    echo "    $LOG_DIR/raw_serial_sensors.log  ← full STM32 serial stream"
-    echo "    $LOG_DIR/topic_bw.log            (D5)"
-    echo "    $LOG_DIR/topic_bw_d4.log         (D4)"
-    echo "    $LOG_DIR/rpi/poc_*.log       ← per-node logs from RPi"
-    echo "    $LOG_DIR/jetson/poc_*.log    ← per-node logs from Jetson"
+    echo "  Logs: $LOG_DIR/"
     echo ""
-    echo "  Analyze — all-machine latency/jitter summary (RPi + Jetson D5 + Jetson D6):"
-    echo "    python3 ws_base/tools/tracing/analyze_latency.py \\"
-    echo "        --csv $RUN_DIR/latency_rpi.csv \\"
-    echo "              $RUN_DIR/latency_jetson.csv \\"
-    echo "              $RUN_DIR/latency_jetson_d6.csv \\"
-    echo "        --out-dir $RUN_DIR/"
+    echo "  Re-run post-processing at any time:"
+    echo "    bash ws_base/tools/post_run.sh $RUN_DIR"
     echo ""
-    echo "  Analyze — unified timeline (all sources, one command):"
-    echo "    python3 ws_base/tools/tracing/analyze_latency.py --merge \\"
-    echo "        --run-dir $RUN_DIR \\"
-    echo "        --out-dir $RUN_DIR/"
+    echo "  Compare two runs (baseline vs POC):"
+    echo "    bash ws_base/tools/post_run.sh $RUN_DIR --compare <other-run-dir>"
     echo ""
 }
 
@@ -995,6 +975,7 @@ main() {
     start_softirq_collectors
     wait_for_run
     stop_and_collect
+    run_post_analysis
     print_summary
 }
 

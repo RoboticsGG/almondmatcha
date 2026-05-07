@@ -5,6 +5,74 @@
 
 ---
 
+## Quick Start
+
+> **Prerequisites:** STM32 firmware flashed, all three machines built (see [Prerequisites](#prerequisites) below), `pip3 install pandas numpy matplotlib` on base PC.
+
+### Step 1 — Verify clock sync and connectivity
+
+```bash
+# On base PC — check chrony is in sync on all machines
+chronyc tracking | grep -E "Reference|System time|RMS offset"
+ssh curry@192.168.1.1 'chronyc tracking | grep -E "System time|RMS offset"'
+ssh yupi@192.168.1.5  'chronyc tracking | grep -E "System time|RMS offset"'
+# Target: System time < 2 ms, RMS offset < 5 ms on all hosts
+
+# Connectivity + ROS2 environment check
+bash ws_base/tools/check_connectivity.sh
+
+# Verify domain separation (optional — run after node launch)
+export ROS_DOMAIN_ID=5 && ros2 node list  # ~12 D5 nodes (control + STM32)
+export ROS_DOMAIN_ID=4 && ros2 node list  # 3 D4 nodes (monitoring)
+export ROS_DOMAIN_ID=6 && ros2 node list  # 2 D6 nodes (Jetson vision — shared memory)
+```
+
+### Step 2 — Identify STM32 serial ports
+
+```bash
+minicom -b 115200 -D /dev/ttyACM0   # check "app name:" line
+minicom -b 115200 -D /dev/ttyACM1
+# Note which is chassis (192.168.1.2) and which is sensors (192.168.1.6)
+```
+
+### Step 3 — Run the experiment
+
+```bash
+cd ~/almondmatcha
+bash ws_base/launch_poc_experiment.sh
+# or override duration / ports:
+bash ws_base/launch_poc_experiment.sh --duration 600 --chassis /dev/ttyACM1 --sensors /dev/ttyACM0
+```
+
+The script starts all collectors across D4/D5/D6, waits, stops and pulls all CSVs, then calls `post_run.sh` automatically.
+
+### Step 4 — Review results (auto-generated at end of run)
+
+All output files land in `ws_base/runs/multi_domain/run_NNN/`:
+
+| File | Description |
+|---|---|
+| `merged_all.csv` | 1-second NTP-aligned time-bucketed wide CSV (all sources) |
+| `merged_flat.csv` | Un-bucketed raw event log (full resolution, all sources) |
+| `latency_summary.csv` | Per-topic jitter/latency stats table (mean, p50, p95, p99) |
+| `unified_timeline.png` | Multi-panel chart: jitter per domain, STM32 heap, network BW |
+| `latency_rpi.csv`, `latency_jetson.csv`, `latency_jetson_d6.csv` | Raw per-SBC / per-domain collector outputs |
+| `topic_bw.csv`, `topic_bw_d4.csv`, `topic_bw_d6.csv` | Per-domain bandwidth (D5/D4/D6) |
+
+### Step 5 — Re-run post-processing or compare with single-domain
+
+```bash
+# Re-generate all result files from a completed run:
+bash ws_base/tools/post_run.sh ws_base/runs/multi_domain/run_001
+
+# Side-by-side comparison with single-domain (both run dirs must exist):
+bash ws_base/tools/post_run.sh ws_base/runs/multi_domain/run_001 \
+    --compare ws_base/runs/single_domain/run_001
+# Produces: run_001/jitter_boxplot.png
+```
+
+---
+
 ## Topology Comparison
 
 | | This branch (multi-domain) | Single-domain POC |
@@ -175,8 +243,8 @@ git checkout single-domain
 
 After switching:
 - **No rebuild needed** on any machine
-- **poc_run data is preserved** — `ws_base/tools/poc_run/single_domain/` and `multi_domain/` are gitignored subdirectories and are unaffected by `git checkout`
-- `launch_poc_experiment.sh` on the single-domain branch references `*_single_domain.sh` scripts and writes to `poc_run/single_domain/`
+- **poc_run data is preserved** — `ws_base/runs/single_domain/` and `ws_base/runs/multi_domain/` are gitignored subdirectories and are unaffected by `git checkout`
+- `launch_poc_experiment.sh` on the single-domain branch references `*_single_domain.sh` scripts and writes to `runs/single_domain/`
 
 To switch back:
 ```bash
@@ -210,9 +278,9 @@ bash ws_base/launch_poc_experiment.sh --chassis /dev/ttyACM0 --sensors /dev/ttyA
 bash ws_base/launch_poc_experiment.sh --skip-launch
 ```
 
-**Output directory:** `ws_base/tools/poc_run/multi_domain/run_NNN/`
+**Output directory:** `ws_base/runs/multi_domain/run_NNN/`
 
-> Data is separated by branch: `poc_run/single_domain/` (from single-domain branch) and `poc_run/multi_domain/` (this branch) coexist on disk. Switching branches doesn't overwrite experiment data.
+> Data is separated by branch: `runs/single_domain/` (single-domain branch) and `runs/multi_domain/` (this branch) coexist on disk. Switching branches does not overwrite experiment data.
 
 ### Option B — Manual
 
@@ -228,21 +296,25 @@ bash ws_base/launch_poc_experiment.sh --skip-launch
 
 ## Analysis
 
-Same analysis tools as `single-domain`:
+> **Post-processing is automatic.** `launch_poc_experiment.sh` calls `post_run.sh` at the end of every run. To regenerate or compare:
+> ```bash
+> bash ws_base/tools/post_run.sh ws_base/runs/multi_domain/run_001
+> bash ws_base/tools/post_run.sh ws_base/runs/multi_domain/run_001 --compare ws_base/runs/single_domain/run_001
+> ```
 
 ```bash
-# Per-machine latency analysis
+# Per-machine latency analysis (prints per-topic stats to stdout)
 python3 ws_base/tools/tracing/analyze_latency.py \
-    --poc ws_base/tools/poc_run/multi_domain/run_001/latency_rpi.csv
+    --poc ws_base/runs/multi_domain/run_001/latency_rpi.csv
 
-# Merge all CSVs into unified timeline
-python3 ws_base/tools/poc_run/merge_run_csv.py \
-    --run-dir ws_base/tools/poc_run/multi_domain/run_001
+# Merge all CSVs into 1s-bucketed wide CSV (merged_all.csv)
+python3 ws_base/tools/merge_run_csv.py \
+    --run-dir ws_base/runs/multi_domain/run_001
 
-# Cross-configuration comparison (requires both directories populated)
+# Unified timeline chart (auto-discovers D4/D5/D6 files from run dir)
 python3 ws_base/tools/tracing/analyze_latency.py --merge \
-    --run-dir ws_base/tools/poc_run/multi_domain/run_001 \
-    --out-dir ws_base/tools/poc_run/multi_domain/run_001/
+    --run-dir ws_base/runs/multi_domain/run_001 \
+    --out-dir ws_base/runs/multi_domain/run_001/
 ```
 
 ### Comparing Multi-Domain vs Single-Domain
@@ -250,15 +322,13 @@ python3 ws_base/tools/tracing/analyze_latency.py --merge \
 After running experiments on both branches, compare side-by-side:
 
 ```bash
-# Jitter comparison: multi-domain vs single-domain
-python3 ws_base/tools/tracing/analyze_latency.py \
-    --poc ws_base/tools/poc_run/multi_domain/run_001/latency_rpi.csv
-python3 ws_base/tools/tracing/analyze_latency.py \
-    --poc ws_base/tools/poc_run/single_domain/run_023/latency_rpi.csv
+# Automated comparison (jitter boxplot)
+bash ws_base/tools/post_run.sh ws_base/runs/multi_domain/run_001 \
+    --compare ws_base/runs/single_domain/run_001
 
-# STM32 memory comparison
-head -5 ws_base/tools/poc_run/multi_domain/run_001/stm32_chassis.csv
-head -5 ws_base/tools/poc_run/single_domain/run_023/stm32_chassis.csv
+# Quick CSV spot-check
+head -5 ws_base/runs/multi_domain/run_001/stm32_chassis.csv
+head -5 ws_base/runs/single_domain/run_001/stm32_chassis.csv
 ```
 
 ---
@@ -269,10 +339,10 @@ head -5 ws_base/tools/poc_run/single_domain/run_023/stm32_chassis.csv
 # 1. Verify STM32 firmware is flashed (same firmware as single-domain)
 minicom -b 115200 -D /dev/ttyACM0  # Check build banner
 
-# 2. Connectivity check (D5 STM32 topics — same for both branches)
+# 2. Connectivity check (D5 STM32 topics)
 bash ws_base/tools/check_connectivity.sh
 
-# 3. Verify domain separation
+# 3. Verify domain separation (after nodes are running)
 export ROS_DOMAIN_ID=5 && ros2 node list  # Should see ~12 D5 nodes
 export ROS_DOMAIN_ID=4 && ros2 node list  # Should see 3 D4 nodes
 export ROS_DOMAIN_ID=6 && ros2 node list  # Should see 2-3 D6 nodes (Jetson only)
