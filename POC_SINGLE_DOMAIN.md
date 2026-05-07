@@ -18,9 +18,77 @@
 
 ---
 
+## Clock Synchronization
+
+All Linux hosts (base PC, RPi, Jetson) must be time-synchronized before any cross-host latency measurement is valid.
+
+### Current mechanism: chrony (NTP)
+
+All three machines run `chronyd` synchronized to a public NTP pool via the local router.
+
+**Expected accuracy:** 1–10 ms LAN-to-LAN peer offset. This is the **noise floor** of every end-to-end latency measurement in this POC. Any measured `latency_ms` value smaller than ~5 ms should be treated as inconclusive — it may be real latency or clock-sync error.
+
+**Verify sync before every run (on each machine):**
+```bash
+chronyc tracking | grep -E "Reference|System time|RMS offset|Stratum"
+# Target: System time < 2 ms, RMS offset < 5 ms, Stratum ≤ 3
+```
+
+If offset is > 10 ms, force an immediate step correction:
+```bash
+sudo chronyc makestep
+```
+
+**Is NTP accurate enough for this POC?**
+Yes. The domain-consolidation effects being measured operate in the 5–50 ms range (DDS discovery overhead, extra multicast replication). The ~5 ms NTP noise floor does not obscure these deltas. PTP would only add value if comparing sub-millisecond DDS dispatch jitter between branches.
+
+### Improving accuracy (optional — PTP)
+
+If sub-millisecond accuracy is needed:
+
+| Method | Typical LAN accuracy | Requirement |
+|---|---|---|
+| `chrony` + NTP pool (current) | 2–10 ms | Nothing extra |
+| `chrony` + local Stratum-1 GPS server on base PC | 0.5–2 ms | `gpsd` + GPS receiver on base PC |
+| **PTP (IEEE 1588)** via `linuxptp` (`ptp4l` + `phc2sys`) | < 100 µs | NICs with hardware timestamping; managed switch with PTP support |
+
+```bash
+# To set up PTP on base PC as master (grandmaster clock):
+sudo apt install linuxptp
+sudo ptp4l -i eth0 -m &          # PTP master on base PC
+sudo phc2sys -s eth0 -c CLOCK_REALTIME -O 0 -m &   # sync system clock to PHC
+
+# On RPi / Jetson (slave mode):
+sudo ptp4l -i eth0 -m -s &       # -s = slave-only mode
+sudo phc2sys -s eth0 -c CLOCK_REALTIME -O 0 -m &
+```
+
+### `ros2 topic delay` vs `latency_ms` in `collect_latency.py`
+
+`ros2 topic delay <topic>` measures **message age** — `now − msg.header.stamp` — displayed live in a terminal. This is **identical** to the `latency_ms` column written by `collect_latency.py`.
+
+```bash
+# Live diagnostic during a run (works for any topic with header.stamp):
+ros2 topic delay /tpc_telemetry_relay
+ros2 topic delay /tpc_rover_d415_rgb
+```
+
+| | `ros2 topic delay` | `latency_ms` in `collect_latency.py` |
+|---|---|---|
+| Saves to CSV | No | Yes |
+| Requires header.stamp | Yes | Yes (only for those topics) |
+| Covers all topics (jitter) | No | Yes (`interval_ms` for all) |
+| Best used for | Live diagnostic during setup | Archival comparison analysis |
+
+**Recommendation:** use `ros2 topic delay` during setup to confirm the system is operating in the expected latency range, then rely on `collect_latency.py` for the recorded CSV used in baseline vs POC comparison.
+
+Both require synchronized clocks — see above.
+
+---
+
 ## What is Measured
 
-Five independent collectors run in parallel. Each targets a different layer of the system.
+Seven independent collectors run in parallel. Each targets a different layer of the system.
 
 ### 1. ROS2 message jitter and end-to-end latency — `collect_latency.py` (on SBC)
 
@@ -36,6 +104,9 @@ Source: `rclpy` subscriber callback wall-clock time (`time.time()` — NTP epoch
 > definition includes a `header.stamp` field. All other message types (`ChassisIMU`,
 > `ChassisSensors`, etc.) carry raw sensor values only — the publisher timestamp is not
 > embedded in the payload, so latency cannot be computed from the message content alone.
+
+> **`ros2 topic delay` is equivalent** to `latency_ms` in this collector — see the
+> **Clock Synchronization** section above for a direct comparison.
 
 ### 2. Network interface bandwidth and socket buffer pressure — `collect_net_stats.py` (on SBC)
 
@@ -93,12 +164,174 @@ accumulates byte counts over 1-second intervals.
 > all UDP overhead (RTPS headers, DDS built-in topics, multicast join traffic); subtracting
 > the sum of per-topic `bps` from `net_stats.rx_bps` reveals the non-payload DDS overhead.
 
+### 5. ROS2 message drop rate — `ros2 topic hz` (on SBC, during run)
 
+Source: `ros2 topic hz` counts messages received per second and reports observed rate, min/max delta, and std-dev.
+
+**Drop rate** = `(expected_Hz − observed_Hz) / expected_Hz × 100%`
+
+Run on **both RPi and Jetson** during the experiment. Expected rates for reference:
+
+| Topic | Expected rate | Node |
+|---|---|---|
+| `/tpc_chassis_imu` | 10 Hz | chassis STM32 |
+| `/tpc_chassis_sensors` | 4 Hz | sensors STM32 |
+| `/tpc_rover_ctrl_cmd` | 10 Hz | Jetson kinematic control |
+| `/tpc_rover_d415_rgb` | 30 Hz | Jetson camera |
+| `/tpc_rover_d415_depth` | 30 Hz | Jetson camera |
+
+```bash
+# SSH into RPi or Jetson
+source /opt/ros/humble/setup.bash
+source ~/almondmatcha/ws_rpi/install/setup.bash   # or ws_jetson
+export ROS_DOMAIN_ID=5
+
+# Live per-topic rate + jitter std-dev (Ctrl-C to stop):
+ros2 topic hz /tpc_chassis_imu     --window 50
+ros2 topic hz /tpc_chassis_sensors --window 50
+ros2 topic hz /tpc_rover_ctrl_cmd  --window 50
+
+# Batch report — capture 10-second window for every topic, save to file:
+for topic in /tpc_chassis_imu /tpc_chassis_sensors /tpc_rover_ctrl_cmd \
+             /tpc_rover_d415_rgb /tpc_rover_d415_depth; do
+  echo "--- $topic ---"
+  timeout 10 ros2 topic hz $topic --window 50 2>/dev/null || echo "(no messages)"
+done | tee ~/almondmatcha_poc/hz_report_$(hostname)_$(date +%Y%m%d_%H%M%S).txt
+```
+
+`ros2 topic hz` output per topic:
+```
+average rate: 9.97
+        min: 0.098s  max: 0.104s  std dev: 0.00212s  window: 50
+```
+
+> **`std dev` here = inter-arrival jitter**, the same as `interval_ms` std-dev from `collect_latency.py`. Use `ros2 topic hz` for a live spot-check during a run; use `collect_latency.py` for the full archival CSV record.
+
+Pull the hz report to base PC after the run:
+```bash
+scp curry@192.168.1.1:~/almondmatcha_poc/hz_report_*.txt \
+    ws_base/tools/poc_run/single_domain/run_NNN/
+scp yupi@192.168.1.5:~/almondmatcha_poc/hz_report_*.txt \
+    ws_base/tools/poc_run/single_domain/run_NNN/
+```
+
+---
+
+### 6. CPU load and memory — RPi and Jetson
+
+#### RPi — one-liner CSV logger
+
+Logs CPU %, memory %, and CPU temperature to CSV at 1-second intervals.
+
+```bash
+# SSH into RPi
+ssh curry@192.168.1.1
+mkdir -p ~/almondmatcha_poc
+
+echo "timestamp,cpu_pct,mem_pct,temp_c" | tee ~/almondmatcha_poc/cpu_rpi.csv && \
+while sleep 1; do
+  echo "$(date +%s),$(top -bn1 | grep 'Cpu(s)' | awk '{print 100 - $8}'),$(free | awk '/Mem/ {printf "%.2f", $3/$2*100}'),$(cat /sys/class/thermal/thermal_zone0/temp | awk '{print $1/1000}')"
+done | tee -a ~/almondmatcha_poc/cpu_rpi.csv
+```
+
+#### Jetson — tegrastats logger
+
+`tegrastats` outputs a continuous one-line status with CPU cluster loads, GPU, EMC (memory bandwidth), and thermal zones. Two output formats:
+
+**Full raw log with prepended timestamp** (recommended — parse later):
+```bash
+# SSH into Jetson
+ssh yupi@192.168.1.5
+mkdir -p ~/almondmatcha_poc
+
+# Log tegrastats at 1 s intervals, prepend UNIX timestamp to each line
+tegrastats --interval 1000 | \
+  while IFS= read -r line; do
+    echo "$(date +%s) $line"
+  done | tee ~/almondmatcha_poc/cpu_jetson_tegrastats.txt
+```
+
+**Compact CSV** (CPU clusters, GPU, temperatures):
+```bash
+tegrastats --interval 1000 | \
+  awk '
+    BEGIN { print "timestamp,cpu1_pct,cpu2_pct,gpu_pct,temp_cpu_c,temp_gpu_c" }
+    {
+      ts = systime()
+      match($0, /CPU \[([0-9]+)%@[0-9]+,[0-9]+%@[0-9]+,[0-9]+%@[0-9]+,[0-9]+%@[0-9]+,([0-9]+)%@[0-9]+,([0-9]+)%@[0-9]+\]/, c)
+      match($0, /GR3D_FREQ ([0-9]+)%/, g)
+      match($0, /CPU@([0-9.]+)C/, tc)
+      match($0, /GPU@([0-9.]+)C/, tg)
+      printf "%d,%s,%s,%s,%s,%s\n", ts, c[1], c[5], g[1], tc[1], tg[1]
+    }
+  ' | tee ~/almondmatcha_poc/cpu_jetson.csv
+```
+
+> **tegrastats key fields:** `CPU [%@MHz × 6 cores]` (across 2 clusters), `GR3D_FREQ %` (GPU), `EMC_FREQ %` (memory bus utilization), `VDD_IN` (total board power in mW), `CPU@`, `GPU@`, `SOC@` thermal zones. Parsing note: the 6-core format on Jetson Orin/Xavier uses two bracket groups — use the raw log file if the awk regex does not match your board's exact format.
+
+Pull after the run:
+```bash
+scp curry@192.168.1.1:~/almondmatcha_poc/cpu_rpi.csv \
+    ws_base/tools/poc_run/single_domain/run_NNN/cpu_rpi.csv
+scp yupi@192.168.1.5:~/almondmatcha_poc/cpu_jetson_tegrastats.txt \
+    ws_base/tools/poc_run/single_domain/run_NNN/cpu_jetson_tegrastats.txt
+scp yupi@192.168.1.5:~/almondmatcha_poc/cpu_jetson.csv \
+    ws_base/tools/poc_run/single_domain/run_NNN/cpu_jetson.csv
+```
+
+---
+
+### 7. Linux network SoftIRQ busyness — RPi and Jetson
+
+SoftIRQ counts reveal how busy the kernel's network receive path is. Under domain consolidation, more DDS multicast streams arrive on the same NIC, increasing `NET_RX` firings. High `NET_RX_delta` combined with a rising `max_rx_queue` (§2) is the clearest sign of receive-path saturation — the kernel is being interrupted more frequently to demultiplex multicast packets even if raw bandwidth (bytes/s) has not changed.
+
+**Live terminal watch during a run:**
+```bash
+# SSH into RPi or Jetson — run in a dedicated pane
+watch -n 1 "grep -E 'NET_RX|NET_TX|TIMER|SCHED' /proc/softirqs | \
+  awk '{printf \"%s: \", \$1; sum=0; for (i=2; i<=NF; i++) sum+=\$i; printf \"%d\n\", sum}'"
+```
+
+**CSV logger — per-second delta counts:**
+```bash
+# Run on RPi (change filename to softirq_jetson.csv on Jetson)
+mkdir -p ~/almondmatcha_poc
+(
+  echo "timestamp,NET_RX_delta,NET_TX_delta,SCHED_delta,TIMER_delta"
+  prev_rx=0; prev_tx=0; prev_sched=0; prev_timer=0
+  while sleep 1; do
+    ts=$(date +%s)
+    rx=$(grep 'NET_RX:' /proc/softirqs | awk '{s=0; for(i=2;i<=NF;i++) s+=$i; print s}')
+    tx=$(grep 'NET_TX:' /proc/softirqs | awk '{s=0; for(i=2;i<=NF;i++) s+=$i; print s}')
+    sched=$(grep 'SCHED:' /proc/softirqs | awk '{s=0; for(i=2;i<=NF;i++) s+=$i; print s}')
+    timer=$(grep 'TIMER:' /proc/softirqs | awk '{s=0; for(i=2;i<=NF;i++) s+=$i; print s}')
+    echo "$ts,$((rx-prev_rx)),$((tx-prev_tx)),$((sched-prev_sched)),$((timer-prev_timer))"
+    prev_rx=$rx; prev_tx=$tx; prev_sched=$sched; prev_timer=$timer
+  done
+) | tee ~/almondmatcha_poc/softirq_rpi.csv
+```
+
+Pull after the run:
+```bash
+scp curry@192.168.1.1:~/almondmatcha_poc/softirq_rpi.csv \
+    ws_base/tools/poc_run/single_domain/run_NNN/softirq_rpi.csv
+scp yupi@192.168.1.5:~/almondmatcha_poc/softirq_jetson.csv \
+    ws_base/tools/poc_run/single_domain/run_NNN/softirq_jetson.csv
+```
+
+> **Interpreting `NET_RX_delta`:** each value is the number of receive softIRQ firings in the last second. In the baseline (multi-domain), topics are split across domains so multicast streams are partitioned. In the POC (single-domain), all topics share one multicast group on one NIC — if `NET_RX_delta` rises significantly vs baseline with no proportional increase in `rx_bps`, the extra overhead is from increased interrupt-to-socket-demux overhead, not bandwidth.
+
+---
+
+| Collector | Script / command | Runs on | Key question |
 |---|---|---|---|
 | ROS2 message timing | `collect_latency.py` | RPi, Jetson | Does single-domain increase jitter or latency? |
 | Linux NIC / socket buffers | `collect_net_stats.py` | RPi, Jetson | Do extra participants fill UDP buffers or drop packets? |
 | STM32 RTPS heap | `collect_stm32_memory.py` | Base PC (USB serial) | Does `MAX_NUM_PARTICIPANTS=20` leave enough heap headroom? |
 | Per-topic bandwidth | `collect_topic_bw.py` | Base PC (ROS2 subscriber) | How many KB/s does each DDS topic contribute on the wire? |
+| Message drop rate | `ros2 topic hz` (manual) | RPi, Jetson | Are messages being dropped at the ROS2 layer? |
+| CPU load | one-liner CSV / `tegrastats` | RPi, Jetson | Does domain consolidation increase CPU utilization? |
+| SoftIRQ busyness | `/proc/softirqs` delta CSV | RPi, Jetson | Is the kernel network receive path saturated? |
 
 ---
 
@@ -547,9 +780,65 @@ ssh yupi@192.168.1.5 \
 
 > **Note:** `--iface` is optional — the script auto-detects the correct network interface based on the 192.168.1.0/24 subnet.
 
+#### Step 4b — Start CPU load logging on each SBC
+
+Open two additional SSH terminals (or tmux panes):
+
+```bash
+# Terminal C — RPi CPU logger
+ssh curry@192.168.1.1 "mkdir -p ~/almondmatcha_poc && \
+  bash -c 'echo timestamp,cpu_pct,mem_pct,temp_c | tee ~/almondmatcha_poc/cpu_rpi.csv && \
+  while sleep 1; do echo \"\$(date +%s),\$(top -bn1 | grep Cpu | awk \"{print 100-\\\$8}\"),\$(free | awk \"/Mem/{printf \\\"%.2f\\\",\\\$3/\\\$2*100}\"),\$(cat /sys/class/thermal/thermal_zone0/temp | awk \"{print \\\$1/1000}\")\" ; done | tee -a ~/almondmatcha_poc/cpu_rpi.csv'"
+
+# Terminal D — Jetson CPU logger (tegrastats raw)
+ssh yupi@192.168.1.5 "mkdir -p ~/almondmatcha_poc && \
+  tegrastats --interval 1000 | \
+  while IFS= read -r line; do echo \"\$(date +%s) \$line\"; done \
+  | tee ~/almondmatcha_poc/cpu_jetson_tegrastats.txt"
+```
+
+#### Step 4c — Start SoftIRQ logging on each SBC
+
+```bash
+# Terminal E — RPi SoftIRQ
+ssh curry@192.168.1.1 "mkdir -p ~/almondmatcha_poc && bash -c '
+  echo timestamp,NET_RX_delta,NET_TX_delta,SCHED_delta,TIMER_delta | tee ~/almondmatcha_poc/softirq_rpi.csv
+  prev_rx=0; prev_tx=0; prev_sched=0; prev_timer=0
+  while sleep 1; do
+    ts=\$(date +%s)
+    rx=\$(grep NET_RX: /proc/softirqs | awk \"{s=0;for(i=2;i<=NF;i++)s+=\\\$i;print s}\")
+    tx=\$(grep NET_TX: /proc/softirqs | awk \"{s=0;for(i=2;i<=NF;i++)s+=\\\$i;print s}\")
+    sc=\$(grep SCHED: /proc/softirqs | awk \"{s=0;for(i=2;i<=NF;i++)s+=\\\$i;print s}\")
+    ti=\$(grep TIMER: /proc/softirqs | awk \"{s=0;for(i=2;i<=NF;i++)s+=\\\$i;print s}\")
+    echo \"\$ts,\$((rx-prev_rx)),\$((tx-prev_tx)),\$((sc-prev_sched)),\$((ti-prev_timer))\"
+    prev_rx=\$rx; prev_tx=\$tx; prev_sched=\$sc; prev_timer=\$ti
+  done | tee -a ~/almondmatcha_poc/softirq_rpi.csv'"
+
+# Terminal F — Jetson SoftIRQ (same command, different output file)
+ssh yupi@192.168.1.5 "mkdir -p ~/almondmatcha_poc && bash -c '
+  echo timestamp,NET_RX_delta,NET_TX_delta,SCHED_delta,TIMER_delta | tee ~/almondmatcha_poc/softirq_jetson.csv
+  prev_rx=0; prev_tx=0; prev_sched=0; prev_timer=0
+  while sleep 1; do
+    ts=\$(date +%s)
+    rx=\$(grep NET_RX: /proc/softirqs | awk \"{s=0;for(i=2;i<=NF;i++)s+=\\\$i;print s}\")
+    tx=\$(grep NET_TX: /proc/softirqs | awk \"{s=0;for(i=2;i<=NF;i++)s+=\\\$i;print s}\")
+    sc=\$(grep SCHED: /proc/softirqs | awk \"{s=0;for(i=2;i<=NF;i++)s+=\\\$i;print s}\")
+    ti=\$(grep TIMER: /proc/softirqs | awk \"{s=0;for(i=2;i<=NF;i++)s+=\\\$i;print s}\")
+    echo \"\$ts,\$((rx-prev_rx)),\$((tx-prev_tx)),\$((sc-prev_sched)),\$((ti-prev_timer))\"
+    prev_rx=\$rx; prev_tx=\$tx; prev_sched=\$sc; prev_timer=\$ti
+  done | tee -a ~/almondmatcha_poc/softirq_jetson.csv'"
+```
+
 #### Step 5 — Let it run
 
-Run for **at least 5 minutes** under representative load (send a mission command, drive the rover).
+Run for **at least 5 minutes** under representative load (send a mission command, drive the rover). Optionally spot-check drop rate live from another terminal:
+```bash
+# On RPi or Jetson — quick drop rate check during the run
+source /opt/ros/humble/setup.bash && source ~/almondmatcha/ws_rpi/install/setup.bash
+export ROS_DOMAIN_ID=5
+ros2 topic hz /tpc_chassis_imu --window 50
+ros2 topic hz /tpc_chassis_sensors --window 50
+```
 
 #### Step 6 — Stop collection
 
@@ -565,6 +854,15 @@ TARGET_HOST=yupi@192.168.1.5  TARGET_LABEL=jetson \
 # Stop net-stats (Ctrl-C in each SSH terminal), then pull:
 scp curry@192.168.1.1:~/ros2_traces/net_stats_rpi.csv    /tmp/net_stats_rpi.csv
 scp yupi@192.168.1.5:~/ros2_traces/net_stats_jetson.csv  /tmp/net_stats_jetson.csv
+
+# Stop CPU loggers (Ctrl-C in Terminal C/D), then pull:
+scp curry@192.168.1.1:~/almondmatcha_poc/cpu_rpi.csv               /tmp/cpu_rpi.csv
+scp yupi@192.168.1.5:~/almondmatcha_poc/cpu_jetson_tegrastats.txt   /tmp/cpu_jetson_tegrastats.txt
+scp yupi@192.168.1.5:~/almondmatcha_poc/cpu_jetson.csv              /tmp/cpu_jetson.csv
+
+# Stop SoftIRQ loggers (Ctrl-C in Terminal E/F), then pull:
+scp curry@192.168.1.1:~/almondmatcha_poc/softirq_rpi.csv     /tmp/softirq_rpi.csv
+scp yupi@192.168.1.5:~/almondmatcha_poc/softirq_jetson.csv   /tmp/softirq_jetson.csv
 
 # Stop STM32 collector (Ctrl-C in the Step 1 terminal)
 # Stop topic-BW collector (Ctrl-C if running)
@@ -851,6 +1149,49 @@ telemetry line emitted by the STM32 firmware (~1 per second per board).
 | `heap_free` | int | `total_heap − heap_used` (bytes). Negative trend indicates a memory leak. |
 | `alloc_fail` | int | Cumulative count of failed `malloc()` calls in the RTPS pool. Any non-zero value is a critical failure — the RTPS pool is exhausted. |
 | `stack_free` | int | Minimum free stack observed across all RTOS threads (bytes). Must stay positive; too-small headroom risks stack overflow under domain-consolidation load. |
+
+---
+
+### `cpu_rpi.csv`
+
+Produced by the RPi one-liner CPU logger (§6). One row per second.
+
+| Column | Type | Description |
+|---|---|---|
+| `timestamp` | int | UNIX epoch seconds (`date +%s`). |
+| `cpu_pct` | float | Total CPU utilization % (100 − idle%, from `top -bn1`). Sum across all cores; divide by core count for per-core average. |
+| `mem_pct` | float | Used memory as a percentage of total physical RAM (`free`). |
+| `temp_c` | float | CPU die temperature in °C (`/sys/class/thermal/thermal_zone0/temp ÷ 1000`). |
+
+---
+
+### `cpu_jetson_tegrastats.txt`
+
+Produced by `tegrastats --interval 1000` with prepended UNIX timestamp. One line per second.
+Each line has the format: `<unix_ts> 12:34:56 RAM 1234/7782MB (lfb 512x4MB) CPU [5%@1190,3%@1190,...] ...`
+
+Key fields to extract (with `awk` or `grep`):
+- `CPU [...]` — per-core utilization % and frequency MHz
+- `GR3D_FREQ %` — GPU utilization
+- `EMC_FREQ %` — external memory controller (memory bandwidth) utilization
+- `VDD_IN` — total board power draw in mW
+- `CPU@`, `GPU@`, `SOC@` — thermal zone temperatures in °C
+
+---
+
+### `softirq_rpi.csv` / `softirq_jetson.csv`
+
+Produced by the SoftIRQ delta logger (§7). One row per second.
+
+| Column | Type | Description |
+|---|---|---|
+| `timestamp` | int | UNIX epoch seconds. |
+| `NET_RX_delta` | int | Receive softIRQ firings in the last second across all CPUs. Each multicast DDS packet triggers at least one. Rising value vs baseline indicates more multicast demux overhead. |
+| `NET_TX_delta` | int | Transmit softIRQ firings in the last second. |
+| `SCHED_delta` | int | Scheduler softIRQ firings. Rises with thread count and context-switch rate. |
+| `TIMER_delta` | int | Timer softIRQ firings. Steady background value; large spikes indicate timer storm. |
+
+> **Cross-reference:** compare `NET_RX_delta` with `rx_packets_delta` from `net_stats_*.csv`. If `NET_RX_delta / rx_packets_delta > 1`, the kernel is firing multiple softIRQs per incoming packet (coalescing disabled or NIC GRO off) — indicates the NIC interrupt path is under pressure.
 
 ---
 
