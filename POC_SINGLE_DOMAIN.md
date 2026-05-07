@@ -16,8 +16,67 @@
 chronyc tracking | grep -E "Reference|System time|RMS offset"
 ssh curry@192.168.1.1 'chronyc tracking | grep -E "System time|RMS offset"'
 ssh yupi@192.168.1.5  'chronyc tracking | grep -E "System time|RMS offset"'
-# Target: System time < 2 ms, RMS offset < 5 ms on all hosts
+```
 
+Acceptable thresholds and what they mean:
+
+| Metric | Good | Borderline | Impact if over |
+|---|---|---|---|
+| System time | < 2 ms | 2–10 ms | Cross-host `latency_ms` has systematic offset — jitter (`interval_ms`) unaffected |
+| RMS offset | < 5 ms | 5–15 ms | Time-axis alignment in `merged_all.csv` slightly fuzzy vs. 1 s bucket size |
+
+> For this POC the primary metric is **relative change** between branches, not absolute values. A consistent 5–6 ms offset on one host is acceptable — it will be present in both single-domain and multi-domain runs equally.
+
+If any host is over ~10 ms, force an immediate step correction:
+```bash
+ssh yupi@192.168.1.5 'sudo chronyc makestep'
+# Re-check after ~5 s
+ssh yupi@192.168.1.5 'chronyc tracking | grep -E "System time|RMS offset"'
+```
+
+#### One-time setup — use RPi as LAN NTP server (recommended)
+
+This routes all three hosts through the same low-latency LAN source, bringing RMS offset below 1 ms. Only needs to be done once.
+
+**On RPi** — allow LAN clients to use it as a time source:
+```bash
+ssh curry@192.168.1.1
+sudo tee -a /etc/chrony/chrony.conf << 'EOF'
+allow 192.168.1.0/24
+local stratum 4
+EOF
+sudo systemctl restart chrony
+chronyc clients   # no error = serving OK
+```
+
+**On Jetson** — prefer RPi as time source:
+```bash
+ssh yupi@192.168.1.5
+sudo sed -i '1s/^/server 192.168.1.1 iburst prefer\n/' /etc/chrony/chrony.conf
+sudo systemctl restart chrony
+sleep 30
+chronyc tracking | grep -E "Reference|System time|RMS offset"
+# Reference ID should show 192.168.1.1
+```
+
+**On base PC** — prefer RPi as time source:
+```bash
+sudo sed -i '1s/^/server 192.168.1.1 iburst prefer\n/' /etc/chrony/chrony.conf
+sudo systemctl restart chrony
+sleep 30
+chronyc tracking | grep -E "Reference|System time|RMS offset"
+```
+
+**Verify all three are using RPi:**
+```bash
+ssh curry@192.168.1.1 'chronyc clients'                         # should list 192.168.1.5 + base PC IP
+ssh yupi@192.168.1.5  'chronyc tracking | grep Reference'       # should show 192.168.1.1
+chronyc tracking | grep Reference                               # base PC — should show 192.168.1.1
+```
+
+> **Fallback:** If RPi loses internet, `local stratum 4` keeps it serving its own clock to LAN clients rather than stopping. Jetson and base PC retain the last known good offset in the meantime.
+
+```bash
 # Connectivity + ROS2 environment check
 bash ws_base/tools/check_connectivity.sh
 ```
