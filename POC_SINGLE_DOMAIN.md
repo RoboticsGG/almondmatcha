@@ -1190,6 +1190,59 @@ See the `README.md` on the `main` branch for the baseline launch guide.
 
 ---
 
+## Replacing the Base PC
+
+The base PC IP (`192.168.1.4`) is hardcoded in launch scripts and FastDDS XML. As long as the new machine uses the **same IP**, no scripts or SBC configuration need to change.
+
+### Before decommissioning the old PC
+
+Back up experiment run data — `ws_base/runs/` is gitignored and will not transfer via `git clone`:
+```bash
+cp -r ~/almondmatcha/ws_base/runs/ /path/to/backup/
+```
+
+### On the new base PC
+
+**1. Clone and build:**
+```bash
+git clone <repo-url> ~/almondmatcha
+cd ~/almondmatcha/ws_base && colcon build --symlink-install
+pip3 install pandas numpy matplotlib pyserial
+```
+
+**2. Set up passwordless SSH to both SBCs:**
+```bash
+ssh-keygen -t ed25519        # skip if you already have a key
+ssh-copy-id curry@192.168.1.1
+ssh-copy-id yupi@192.168.1.5
+```
+
+**3. Re-add RPi as preferred NTP source:**
+```bash
+sudo sed -i '1s/^/server 192.168.1.1 iburst prefer\n/' /etc/chrony/chrony.conf
+sudo systemctl restart chrony
+sleep 30
+chronyc tracking | grep Reference   # should show 192.168.1.1
+```
+
+**4. Restore run data (optional):**
+```bash
+mkdir -p ~/almondmatcha/ws_base/runs
+cp -r /path/to/backup/runs/* ~/almondmatcha/ws_base/runs/
+```
+
+### On RPi and Jetson — clear the old host key (if applicable)
+
+Only needed if either SBC ever SSH'd back to the base PC (e.g. reverse tunnels). Normally not required:
+```bash
+ssh curry@192.168.1.1 'ssh-keygen -R 192.168.1.4'
+ssh yupi@192.168.1.5  'ssh-keygen -R 192.168.1.4'
+```
+
+> **STM32 boards, RPi, and Jetson need zero changes** — they communicate by IP only and do not track the base PC's identity.
+
+---
+
 ## CSV Field Reference
 
 Each collector writes a CSV with a fixed schema. This section is the authoritative
