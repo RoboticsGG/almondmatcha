@@ -8,7 +8,9 @@
 #   4. Wait for STM32 topics to be discovered and flowing
 #   5. Start latency collectors on RPi and Jetson
 #   6. Start net-stats collectors on RPi and Jetson (background SSH)
-#   7. Wait for the run duration
+#   6b. Start CPU load loggers on RPi and Jetson (background SSH)
+#   6c. Start SoftIRQ delta loggers on RPi and Jetson (background SSH)
+#   7. Wait for the run duration (with mid-run ros2 topic hz report)
 #   8. Stop all collectors and pull CSVs to base PC
 #
 # STM32 boards are assumed to be always powered on. No reset step is needed.
@@ -27,6 +29,12 @@
 #   ws_base/tools/poc_run/single_domain/run_NNN/topic_bw.csv
 #   ws_base/tools/poc_run/single_domain/run_NNN/stm32_chassis.csv
 #   ws_base/tools/poc_run/single_domain/run_NNN/stm32_sensors.csv
+#   ws_base/tools/poc_run/single_domain/run_NNN/cpu_rpi.csv
+#   ws_base/tools/poc_run/single_domain/run_NNN/cpu_jetson_tegrastats.txt
+#   ws_base/tools/poc_run/single_domain/run_NNN/softirq_rpi.csv
+#   ws_base/tools/poc_run/single_domain/run_NNN/softirq_jetson.csv
+#   ws_base/tools/poc_run/single_domain/run_NNN/hz_report_rpi.txt
+#   ws_base/tools/poc_run/single_domain/run_NNN/hz_report_jetson.txt
 #   ws_base/tools/poc_run/single_domain/run_NNN/merged_all.csv    ← time-bucketed union of all above
 #   ws_base/tools/poc_run/single_domain/run_NNN/logs/             ← all sub-process logs
 
@@ -107,20 +115,31 @@ done
 
 STM32_COLLECTOR_PID=""
 TOPIC_BW_PID=""
+CPU_RPI_LOGPID=""
+CPU_JETSON_LOGPID=""
+SOFTIRQ_RPI_LOGPID=""
+SOFTIRQ_JETSON_LOGPID=""
 
 cleanup() {
     echo ""
     warn "Interrupted — stopping all background collectors..."
-    [[ -n "$STM32_COLLECTOR_PID" ]] && kill "$STM32_COLLECTOR_PID" 2>/dev/null || true
-    [[ -n "$TOPIC_BW_PID"        ]] && kill "$TOPIC_BW_PID"        2>/dev/null || true
+    [[ -n "$STM32_COLLECTOR_PID"    ]] && kill "$STM32_COLLECTOR_PID"    2>/dev/null || true
+    [[ -n "$TOPIC_BW_PID"           ]] && kill "$TOPIC_BW_PID"           2>/dev/null || true
+    # Stop CPU / SoftIRQ loggers on SBCs
+    ssh $SSH_OPTS "$RPI_HOST"    "pkill -f 'cpu_logger_rpi\|softirq_logger_rpi'   2>/dev/null || true" 2>/dev/null || true
+    ssh $SSH_OPTS "$JETSON_HOST" "pkill -f 'cpu_logger_jetson\|softirq_logger_jet' 2>/dev/null || true" 2>/dev/null || true
+    ssh $SSH_OPTS "$RPI_HOST"    "pkill -f tegrastats 2>/dev/null || true" 2>/dev/null || true
+    ssh $SSH_OPTS "$JETSON_HOST" "pkill -f tegrastats 2>/dev/null || true" 2>/dev/null || true
     # Stop latency collectors (cleanup path — best effort)
     LOCAL_DEST_CSV="$RUN_DIR/latency_rpi.csv"        TARGET_HOST="$RPI_HOST"    TARGET_LABEL=rpi        SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh" 2>/dev/null || true
     LOCAL_DEST_CSV="$RUN_DIR/latency_jetson.csv"     TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson     SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh" 2>/dev/null || true
-    # Stop net-stats collectors on SBCs (prevent orphaned processes)
+    # Stop net-stats, CPU, SoftIRQ collectors on SBCs (prevent orphaned processes)
     ssh $SSH_OPTS "$RPI_HOST"    "pkill -f 'collect_net_stats' 2>/dev/null || true" 2>/dev/null || true
     ssh $SSH_OPTS "$JETSON_HOST" "pkill -f 'collect_net_stats' 2>/dev/null || true" 2>/dev/null || true
+    ssh $SSH_OPTS "$RPI_HOST"    "pkill -f 'cpu_logger_rpi\|softirq_logger_rpi' 2>/dev/null || true" 2>/dev/null || true
+    ssh $SSH_OPTS "$JETSON_HOST" "pkill -f 'cpu_logger_jetson\|softirq_logger_jet\|tegrastats' 2>/dev/null || true" 2>/dev/null || true
     # Close SSH control sockets
     ssh $SSH_OPTS -O exit "$RPI_HOST"    2>/dev/null || true
     ssh $SSH_OPTS -O exit "$JETSON_HOST" 2>/dev/null || true
@@ -512,6 +531,91 @@ start_net_collectors() {
 }
 
 # ============================================================================
+# Step 6b — Start CPU load loggers on RPi and Jetson
+# ============================================================================
+# RPi:    top-based one-liner → cpu_rpi.csv   (timestamp,cpu_pct,mem_pct,temp_c)
+# Jetson: tegrastats raw log  → cpu_jetson_tegrastats.txt  (prepended UNIX ts)
+# Both logged at 1-second intervals via background remote shell loops.
+# A named setsid wrapper is used so pkill can target exactly these processes.
+
+start_cpu_collectors() {
+    log "Step 6b — Starting CPU load loggers on RPi and Jetson"
+
+    # ── RPi ───────────────────────────────────────────────────────────────────
+    ssh -T $SSH_OPTS "$RPI_HOST" '
+        mkdir -p ~/almondmatcha_poc
+        echo "timestamp,cpu_pct,mem_pct,temp_c" > ~/almondmatcha_poc/cpu_rpi.csv
+        # Named via exec so pkill -f cpu_logger_rpi matches exactly this shell
+        exec -a cpu_logger_rpi bash -c "
+            while sleep 1; do
+                echo \"\$(date +%s),\$(top -bn1 | grep \"Cpu(s)\" | awk \"{print 100-\\\$8}\"),\$(free | awk \"/Mem/{printf \\\"%.2f\\\",\\\$3/\\\$2*100}\"),\$(cat /sys/class/thermal/thermal_zone0/temp | awk \"{print \\\$1/1000}\")\"
+            done >> ~/almondmatcha_poc/cpu_rpi.csv
+        " </dev/null >~/almondmatcha_poc/cpu_rpi.log 2>&1 &
+        disown
+        echo \$!
+    ' > "$LOG_DIR/cpu_rpi_pid.txt" 2>/dev/null || true
+    ok "  RPi CPU logger started"
+
+    # ── Jetson ────────────────────────────────────────────────────────────────
+    ssh -T $SSH_OPTS "$JETSON_HOST" '
+        mkdir -p ~/almondmatcha_poc
+        # Named via exec so pkill -f cpu_logger_jetson matches exactly this shell
+        exec -a cpu_logger_jetson bash -c "
+            tegrastats --interval 1000 | \
+            while IFS= read -r line; do echo \"\$(date +%s) \$line\"; done
+        " </dev/null > ~/almondmatcha_poc/cpu_jetson_tegrastats.txt 2>&1 &
+        disown
+        echo \$!
+    ' > "$LOG_DIR/cpu_jetson_pid.txt" 2>/dev/null || true
+    ok "  Jetson CPU logger (tegrastats) started"
+}
+
+# ============================================================================
+# Step 6c — Start SoftIRQ delta loggers on RPi and Jetson
+# ============================================================================
+# Polls /proc/softirqs at 1-second intervals and records per-second deltas
+# for NET_RX, NET_TX, SCHED, TIMER across all CPU columns.
+# High NET_RX_delta without proportional rx_bps increase = demux overhead.
+
+start_softirq_collectors() {
+    log "Step 6c — Starting SoftIRQ delta loggers on RPi and Jetson"
+
+    # Shared remote script body — same for both hosts
+    # $1 = output CSV path; process is named softirq_logger_<tag> for pkill
+    local script
+    script='mkdir -p "$(dirname "$1")"
+echo "timestamp,NET_RX_delta,NET_TX_delta,SCHED_delta,TIMER_delta" > "$1"
+prev_rx=0; prev_tx=0; prev_sched=0; prev_timer=0
+while sleep 1; do
+  ts=$(date +%s)
+  rx=$(awk "/NET_RX:/{s=0;for(i=2;i<=NF;i++)s+=\$i;print s}" /proc/softirqs)
+  tx=$(awk "/NET_TX:/{s=0;for(i=2;i<=NF;i++)s+=\$i;print s}" /proc/softirqs)
+  sc=$(awk "/SCHED:/{s=0;for(i=2;i<=NF;i++)s+=\$i;print s}"  /proc/softirqs)
+  ti=$(awk "/TIMER:/{s=0;for(i=2;i<=NF;i++)s+=\$i;print s}"  /proc/softirqs)
+  echo "$ts,$((rx-prev_rx)),$((tx-prev_tx)),$((sc-prev_sched)),$((ti-prev_timer))" >> "$1"
+  prev_rx=$rx; prev_tx=$tx; prev_sched=$sc; prev_timer=$ti
+done'
+
+    # ── RPi ───────────────────────────────────────────────────────────────────
+    ssh -T $SSH_OPTS "$RPI_HOST" "
+        mkdir -p ~/almondmatcha_poc
+        exec -a softirq_logger_rpi bash -c '${script//$'\n'/; }' -- ~/almondmatcha_poc/softirq_rpi.csv </dev/null >~/almondmatcha_poc/softirq_rpi.log 2>&1 &
+        disown
+        echo \$!
+    " > "$LOG_DIR/softirq_rpi_pid.txt" 2>/dev/null || true
+    ok "  RPi SoftIRQ logger started"
+
+    # ── Jetson ────────────────────────────────────────────────────────────────
+    ssh -T $SSH_OPTS "$JETSON_HOST" "
+        mkdir -p ~/almondmatcha_poc
+        exec -a softirq_logger_jetson bash -c '${script//$'\n'/; }' -- ~/almondmatcha_poc/softirq_jetson.csv </dev/null >~/almondmatcha_poc/softirq_jetson.log 2>&1 &
+        disown
+        echo \$!
+    " > "$LOG_DIR/softirq_jetson_pid.txt" 2>/dev/null || true
+    ok "  Jetson SoftIRQ logger started"
+}
+
+# ============================================================================
 # Step 7 — Wait for the run duration
 # ============================================================================
 
@@ -526,6 +630,7 @@ wait_for_run() {
     echo ""
     echo "  Drive the rover / send mission commands now."
     echo "  Press Ctrl-C at any time to stop early and collect CSVs."
+    echo "  A ros2 topic hz report will be captured at the mid-point."
     echo ""
 
     # Blank placeholder lines so the first cursor-up has something to overwrite
@@ -533,10 +638,19 @@ wait_for_run() {
 
     local elapsed=0 bar filled empty pct i
     local ch_line se_line ch_used ch_free ch_n se_used se_free se_n stm32_status bw_status
+    local hz_captured=false
+    local hz_midpoint=$(( RUN_DURATION / 2 ))
 
     while (( elapsed < RUN_DURATION )); do
         sleep 1
         elapsed=$(( elapsed + 1 ))
+
+        # Capture hz report once at the mid-point of the run
+        if [[ "$hz_captured" == false ]] && (( elapsed >= hz_midpoint )); then
+            hz_captured=true
+            log "  Mid-run: capturing ros2 topic hz report from RPi and Jetson..."
+            capture_hz_report &
+        fi
 
         # --- Progress bar ---
         filled=$(( elapsed * bar_width / RUN_DURATION ))
@@ -589,6 +703,36 @@ wait_for_run() {
 }
 
 # ============================================================================
+# Step 7b — Capture ros2 topic hz report (called mid-run from wait_for_run)
+# ============================================================================
+# Runs on both RPi and Jetson in parallel. Each topic gets a 10-second window.
+# Output is a plain text file — one stanza per topic showing rate, min/max delta,
+# and std dev. Stored alongside the CSVs for reference.
+
+capture_hz_report() {
+    local topics="/tpc_chassis_imu /tpc_chassis_sensors /tpc_rover_ctrl_cmd /tpc_rover_d415_rgb /tpc_rover_d415_depth"
+
+    local _run_hz
+    _run_hz() {
+        local host="$1" outfile="$2" ws_path="$3"
+        ssh -T $SSH_OPTS "$host" "
+            source /opt/ros/humble/setup.bash 2>/dev/null
+            source ${ws_path}/install/setup.bash 2>/dev/null
+            export ROS_DOMAIN_ID=5
+            for topic in ${topics}; do
+                echo \"--- \$topic ---\"
+                timeout 10 ros2 topic hz \$topic --window 50 2>/dev/null || echo \"(no messages)\"
+            done
+        " > "$outfile" 2>/dev/null || true
+    }
+
+    _run_hz "$RPI_HOST"    "$RUN_DIR/hz_report_rpi.txt"    "~/almondmatcha/ws_rpi" &
+    _run_hz "$JETSON_HOST" "$RUN_DIR/hz_report_jetson.txt" "~/almondmatcha/ws_jetson" &
+    wait
+    ok "  hz reports saved to $RUN_DIR/hz_report_{rpi,jetson}.txt"
+}
+
+# ============================================================================
 # Step 8 — Stop collectors and pull CSVs
 # ============================================================================
 
@@ -600,6 +744,8 @@ stop_and_collect() {
     # ── Stop local collectors immediately (no network wait) ──────────────────
     [[ -n "$STM32_COLLECTOR_PID" ]] && kill "$STM32_COLLECTOR_PID" 2>/dev/null || true
     [[ -n "$TOPIC_BW_PID"        ]] && kill "$TOPIC_BW_PID"        2>/dev/null || true
+    # Ensure hz report background job is done
+    wait 2>/dev/null || true
     sleep 0.5   # allow final flush before STM32 CSV rename
     local f
     f=$(ls "$RUN_DIR"/stm32_chassis_*.csv 2>/dev/null | tail -1) && [[ -n "$f" ]] && mv "$f" "$RUN_DIR/stm32_chassis.csv" || true
@@ -618,15 +764,22 @@ stop_and_collect() {
             TARGET_LABEL=rpi SSH_OPTS="$SSH_OPTS" \
             bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh"
 
-        # Stop net-stats and pull CSV in one SSH round-trip
+        # Stop net-stats and pull CSV
         ssh -T $SSH_OPTS "$RPI_HOST" "
             if [ -f ~/ros2_traces/net_stats_rpi.pid ]; then
                 kill \$(cat ~/ros2_traces/net_stats_rpi.pid) 2>/dev/null || true
                 rm -f ~/ros2_traces/net_stats_rpi.pid
             fi
+            # Stop CPU and SoftIRQ loggers
+            pkill -f cpu_logger_rpi     2>/dev/null || true
+            pkill -f softirq_logger_rpi 2>/dev/null || true
         "
         scp $SSH_OPTS "$RPI_HOST:~/ros2_traces/net_stats_rpi.csv" \
             "$RUN_DIR/net_stats_rpi.csv" 2>/dev/null || true
+        scp $SSH_OPTS "$RPI_HOST:~/almondmatcha_poc/cpu_rpi.csv" \
+            "$RUN_DIR/cpu_rpi.csv" 2>/dev/null || true
+        scp $SSH_OPTS "$RPI_HOST:~/almondmatcha_poc/softirq_rpi.csv" \
+            "$RUN_DIR/softirq_rpi.csv" 2>/dev/null || true
 
         # Pull node logs
         scp $SSH_OPTS "$RPI_HOST:~/ros2_traces/poc_*.log" \
@@ -642,15 +795,23 @@ stop_and_collect() {
             TARGET_LABEL=jetson SSH_OPTS="$SSH_OPTS" \
             bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh"
 
-        # Stop net-stats and pull CSV in one SSH round-trip
+        # Stop net-stats and pull CSV
         ssh -T $SSH_OPTS "$JETSON_HOST" "
             if [ -f ~/ros2_traces/net_stats_jetson.pid ]; then
                 kill \$(cat ~/ros2_traces/net_stats_jetson.pid) 2>/dev/null || true
                 rm -f ~/ros2_traces/net_stats_jetson.pid
             fi
+            # Stop CPU and SoftIRQ loggers
+            pkill -f cpu_logger_jetson     2>/dev/null || true
+            pkill -f softirq_logger_jetson 2>/dev/null || true
+            pkill -f tegrastats             2>/dev/null || true
         "
         scp $SSH_OPTS "$JETSON_HOST:~/ros2_traces/net_stats_jetson.csv" \
             "$RUN_DIR/net_stats_jetson.csv" 2>/dev/null || true
+        scp $SSH_OPTS "$JETSON_HOST:~/almondmatcha_poc/cpu_jetson_tegrastats.txt" \
+            "$RUN_DIR/cpu_jetson_tegrastats.txt" 2>/dev/null || true
+        scp $SSH_OPTS "$JETSON_HOST:~/almondmatcha_poc/softirq_jetson.csv" \
+            "$RUN_DIR/softirq_jetson.csv" 2>/dev/null || true
 
         # Pull node logs
         scp $SSH_OPTS "$JETSON_HOST:~/ros2_traces/poc_*.log" \
@@ -698,6 +859,12 @@ print_summary() {
     echo "    $RUN_DIR/topic_bw.csv"
     echo "    $RUN_DIR/stm32_chassis.csv"
     echo "    $RUN_DIR/stm32_sensors.csv"
+    echo "    $RUN_DIR/cpu_rpi.csv"
+    echo "    $RUN_DIR/cpu_jetson_tegrastats.txt"
+    echo "    $RUN_DIR/softirq_rpi.csv"
+    echo "    $RUN_DIR/softirq_jetson.csv"
+    echo "    $RUN_DIR/hz_report_rpi.txt"
+    echo "    $RUN_DIR/hz_report_jetson.txt"
     echo ""
     echo "  Merged (time-bucketed union):"
     echo "    $RUN_DIR/merged_all.csv"
@@ -747,6 +914,8 @@ main() {
     start_latency_collectors
     start_topic_bw_collector
     start_net_collectors
+    start_cpu_collectors
+    start_softirq_collectors
     wait_for_run
     stop_and_collect
     print_summary
