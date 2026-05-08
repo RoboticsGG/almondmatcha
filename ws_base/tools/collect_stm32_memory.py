@@ -48,17 +48,33 @@ except ImportError:
 
 BAUD_RATE     = 115200
 POLL_TIMEOUT  = 0.1      # serial read timeout in seconds
-MEM_TYPE_KEY  = "STM32_MEM"
+
+# Accepted type keys — STM32_STATS is the current format; STM32_MEM is the
+# legacy format (older firmware) kept for backward compatibility.
+STATS_TYPE_KEYS = {"STM32_STATS", "STM32_MEM"}
 
 CSV_FIELDS = [
     "wall_clock",
     "type",
     "node",
     "ts_ms",
+    # Heap
     "heap_used",
     "heap_max",
     "heap_free",
     "alloc_fail",
+    # CPU (STM32_STATS only — empty for STM32_MEM rows)
+    "cpu_busy_pct",
+    "cpu_idle_pct",
+    # Stack (STM32_STATS: all-thread peak; STM32_MEM: reporter-thread only)
+    "stack_peak_b",
+    "stack_min_free_b",
+    # UDP / Ethernet (STM32_STATS only)
+    "udp_recv",
+    "udp_drop",
+    "udp_sent",
+    "eth_miss",
+    # Legacy field present in STM32_MEM only
     "stack_free",
 ]
 
@@ -105,33 +121,58 @@ def read_serial_thread(port: str, label: str, rows: list, lock: threading.Lock,
             # Write every line to raw log with wall-clock timestamp
             raw_log.write(f"{datetime.utcnow().isoformat()} {line}\n")
             raw_log.flush()
-            if f'"type":"{MEM_TYPE_KEY}"' not in line:
-                continue  # not a memory-reporter line — already saved to raw log
+            # Filter: accept STM32_STATS (current) and STM32_MEM (legacy)
+            matched_key = next(
+                (k for k in STATS_TYPE_KEYS if f'"type":"{k}"' in line),
+                None
+            )
+            if matched_key is None:
+                continue  # not a stats line — already saved to raw log
             try:
                 data = json.loads(line)
             except json.JSONDecodeError:
                 continue
             row = {
-                "wall_clock": datetime.utcnow().isoformat(),
-                "type":       data.get("type", ""),
-                "node":       data.get("node", label),
-                "ts_ms":      data.get("ts_ms", ""),
-                "heap_used":  data.get("heap_used", ""),
-                "heap_max":   data.get("heap_max", ""),
-                "heap_free":  data.get("heap_free", ""),
-                "alloc_fail": data.get("alloc_fail", ""),
-                "stack_free": data.get("stack_free", ""),
+                "wall_clock":      datetime.utcnow().isoformat(),
+                "type":            data.get("type", ""),
+                "node":            data.get("node", label),
+                "ts_ms":           data.get("ts_ms", ""),
+                # Heap
+                "heap_used":       data.get("heap_used", ""),
+                "heap_max":        data.get("heap_max", ""),
+                "heap_free":       data.get("heap_free", ""),
+                "alloc_fail":      data.get("alloc_fail", ""),
+                # CPU
+                "cpu_busy_pct":    data.get("cpu_busy_pct", ""),
+                "cpu_idle_pct":    data.get("cpu_idle_pct", ""),
+                # Stack
+                "stack_peak_b":    data.get("stack_peak_b", ""),
+                "stack_min_free_b":data.get("stack_min_free_b", ""),
+                # UDP / Ethernet
+                "udp_recv":        data.get("udp_recv", ""),
+                "udp_drop":        data.get("udp_drop", ""),
+                "udp_sent":        data.get("udp_sent", ""),
+                "eth_miss":        data.get("eth_miss", ""),
+                # Legacy (STM32_MEM only)
+                "stack_free":      data.get("stack_free", ""),
             }
             with lock:
                 rows.append(row)
 
             # Print a brief live summary
-            fail = data.get("alloc_fail", 0)
-            used = data.get("heap_used", 0)
-            free = data.get("heap_free", 0)
-            flag = "  *** ALLOC FAIL ***" if fail else ""
+            fail  = data.get("alloc_fail", 0) or 0
+            used  = data.get("heap_used",  0) or 0
+            free  = data.get("heap_free",  0) or 0
+            cpu   = data.get("cpu_busy_pct", "?")  # empty on legacy rows
+            drop  = data.get("udp_drop",    0) or 0
+            emiss = data.get("eth_miss",    0) or 0
+            flag  = "  *** ALLOC FAIL ***" if fail else ""
+            drop_flag = f"  *** UDP DROP={drop} ***" if drop else ""
+            emiss_flag = f"  *** ETH MISS={emiss} ***" if emiss else ""
             print(f"  [{label}] ts={data.get('ts_ms'):6}ms  "
-                  f"used={used//1024:4d}KB  free={free//1024:4d}KB{flag}")
+                  f"heap={used//1024:4d}KB/{free//1024}KB free  "
+                  f"cpu={cpu}%  udp_drop={drop}  eth_miss={emiss}"
+                  f"{flag}{drop_flag}{emiss_flag}")
 
     ser.close()
     raw_log.close()
