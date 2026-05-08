@@ -140,6 +140,21 @@ cleanup() {
     ssh $SSH_OPTS "$JETSON_HOST" "pkill -f 'collect_net_stats' 2>/dev/null || true" 2>/dev/null || true
     ssh $SSH_OPTS "$RPI_HOST"    "pkill -f 'cpu_logger_rpi\|softirq_logger_rpi' 2>/dev/null || true" 2>/dev/null || true
     ssh $SSH_OPTS "$JETSON_HOST" "pkill -f 'cpu_logger_jetson\|softirq_logger_jet\|tegrastats' 2>/dev/null || true" 2>/dev/null || true
+    # Pull SBC data even on interrupt (best effort — files may be partial)
+    [[ -n "$RUN_DIR" ]] && {
+        scp $SSH_OPTS "$RPI_HOST:~/ros2_traces/net_stats_rpi.csv" \
+            "$RUN_DIR/net_stats_rpi.csv"                          2>/dev/null || true
+        scp $SSH_OPTS "$RPI_HOST:~/almondmatcha_poc/cpu_rpi.csv" \
+            "$RUN_DIR/cpu_rpi.csv"                                2>/dev/null || true
+        scp $SSH_OPTS "$RPI_HOST:~/almondmatcha_poc/softirq_rpi.csv" \
+            "$RUN_DIR/softirq_rpi.csv"                            2>/dev/null || true
+        scp $SSH_OPTS "$JETSON_HOST:~/ros2_traces/net_stats_jetson.csv" \
+            "$RUN_DIR/net_stats_jetson.csv"                       2>/dev/null || true
+        scp $SSH_OPTS "$JETSON_HOST:~/almondmatcha_poc/cpu_jetson_tegrastats.txt" \
+            "$RUN_DIR/cpu_jetson_tegrastats.txt"                  2>/dev/null || true
+        scp $SSH_OPTS "$JETSON_HOST:~/almondmatcha_poc/softirq_jetson.csv" \
+            "$RUN_DIR/softirq_jetson.csv"                         2>/dev/null || true
+    }
     # Close SSH control sockets
     ssh $SSH_OPTS -O exit "$RPI_HOST"    2>/dev/null || true
     ssh $SSH_OPTS -O exit "$JETSON_HOST" 2>/dev/null || true
@@ -552,7 +567,7 @@ start_cpu_collectors() {
             done >> ~/almondmatcha_poc/cpu_rpi.csv
         " </dev/null >~/almondmatcha_poc/cpu_rpi.log 2>&1 &
         disown
-        echo \$!
+        echo $!
     ' > "$LOG_DIR/cpu_rpi_pid.txt" 2>/dev/null || true
     ok "  RPi CPU logger started"
 
@@ -565,7 +580,7 @@ start_cpu_collectors() {
             while IFS= read -r line; do echo \"\$(date +%s) \$line\"; done
         " </dev/null > ~/almondmatcha_poc/cpu_jetson_tegrastats.txt 2>&1 &
         disown
-        echo \$!
+        echo $!
     ' > "$LOG_DIR/cpu_jetson_pid.txt" 2>/dev/null || true
     ok "  Jetson CPU logger (tegrastats) started"
 }
