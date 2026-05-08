@@ -132,8 +132,15 @@ void imu_reader_task() {
     int32_t local_accel[3] = {0};
     int32_t local_gyro[3] = {0};
     uint32_t sample_count = 0;
-    bool imu_first_print_done = false;
-    
+    bool mem_reporter_started = false;
+
+    // Uptime timer for heartbeat line timestamps.
+    // Printed every IMU publish cycle (1 Hz) so the raw serial log has
+    // human-readable status interleaved with the 1 Hz STM32_STATS JSON.
+    // The serial collector ignores [HB#...] lines — only STM32_STATS is saved.
+    Timer hb_timer;
+    hb_timer.start();
+
     while (1) {
         // Read IMU sensor data
         lsm6dsv16x.Get_X_Axes(local_accel);
@@ -165,14 +172,30 @@ void imu_reader_task() {
             // Publish to ROS2
             imu_pub_ptr->publish(imu_msg);
 
-            // Print once on first publish to confirm sensor is alive, then stay silent
-            if (!imu_first_print_done) {
-                printf("\r\n[imu_reader_task] First sample — Accel: X=%ld\tY=%ld\tZ=%ld\t| Gyro: X=%ld\tY=%ld\tZ=%ld",
-                       imu_msg.accel_x, imu_msg.accel_y, imu_msg.accel_z,
-                       imu_msg.gyro_x, imu_msg.gyro_y, imu_msg.gyro_z);
-                fflush(stdout);
-                imu_first_print_done = true;
+            // Start memory reporter after first publish so boot output is clean
+            if (!mem_reporter_started) {
+                mem_reporter_started = true;
+                memory_reporter_start("chassis");
+                MROS2_INFO("Memory reporter started (1s interval)");
             }
+
+            // Heartbeat: human-readable status line at each IMU publish (1 Hz).
+            // Format: [HB#<uptime_ms>] IMU Accel(X:.. Y:.. Z:..) Gyro(X:.. Y:.. Z:..) Cmd(spd:.. steer:..)
+            // The serial collector ignores [HB#...] lines — only STM32_STATS JSON
+            // is captured to CSV; heartbeats go to the raw serial log only.
+            int hb_ts = (int)chrono::duration_cast<chrono::milliseconds>(
+                                 hb_timer.elapsed_time()).count();
+            // Snapshot latest motor command (best effort, non-blocking)
+            rover_cmd_mutex.lock();
+            uint8_t cmd_spd   = rover_cmd.motor_speed;
+            float   cmd_steer = rover_cmd.steering_angle;
+            rover_cmd_mutex.unlock();
+            printf("\r\n[HB#%d] IMU Accel(X:%ld Y:%ld Z:%ld) Gyro(X:%ld Y:%ld Z:%ld) Cmd(spd:%u steer:%.1f)",
+                   hb_ts,
+                   (long)imu_msg.accel_x, (long)imu_msg.accel_y, (long)imu_msg.accel_z,
+                   (long)imu_msg.gyro_x,  (long)imu_msg.gyro_y,  (long)imu_msg.gyro_z,
+                   (unsigned)cmd_spd, (double)cmd_steer);
+            fflush(stdout);
         }
         
         // IMU polling rate
@@ -301,14 +324,9 @@ int main()
     MROS2_INFO("Sampling rates: Motor=%ldms, IMU=%ldms (publish every %ld samples)",
                MOTOR_RESPONSE_PERIOD_MS, IMU_SAMPLE_PERIOD_MS, IMU_PUBLISH_INTERVAL);
 
-    // Single-domain POC: start memory reporter AFTER discovery wait
-    // (4s delay = 1s osDelay above + 3s SPDP wait in imu_reader_task)
-    // so the first-sample print appears before the JSON memory stream.
-    osDelay(4000);
-    memory_reporter_start("chassis");
-    MROS2_INFO("Memory reporter started (1s interval)");
-
     // Main loop: Spin ROS2 communication
+    // Memory reporter is started inside imu_reader_task() after first publish,
+    // so boot output appears before the JSON stats stream.
     mros2::spin();
     
     return 0;
