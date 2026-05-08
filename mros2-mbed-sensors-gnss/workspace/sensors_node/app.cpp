@@ -243,7 +243,14 @@ int main()
   // ---- Main Sensor Publishing Loop ----
   // Main loop focuses on aggregating data from the three independent tasks
   // and publishing to ROS2 at 4 Hz (250ms interval).
-  bool sensors_first_print_done = false;
+  bool mem_reporter_started = false;
+
+  // Uptime timer used for heartbeat line timestamps.
+  // Printed every loop iteration so the raw serial log has human-readable
+  // status at 4 Hz interleaved with the 1 Hz STM32_STATS JSON lines.
+  // The serial collector ignores [HB#...] lines — only STM32_STATS is saved.
+  Timer hb_timer;
+  hb_timer.start();
 
   // Wait for multicast SPDP exchange before first publish.
   // embeddedRTPS only supports multicast discovery (239.255.0.1, port 8650
@@ -256,11 +263,14 @@ int main()
 
   while (true) {
     // Read all sensor data from shared structure with mutex protection
+    char nmea_buf[GNSS_NMEA_BUFFER_SIZE];
     sensor_data_mutex.lock();
     int32_t enc_A = sensor_data.encoder_A;
     int32_t enc_B = sensor_data.encoder_B;
     float vbus = sensor_data.bus_voltage;
     float curr = sensor_data.current;
+    strncpy(nmea_buf, sensor_data.nmea_sentence, GNSS_NMEA_BUFFER_SIZE - 1);
+    nmea_buf[GNSS_NMEA_BUFFER_SIZE - 1] = '\0';
     sensor_data_mutex.unlock();
 
     // Prepare and publish sensor data message
@@ -271,17 +281,25 @@ int main()
     msgs.sys_volt_msg = vbus;           // Bus voltage (V)
     PubSensData.publish(msgs);
 
-    // Print once on first publish to confirm sensors are alive, then stay silent
-    if (!sensors_first_print_done) {
-      printf("\r\n[SENSORS] First sample — Enc(A:%ld B:%ld) Power(%.2fV %.2fA)\r\n",
-         enc_A, enc_B, vbus, curr);
-      fflush(stdout);
-      sensors_first_print_done = true;
-
-      // Start memory reporter AFTER first sample so boot output is clean
+    // Start memory reporter after first publish so boot output is clean
+    if (!mem_reporter_started) {
+      mem_reporter_started = true;
       memory_reporter_start("sensors");
       MROS2_INFO("Memory reporter started (1s interval)");
     }
+
+    // Heartbeat: human-readable status line printed every loop iteration (4 Hz).
+    // Format: [HB#<uptime_ms>] Enc(A:<left> B:<right>) Pwr(<V>V <A>A) GNSS[<len>]:<nmea>
+    // The serial collector ignores [HB#...] lines — only STM32_STATS JSON
+    // is captured to CSV; heartbeats go to the raw serial log only.
+    int hb_ts   = (int)chrono::duration_cast<chrono::milliseconds>(
+                           hb_timer.elapsed_time()).count();
+    int nmea_len = (int)strlen(nmea_buf);
+    printf("\r\n[HB#%d] Enc(A:%ld B:%ld) Pwr(%.2fV %.2fA) GNSS[%d]:%s",
+           hb_ts, (long)enc_A, (long)enc_B,
+           (double)vbus, (double)curr,
+           nmea_len, nmea_buf);
+    fflush(stdout);
 
     // Main loop runs at MAIN_LOOP_PERIOD_MS (4 Hz)
     ThisThread::sleep_for(chrono::milliseconds(MAIN_LOOP_PERIOD_MS));
