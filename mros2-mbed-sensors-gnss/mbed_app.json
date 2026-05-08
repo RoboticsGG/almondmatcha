@@ -1,5 +1,5 @@
 {
-  "macros": ["MBED_HEAP_STATS_ENABLED=1", "MBED_STACK_STATS_ENABLED=1"],
+  "macros": ["MBED_HEAP_STATS_ENABLED=1", "MBED_STACK_STATS_ENABLED=1", "MBED_CPU_STATS_ENABLED=1"],
   "target_overrides": {
     "*": {
       "platform.stdio-baud-rate": 115200,
@@ -7,6 +7,7 @@
       "lwip.pbuf-pool-size": 32,
       "lwip.socket-max": 8,
       "lwip.udp-socket-max": 8,
+      "lwip.stats-enabled": true,
       "target.printf_lib": "std"
     },
     "K64F": {

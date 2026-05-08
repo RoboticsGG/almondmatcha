@@ -110,6 +110,34 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ============================================================================
+# Helper — Stop ROS2 node tmux sessions on all machines
+# ============================================================================
+# Called from both stop_and_collect() (normal end) and cleanup() (interrupt).
+# Defined before cleanup() so it is available when the trap fires at any point.
+
+stop_ros2_nodes() {
+    log "  Stopping ROS2 node tmux sessions on all machines"
+
+    # ── Base PC ────────────────────────────────────────────────────────────────
+    tmux kill-session -t base_poc   2>/dev/null || true
+    pkill -f "ros2 run"             2>/dev/null || true
+
+    # ── RPi ────────────────────────────────────────────────────────────────────
+    ssh $SSH_OPTS "$RPI_HOST" "
+        tmux kill-session -t rover_poc 2>/dev/null || true
+        pkill -f 'ros2 run'            2>/dev/null || true
+    " 2>/dev/null || warn "  RPi node stop had errors (non-fatal)"
+
+    # ── Jetson ─────────────────────────────────────────────────────────────────
+    ssh $SSH_OPTS "$JETSON_HOST" "
+        tmux kill-session -t jetson_poc 2>/dev/null || true
+        pkill -f 'ros2 run'             2>/dev/null || true
+    " 2>/dev/null || warn "  Jetson node stop had errors (non-fatal)"
+
+    ok "  All ROS2 node sessions stopped"
+}
+
+# ============================================================================
 # Cleanup handler — kill background jobs on Ctrl-C or exit
 # ============================================================================
 
@@ -155,6 +183,8 @@ cleanup() {
         scp $SSH_OPTS "$JETSON_HOST:~/almondmatcha_poc/softirq_jetson.csv" \
             "$RUN_DIR/softirq_jetson.csv"                         2>/dev/null || true
     }
+    # Stop ROS2 node sessions on all machines
+    stop_ros2_nodes
     # Close SSH control sockets
     ssh $SSH_OPTS -O exit "$RPI_HOST"    2>/dev/null || true
     ssh $SSH_OPTS -O exit "$JETSON_HOST" 2>/dev/null || true
@@ -841,6 +871,9 @@ stop_and_collect() {
                             || warn "  RPi pull had errors — check files"
     wait "$JETSON_PULL_PID" && ok "  Jetson: net-stats + latency + logs pulled" \
                             || warn "  Jetson pull had errors — check files"
+
+    # ── Stop ROS2 node sessions on all machines ──────────────────────────────
+    stop_ros2_nodes
 
     # ── Close SSH control sockets ────────────────────────────────────────────
     ssh $SSH_OPTS -O exit "$RPI_HOST"    2>/dev/null || true
