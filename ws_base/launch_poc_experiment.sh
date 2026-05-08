@@ -140,6 +140,21 @@ cleanup() {
         bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh" 2>/dev/null || true
     LOCAL_DEST_CSV="$RUN_DIR/latency_jetson_d6.csv"  TARGET_HOST="$JETSON_HOST" TARGET_LABEL=jetson_d6  SSH_OPTS="$SSH_OPTS" \
         bash "$TOOLS_DIR/tracing/stop_and_collect_trace.sh" 2>/dev/null || true
+    # Pull SBC data even on interrupt (best effort — files may be partial)
+    [[ -n "$RUN_DIR" ]] && {
+        scp $SSH_OPTS "$RPI_HOST:~/ros2_traces/net_stats_rpi.csv" \
+            "$RUN_DIR/net_stats_rpi.csv"                          2>/dev/null || true
+        scp $SSH_OPTS "$RPI_HOST:~/almondmatcha_poc/cpu_rpi.csv" \
+            "$RUN_DIR/cpu_rpi.csv"                                2>/dev/null || true
+        scp $SSH_OPTS "$RPI_HOST:~/almondmatcha_poc/softirq_rpi.csv" \
+            "$RUN_DIR/softirq_rpi.csv"                            2>/dev/null || true
+        scp $SSH_OPTS "$JETSON_HOST:~/ros2_traces/net_stats_jetson.csv" \
+            "$RUN_DIR/net_stats_jetson.csv"                       2>/dev/null || true
+        scp $SSH_OPTS "$JETSON_HOST:~/almondmatcha_poc/cpu_jetson_tegrastats.txt" \
+            "$RUN_DIR/cpu_jetson_tegrastats.txt"                  2>/dev/null || true
+        scp $SSH_OPTS "$JETSON_HOST:~/almondmatcha_poc/softirq_jetson.csv" \
+            "$RUN_DIR/softirq_jetson.csv"                         2>/dev/null || true
+    }
     # Stop net-stats collectors on SBCs (prevent orphaned processes)
     ssh $SSH_OPTS "$RPI_HOST"    "pkill -f 'collect_net_stats' 2>/dev/null || true" 2>/dev/null || true
     ssh $SSH_OPTS "$JETSON_HOST" "pkill -f 'collect_net_stats' 2>/dev/null || true" 2>/dev/null || true
@@ -552,7 +567,7 @@ start_net_collectors() {
     # the shell from waiting for or signalling the child on exit.
     remote_start_net() {
         local host="$1" out="$2" log_f="$3" pid_f="$4"
-        # -T: no PTY → SSH closes as soon as remote shell exits (no PTY to keep open)
+        # -T:no PTY → SSH closes as soon as remote shell exits (no PTY to keep open)
         # setsid: child gets its own session + no controlling terminal at all
         # disown: removes job from shell table before exit (belt and suspenders)
         ssh -T $SSH_OPTS "$host" "
