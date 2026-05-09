@@ -179,7 +179,7 @@ for fname, src_label in [("stm32_chassis.csv","stm32_chassis"),
             for metric in ("heap_used","heap_max","heap_free","alloc_fail",
                            "cpu_busy_pct","cpu_idle_pct",
                            "stack_peak_b","stack_min_free_b",
-                           "udp_recv","udp_drop","udp_sent","eth_miss",
+                           "udp_drop_pct","eth_miss",
                            "stack_free"):  # stack_free: legacy STM32_MEM field
                 if row.get(metric):
                     try:
