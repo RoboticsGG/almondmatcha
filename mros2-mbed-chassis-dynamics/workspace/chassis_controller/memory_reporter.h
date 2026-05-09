@@ -95,7 +95,6 @@ static bool             _cpu_first = true;
 #if _MR_LWIP_STATS
 static uint32_t _udp_recv_prev = 0;
 static uint32_t _udp_drop_prev = 0;
-static uint32_t _udp_sent_prev = 0;
 #endif
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -155,20 +154,24 @@ void _mr_task()
         _cpu_first = false;
 #endif
 
-        // ── 4. lwIP UDP delta stats (packets since last interval) ─────────────
-        // udp_drop > 0 means the IP stack received a UDP datagram but had no
-        // matching socket / could not queue it — typically a buffer overrun.
-        unsigned long udp_recv = 0, udp_drop = 0, udp_sent = 0;
+        // ── 4. lwIP UDP drop rate % over last interval ───────────────────────────
+        // udp_drop_pct = drop_delta / (recv_delta + drop_delta) * 100
+        // recv = delivered to a socket; drop = no socket / buffer full.
+        // Total incoming UDP seen by lwIP = recv + drop.
+        // 0 when no UDP traffic this interval; 100 means every datagram dropped.
+        unsigned udp_drop_pct = 0;
 #if _MR_LWIP_STATS
-        uint32_t r_now = (uint32_t)lwip_stats.udp.recv;
-        uint32_t d_now = (uint32_t)lwip_stats.udp.drop;
-        uint32_t s_now = (uint32_t)lwip_stats.udp.xmit;   // field is xmit, not sent
-        udp_recv = (unsigned long)(r_now - _udp_recv_prev);
-        udp_drop = (unsigned long)(d_now - _udp_drop_prev);
-        udp_sent = (unsigned long)(s_now - _udp_sent_prev);
-        _udp_recv_prev = r_now;
-        _udp_drop_prev = d_now;
-        _udp_sent_prev = s_now;
+        {
+            uint32_t r_now   = (uint32_t)lwip_stats.udp.recv;
+            uint32_t d_now   = (uint32_t)lwip_stats.udp.drop;
+            uint32_t r_delta = r_now - _udp_recv_prev;
+            uint32_t d_delta = d_now - _udp_drop_prev;
+            uint32_t total   = r_delta + d_delta;
+            if (total > 0)
+                udp_drop_pct = (unsigned)((d_delta * 100U) / total);
+            _udp_recv_prev = r_now;
+            _udp_drop_prev = d_now;
+        }
 #endif
 
         // ── 5. ETH DMA hardware missed-frame counter (read auto-clears) ───────
@@ -193,14 +196,14 @@ void _mr_task()
             "\"heap_used\":%lu,\"heap_max\":%lu,\"heap_free\":%lu,\"alloc_fail\":%lu,"
             "\"cpu_busy_pct\":%u,\"cpu_idle_pct\":%u,"
             "\"stack_peak_b\":%lu,\"stack_min_free_b\":%lu,"
-            "\"udp_recv\":%lu,\"udp_drop\":%lu,\"udp_sent\":%lu,"
+            "\"udp_drop_pct\":%u,"
             "\"eth_miss\":%lu}\r\n",
             _mr_node_name,
             ts_ms,
             heap_used, heap_max, heap_free, alloc_fail,
             cpu_busy_pct, cpu_idle_pct,
             stack_peak_b, stack_min_free_b,
-            udp_recv, udp_drop, udp_sent,
+            udp_drop_pct,
             eth_miss);
 
         if (len > 0 && len < (int)sizeof(buf)) {

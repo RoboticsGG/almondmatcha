@@ -70,9 +70,7 @@ CSV_FIELDS = [
     "stack_peak_b",
     "stack_min_free_b",
     # UDP / Ethernet (STM32_STATS only)
-    "udp_recv",
-    "udp_drop",
-    "udp_sent",
+    "udp_drop_pct",
     "eth_miss",
     # Legacy field present in STM32_MEM only
     "stack_free",
@@ -149,9 +147,7 @@ def read_serial_thread(port: str, label: str, rows: list, lock: threading.Lock,
                 "stack_peak_b":    data.get("stack_peak_b", ""),
                 "stack_min_free_b":data.get("stack_min_free_b", ""),
                 # UDP / Ethernet
-                "udp_recv":        data.get("udp_recv", ""),
-                "udp_drop":        data.get("udp_drop", ""),
-                "udp_sent":        data.get("udp_sent", ""),
+                "udp_drop_pct":    data.get("udp_drop_pct", ""),
                 "eth_miss":        data.get("eth_miss", ""),
                 # Legacy (STM32_MEM only)
                 "stack_free":      data.get("stack_free", ""),
@@ -160,18 +156,18 @@ def read_serial_thread(port: str, label: str, rows: list, lock: threading.Lock,
                 rows.append(row)
 
             # Print a brief live summary
-            fail  = data.get("alloc_fail", 0) or 0
-            used  = data.get("heap_used",  0) or 0
-            free  = data.get("heap_free",  0) or 0
-            cpu   = data.get("cpu_busy_pct", "?")  # empty on legacy rows
-            drop  = data.get("udp_drop",    0) or 0
-            emiss = data.get("eth_miss",    0) or 0
-            flag  = "  *** ALLOC FAIL ***" if fail else ""
-            drop_flag = f"  *** UDP DROP={drop} ***" if drop else ""
+            fail     = data.get("alloc_fail", 0) or 0
+            used     = data.get("heap_used",  0) or 0
+            free     = data.get("heap_free",  0) or 0
+            cpu      = data.get("cpu_busy_pct", "?")
+            udp_drop = data.get("udp_drop_pct", 0) or 0
+            emiss    = data.get("eth_miss",    0) or 0
+            flag       = "  *** ALLOC FAIL ***" if fail else ""
+            drop_flag  = f"  *** UDP DROP={udp_drop}% ***" if udp_drop else ""
             emiss_flag = f"  *** ETH MISS={emiss} ***" if emiss else ""
             print(f"  [{label}] ts={data.get('ts_ms'):6}ms  "
                   f"heap={used//1024:4d}KB/{free//1024}KB free  "
-                  f"cpu={cpu}%  udp_drop={drop}  eth_miss={emiss}"
+                  f"cpu={cpu}%  udp_drop={udp_drop}%  eth_miss={emiss}"
                   f"{flag}{drop_flag}{emiss_flag}")
 
     ser.close()
