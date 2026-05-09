@@ -162,7 +162,7 @@ void _mr_task()
 #if _MR_LWIP_STATS
         uint32_t r_now = (uint32_t)lwip_stats.udp.recv;
         uint32_t d_now = (uint32_t)lwip_stats.udp.drop;
-        uint32_t s_now = (uint32_t)lwip_stats.udp.sent;
+        uint32_t s_now = (uint32_t)lwip_stats.udp.xmit;   // field is xmit, not sent
         udp_recv = (unsigned long)(r_now - _udp_recv_prev);
         udp_drop = (unsigned long)(d_now - _udp_drop_prev);
         udp_sent = (unsigned long)(s_now - _udp_sent_prev);
