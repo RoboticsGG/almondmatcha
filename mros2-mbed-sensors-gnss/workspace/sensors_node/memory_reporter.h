@@ -95,6 +95,7 @@ static bool             _cpu_first = true;
 #if _MR_LWIP_STATS
 static uint32_t _udp_recv_prev = 0;
 static uint32_t _udp_drop_prev = 0;
+static uint32_t _udp_xmit_prev = 0;
 #endif
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -133,8 +134,11 @@ void _mr_task()
         if (stack_min_free_b == 0xFFFFFFFFUL) stack_min_free_b = 0;
 
         // ── 3. CPU busy % (delta over the reporting interval) ─────────────────
-        unsigned cpu_busy_pct = 0;
-        unsigned cpu_idle_pct = 100;
+        // Reported as float with 1 decimal so sub-1% usage is visible.
+        // A 4 Hz node doing ~1 ms work per 250 ms cycle is genuinely ~0.4%
+        // busy — integer math would always round that down to 0.
+        float cpu_busy_pct = 0.0f;
+        float cpu_idle_pct = 100.0f;
 #ifdef MBED_CPU_STATS_ENABLED
         mbed_stats_cpu_t cpu_now;
         mbed_stats_cpu_get(&cpu_now);
@@ -146,31 +150,35 @@ void _mr_task()
             if (d_up > 0) {
                 uint64_t d_off = d_idle + d_sleep + d_deep;
                 if (d_off > d_up) d_off = d_up;
-                cpu_busy_pct = (unsigned)((100ULL * (d_up - d_off)) / d_up);
-                cpu_idle_pct = (unsigned)(100U - cpu_busy_pct);
+                cpu_busy_pct = (float)(100.0 * (double)(d_up - d_off) / (double)d_up);
+                cpu_idle_pct = 100.0f - cpu_busy_pct;
             }
         }
         _cpu_prev  = cpu_now;
         _cpu_first = false;
 #endif
 
-        // ── 4. lwIP UDP drop rate % over last interval ───────────────────────────
-        // udp_drop_pct = drop_delta / (recv_delta + drop_delta) * 100
-        // recv = delivered to a socket; drop = no socket / buffer full.
-        // Total incoming UDP seen by lwIP = recv + drop.
-        // 0 when no UDP traffic this interval; 100 means every datagram dropped.
+        // ── 4. lwIP UDP counters (delta since last interval) ─────────────────────
+        // udp_recv:     datagrams delivered to a socket (incoming DDS traffic)
+        // udp_xmit:     datagrams transmitted by this node (published topics)
+        // udp_drop_pct: % of incoming (recv+drop) that were discarded
+        unsigned long udp_recv = 0, udp_xmit = 0;
         unsigned udp_drop_pct = 0;
 #if _MR_LWIP_STATS
         {
             uint32_t r_now   = (uint32_t)lwip_stats.udp.recv;
             uint32_t d_now   = (uint32_t)lwip_stats.udp.drop;
+            uint32_t x_now   = (uint32_t)lwip_stats.udp.xmit;
             uint32_t r_delta = r_now - _udp_recv_prev;
             uint32_t d_delta = d_now - _udp_drop_prev;
             uint32_t total   = r_delta + d_delta;
             if (total > 0)
                 udp_drop_pct = (unsigned)((d_delta * 100U) / total);
+            udp_recv = (unsigned long)r_delta;
+            udp_xmit = (unsigned long)(x_now - _udp_xmit_prev);
             _udp_recv_prev = r_now;
             _udp_drop_prev = d_now;
+            _udp_xmit_prev = x_now;
         }
 #endif
 
@@ -194,16 +202,16 @@ void _mr_task()
         int len = snprintf(buf, sizeof(buf),
             "\r\n{\"type\":\"STM32_STATS\",\"node\":\"%s\",\"ts_ms\":%d,"
             "\"heap_used\":%lu,\"heap_max\":%lu,\"heap_free\":%lu,\"alloc_fail\":%lu,"
-            "\"cpu_busy_pct\":%u,\"cpu_idle_pct\":%u,"
+            "\"cpu_busy_pct\":%.1f,\"cpu_idle_pct\":%.1f,"
             "\"stack_peak_b\":%lu,\"stack_min_free_b\":%lu,"
-            "\"udp_drop_pct\":%u,"
+            "\"udp_recv\":%lu,\"udp_xmit\":%lu,\"udp_drop_pct\":%u,"
             "\"eth_miss\":%lu}\r\n",
             _mr_node_name,
             ts_ms,
             heap_used, heap_max, heap_free, alloc_fail,
-            cpu_busy_pct, cpu_idle_pct,
+            (double)cpu_busy_pct, (double)cpu_idle_pct,
             stack_peak_b, stack_min_free_b,
-            udp_drop_pct,
+            udp_recv, udp_xmit, udp_drop_pct,
             eth_miss);
 
         if (len > 0 && len < (int)sizeof(buf)) {
