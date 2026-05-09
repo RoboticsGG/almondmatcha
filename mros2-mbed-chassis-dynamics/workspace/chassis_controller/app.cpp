@@ -190,12 +190,14 @@ void imu_reader_task() {
             uint8_t cmd_spd   = rover_cmd.motor_speed;
             float   cmd_steer = rover_cmd.steering_angle;
             rover_cmd_mutex.unlock();
+            mr_serial_lock();
             printf("\r\n[HB#%d] IMU Accel(X:%ld Y:%ld Z:%ld) Gyro(X:%ld Y:%ld Z:%ld) Cmd(spd:%u steer:%.1f)",
                    hb_ts,
                    (long)imu_msg.accel_x, (long)imu_msg.accel_y, (long)imu_msg.accel_z,
                    (long)imu_msg.gyro_x,  (long)imu_msg.gyro_y,  (long)imu_msg.gyro_z,
                    (unsigned)cmd_spd, (double)cmd_steer);
             fflush(stdout);
+            mr_serial_unlock();
         }
         
         // IMU polling rate
