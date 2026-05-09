@@ -79,7 +79,16 @@
 // Max threads scanned for stack high-water mark (app uses ≤12; 16 is safe).
 #define _MR_MAX_THREADS 16
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Serial output mutex ───────────────────────────────────────────────────────
+// Shared by the memory reporter thread and the application heartbeat printf so
+// their output never interleaves.  App code calls mr_serial_lock / _unlock.
+// Defined outside the anonymous namespace so the inline helpers are visible.
+static Mutex _mr_stdout_mtx;
+
+/** Acquire the serial-output mutex before a printf/fwrite block. */
+inline void mr_serial_lock()   { _mr_stdout_mtx.lock(); }
+/** Release the serial-output mutex after a printf/fwrite block. */
+inline void mr_serial_unlock() { _mr_stdout_mtx.unlock(); }
 namespace {
 
 static char   _mr_node_name[MEM_REPORTER_NODE_NAME_MAX] = "stm32";
@@ -134,23 +143,21 @@ void _mr_task()
         if (stack_min_free_b == 0xFFFFFFFFUL) stack_min_free_b = 0;
 
         // ── 3. CPU busy % (delta over the reporting interval) ─────────────────
-        // Reported as float with 1 decimal so sub-1% usage is visible.
-        // A 4 Hz node doing ~1 ms work per 250 ms cycle is genuinely ~0.4%
-        // busy — integer math would always round that down to 0.
+        // mbed_time_idle() == sleep_time + deep_sleep_time (confirmed in
+        // mbed-os/platform/source/mbed_power_mgmt.c).  Do NOT add sleep_time
+        // and deep_sleep_time again — that would triple-count them.
+        // busy = uptime - idle_time  (idle_time already covers all sleep modes)
         float cpu_busy_pct = 0.0f;
         float cpu_idle_pct = 100.0f;
 #ifdef MBED_CPU_STATS_ENABLED
         mbed_stats_cpu_t cpu_now;
         mbed_stats_cpu_get(&cpu_now);
         if (!_cpu_first) {
-            uint64_t d_up    = cpu_now.uptime         - _cpu_prev.uptime;
-            uint64_t d_idle  = cpu_now.idle_time       - _cpu_prev.idle_time;
-            uint64_t d_sleep = cpu_now.sleep_time      - _cpu_prev.sleep_time;
-            uint64_t d_deep  = cpu_now.deep_sleep_time - _cpu_prev.deep_sleep_time;
+            uint64_t d_up   = cpu_now.uptime    - _cpu_prev.uptime;
+            uint64_t d_idle = cpu_now.idle_time - _cpu_prev.idle_time;
             if (d_up > 0) {
-                uint64_t d_off = d_idle + d_sleep + d_deep;
-                if (d_off > d_up) d_off = d_up;
-                cpu_busy_pct = (float)(100.0 * (double)(d_up - d_off) / (double)d_up);
+                if (d_idle > d_up) d_idle = d_up;
+                cpu_busy_pct = (float)(100.0 * (double)(d_up - d_idle) / (double)d_up);
                 cpu_idle_pct = 100.0f - cpu_busy_pct;
             }
         }
@@ -202,7 +209,7 @@ void _mr_task()
         int len = snprintf(buf, sizeof(buf),
             "\r\n{\"type\":\"STM32_STATS\",\"node\":\"%s\",\"ts_ms\":%d,"
             "\"heap_used\":%lu,\"heap_max\":%lu,\"heap_free\":%lu,\"alloc_fail\":%lu,"
-            "\"cpu_busy_pct\":%.1f,\"cpu_idle_pct\":%.1f,"
+            "\"cpu_busy_pct\":%.2f,\"cpu_idle_pct\":%.2f,"
             "\"stack_peak_b\":%lu,\"stack_min_free_b\":%lu,"
             "\"udp_recv\":%lu,\"udp_xmit\":%lu,\"udp_drop_pct\":%u,"
             "\"eth_miss\":%lu}\r\n",
@@ -215,8 +222,10 @@ void _mr_task()
             eth_miss);
 
         if (len > 0 && len < (int)sizeof(buf)) {
+            _mr_stdout_mtx.lock();
             fwrite(buf, 1, (size_t)len, stdout);
             fflush(stdout);
+            _mr_stdout_mtx.unlock();
         }
 
         ThisThread::sleep_for(chrono::milliseconds(MEM_REPORT_INTERVAL_MS));

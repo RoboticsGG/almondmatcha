@@ -295,11 +295,13 @@ int main()
     int hb_ts   = (int)chrono::duration_cast<chrono::milliseconds>(
                            hb_timer.elapsed_time()).count();
     int nmea_len = (int)strlen(nmea_buf);
+    mr_serial_lock();
     printf("\r\n[HB#%d] Enc(A:%ld B:%ld) Pwr(%.2fV %.2fA) GNSS[%d]:%s",
            hb_ts, (long)enc_A, (long)enc_B,
            (double)vbus, (double)curr,
            nmea_len, nmea_buf);
     fflush(stdout);
+    mr_serial_unlock();
 
     // Main loop runs at MAIN_LOOP_PERIOD_MS (4 Hz)
     ThisThread::sleep_for(chrono::milliseconds(MAIN_LOOP_PERIOD_MS));
