@@ -132,12 +132,12 @@ void imu_reader_task() {
     int32_t local_accel[3] = {0};
     int32_t local_gyro[3] = {0};
     uint32_t sample_count = 0;
+    uint32_t hb_pub_count = 0;  // heartbeat printed every 5th publish (10 Hz publish → 2 Hz HB)
     bool mem_reporter_started = false;
 
     // Uptime timer for heartbeat line timestamps.
-    // Printed every IMU publish cycle (1 Hz) so the raw serial log has
-    // human-readable status interleaved with the 1 Hz STM32_STATS JSON.
-    // The serial collector ignores [HB#...] lines — only STM32_STATS is saved.
+    // Printed at 2 Hz (every 5th IMU publish at 10 Hz) interleaved with the
+    // 1 Hz STM32_STATS JSON.  The serial collector ignores [HB#...] lines.
     Timer hb_timer;
     hb_timer.start();
 
@@ -179,25 +179,26 @@ void imu_reader_task() {
                 MROS2_INFO("Memory reporter started (1s interval)");
             }
 
-            // Heartbeat: human-readable status line at each IMU publish (1 Hz).
-            // Format: [HB#<uptime_ms>] IMU Accel(X:.. Y:.. Z:..) Gyro(X:.. Y:.. Z:..) Cmd(spd:.. steer:..)
+            // Heartbeat: 2 Hz (every 5th IMU publish, IMU publishes at 10 Hz).
             // The serial collector ignores [HB#...] lines — only STM32_STATS JSON
             // is captured to CSV; heartbeats go to the raw serial log only.
-            int hb_ts = (int)chrono::duration_cast<chrono::milliseconds>(
-                                 hb_timer.elapsed_time()).count();
-            // Snapshot latest motor command (best effort, non-blocking)
-            rover_cmd_mutex.lock();
-            uint8_t cmd_spd   = rover_cmd.motor_speed;
-            float   cmd_steer = rover_cmd.steering_angle;
-            rover_cmd_mutex.unlock();
-            mr_serial_lock();
-            printf("\r\n[HB#%d] IMU Accel(X:%ld Y:%ld Z:%ld) Gyro(X:%ld Y:%ld Z:%ld) Cmd(spd:%u steer:%.1f)",
-                   hb_ts,
-                   (long)imu_msg.accel_x, (long)imu_msg.accel_y, (long)imu_msg.accel_z,
-                   (long)imu_msg.gyro_x,  (long)imu_msg.gyro_y,  (long)imu_msg.gyro_z,
-                   (unsigned)cmd_spd, (double)cmd_steer);
-            fflush(stdout);
-            mr_serial_unlock();
+            if ((hb_pub_count++ % 5) == 0) {
+                int hb_ts = (int)chrono::duration_cast<chrono::milliseconds>(
+                                     hb_timer.elapsed_time()).count();
+                // Snapshot latest motor command (best effort, non-blocking)
+                rover_cmd_mutex.lock();
+                uint8_t cmd_spd   = rover_cmd.motor_speed;
+                float   cmd_steer = rover_cmd.steering_angle;
+                rover_cmd_mutex.unlock();
+                mr_serial_lock();
+                printf("\r\n[HB#%d] IMU Accel(X:%ld Y:%ld Z:%ld) Gyro(X:%ld Y:%ld Z:%ld) Cmd(spd:%u steer:%.1f)",
+                       hb_ts,
+                       (long)imu_msg.accel_x, (long)imu_msg.accel_y, (long)imu_msg.accel_z,
+                       (long)imu_msg.gyro_x,  (long)imu_msg.gyro_y,  (long)imu_msg.gyro_z,
+                       (unsigned)cmd_spd, (double)cmd_steer);
+                fflush(stdout);
+                mr_serial_unlock();
+            }
         }
         
         // IMU polling rate

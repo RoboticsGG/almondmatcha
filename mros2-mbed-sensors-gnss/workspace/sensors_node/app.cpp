@@ -244,10 +244,11 @@ int main()
   // Main loop focuses on aggregating data from the three independent tasks
   // and publishing to ROS2 at 4 Hz (250ms interval).
   bool mem_reporter_started = false;
+  uint32_t hb_iter = 0;  // heartbeat printed every 2nd loop iteration (2 Hz)
 
   // Uptime timer used for heartbeat line timestamps.
-  // Printed every loop iteration so the raw serial log has human-readable
-  // status at 4 Hz interleaved with the 1 Hz STM32_STATS JSON lines.
+  // Printed at 2 Hz (every other 250 ms loop tick) interleaved with the
+  // 1 Hz STM32_STATS JSON lines.
   // The serial collector ignores [HB#...] lines — only STM32_STATS is saved.
   Timer hb_timer;
   hb_timer.start();
@@ -288,20 +289,22 @@ int main()
       MROS2_INFO("Memory reporter started (1s interval)");
     }
 
-    // Heartbeat: human-readable status line printed every loop iteration (4 Hz).
+    // Heartbeat: human-readable status line at 2 Hz (every 2nd loop iteration).
     // Format: [HB#<uptime_ms>] Enc(A:<left> B:<right>) Pwr(<V>V <A>A) GNSS[<len>]:<nmea>
     // The serial collector ignores [HB#...] lines — only STM32_STATS JSON
     // is captured to CSV; heartbeats go to the raw serial log only.
-    int hb_ts   = (int)chrono::duration_cast<chrono::milliseconds>(
-                           hb_timer.elapsed_time()).count();
-    int nmea_len = (int)strlen(nmea_buf);
-    mr_serial_lock();
-    printf("\r\n[HB#%d] Enc(A:%ld B:%ld) Pwr(%.2fV %.2fA) GNSS[%d]:%s",
-           hb_ts, (long)enc_A, (long)enc_B,
-           (double)vbus, (double)curr,
-           nmea_len, nmea_buf);
-    fflush(stdout);
-    mr_serial_unlock();
+    if ((hb_iter++ % 2) == 0) {
+      int hb_ts   = (int)chrono::duration_cast<chrono::milliseconds>(
+                             hb_timer.elapsed_time()).count();
+      int nmea_len = (int)strlen(nmea_buf);
+      mr_serial_lock();
+      printf("\r\n[HB#%d] Enc(A:%ld B:%ld) Pwr(%.2fV %.2fA) GNSS[%d]:%s",
+             hb_ts, (long)enc_A, (long)enc_B,
+             (double)vbus, (double)curr,
+             nmea_len, nmea_buf);
+      fflush(stdout);
+      mr_serial_unlock();
+    }
 
     // Main loop runs at MAIN_LOOP_PERIOD_MS (4 Hz)
     ThisThread::sleep_for(chrono::milliseconds(MAIN_LOOP_PERIOD_MS));
