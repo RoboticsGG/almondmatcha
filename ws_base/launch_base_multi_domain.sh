@@ -50,7 +50,7 @@ main() {
     tmux select-pane -t $SESSION_NAME:0.0 -T "MISSION COMMAND [D5]"
     tmux send-keys -t $SESSION_NAME:0.0 "cd $WS_PATH && source $HOME/almondmatcha/common_ifaces/install/setup.bash && source install/setup.bash && export ROS_DOMAIN_ID=5 && export FASTRTPS_DEFAULT_PROFILES_FILE=$WS_PATH/fastdds_base.xml" C-m
     tmux send-keys -t $SESSION_NAME:0.0 "clear && echo -e '\\e[1;36m>>> MISSION COMMAND [D5] <<<\\e[0m'" C-m
-    tmux send-keys -t $SESSION_NAME:0.0 "ros2 run mission_control mission_command_node --ros-args --params-file src/mission_control/config/params.yaml" C-m
+    tmux send-keys -t $SESSION_NAME:0.0 "ros2 run mission_control mission_command_node --ros-args --params-file ${MISSION_CMD_PARAMS:-src/mission_control/config/params.yaml}" C-m
 
     # Pane 1 (right): Mission Monitoring — D4
     # Subscribes to tpc_telemetry_relay published by mission_monitoring_node_rpi on D4.
@@ -58,7 +58,7 @@ main() {
     tmux select-pane -t $SESSION_NAME:0.1 -T "MISSION MONITORING [D4]"
     tmux send-keys -t $SESSION_NAME:0.1 "cd $WS_PATH && source $HOME/almondmatcha/common_ifaces/install/setup.bash && source install/setup.bash && export ROS_DOMAIN_ID=4" C-m
     tmux send-keys -t $SESSION_NAME:0.1 "clear && echo -e '\\e[1;35m>>> MISSION MONITORING [D4 — telemetry relay] <<<\\e[0m'" C-m
-    tmux send-keys -t $SESSION_NAME:0.1 "ros2 run mission_control mission_monitoring_node_pc" C-m
+    tmux send-keys -t $SESSION_NAME:0.1 "ros2 run mission_control mission_monitoring_node_pc${TELEMETRY_CSV_PATH:+ --ros-args -p csv_path:=${TELEMETRY_CSV_PATH}}" C-m
 
     echo ""
     echo -e "${GREEN}Multi-domain POC session '${SESSION_NAME}' started.${NC}"

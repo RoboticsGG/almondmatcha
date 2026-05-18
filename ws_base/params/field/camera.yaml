@@ -1,0 +1,21 @@
+# Field camera configuration — camera-only, no video fallback
+# Used by launch_poc_field.sh → camera_stream_node and lane_detection_node
+# If the D415 cannot open, the node will log an error and exit.
+# Fix the hardware issue before retrying.
+
+camera_stream:
+  ros__parameters:
+    width: 1280
+    height: 720
+    fps: 30
+    open_cam: false              # Headless: no camera preview (field runs headless)
+    enable_depth: false
+    video_path: ""               # Empty → live D415 only
+    fallback_video: ""           # *** Intentionally empty — field requires real camera ***
+    loop_video: false
+    json_config: ""
+    device_serial: "806312060441"  # Intel RealSense D415
+
+lane_detection:
+  ros__parameters:
+    show_window: false

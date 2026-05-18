@@ -1,0 +1,13 @@
+mission_command_node:
+  ros__parameters:
+    # ── Laboratory / Bench Test Settings ───────────────────────────────────
+    # Edit these before each lab run.  GPS coordinates below point to a safe
+    # indoor target that is never actually reached (lab rover stays on bench).
+
+    rover_spd: 10              # Speed limit 0-100%  (lab: keep low)
+    des_lat: 8.007286          # Target latitude  (Thailand — lab placeholder)
+    des_long: 101.90203        # Target longitude (Thailand — lab placeholder)
+    action_watchdog_timeout_sec: 20.0
+                               # Cancel goal if no feedback for this many seconds
+                               # Feedback arrives every 2 s from gnss_mission_monitor_node
+                               # Minimum safe value: ~6 s (3x feedback period)

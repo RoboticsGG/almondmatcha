@@ -60,11 +60,15 @@ tmux set-option -g pane-active-border-style fg=colour196 # red = POC mode
 # local_monitoring depends on tpc_telemetry_relay from the RPi, so it starts last.
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Resolve params files from env vars (set by POC scripts for lab/field runs)
+_cam_params="${CAMERA_PARAMS_FILE:-src/vision_navigation/config/vision_nav_headless.yaml}"
+_ctrl_params="${CONTROL_PARAMS_FILE:-src/vision_navigation/config/rover_kinematic_control_params.yaml}"
+
 # Pane 0 (left): Camera Stream — D6 (vision localhost, shared memory)
 tmux select-pane -t 0 -T "Camera [D6]"
 tmux send-keys -t $SESSION_NAME:0.0 "$ROS_SRC_D6" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "clear && echo -e '\\e[1;36m>>> [D6] CAMERA STREAM (vision localhost) <<<\\e[0m'" C-m
-tmux send-keys -t $SESSION_NAME:0.0 "ros2 run vision_navigation camera_stream_node --ros-args --params-file src/vision_navigation/config/vision_nav_headless.yaml 2>&1 | tee ~/ros2_traces/poc_camera_stream.log" C-m
+tmux send-keys -t $SESSION_NAME:0.0 "ros2 run vision_navigation camera_stream_node --ros-args --params-file ${_cam_params} 2>&1 | tee ~/ros2_traces/poc_camera_stream.log" C-m
 echo "[$(date +%H:%M:%S)] [1/4] camera_stream_node sent to pane 0 (D6)"
 sleep 3
 
@@ -73,7 +77,7 @@ sleep 3
 tmux select-pane -t 1 -T "Lane_Detect [D6]"
 tmux send-keys -t $SESSION_NAME:0.1 "$ROS_SRC_D6" C-m
 tmux send-keys -t $SESSION_NAME:0.1 "clear && echo -e '\\e[1;32m>>> [D6] LANE DETECTION (vision localhost) <<<\\e[0m'" C-m
-tmux send-keys -t $SESSION_NAME:0.1 "ros2 run vision_navigation lane_detection_node --ros-args --params-file src/vision_navigation/config/vision_nav_headless.yaml 2>&1 | tee ~/ros2_traces/poc_lane_detection.log" C-m
+tmux send-keys -t $SESSION_NAME:0.1 "ros2 run vision_navigation lane_detection_node --ros-args --params-file ${_cam_params} 2>&1 | tee ~/ros2_traces/poc_lane_detection.log" C-m
 echo "[$(date +%H:%M:%S)] [2/4] lane_detection_node sent to pane 1 (D6)"
 sleep 2
 
@@ -84,7 +88,7 @@ sleep 2
 tmux select-pane -t 2 -T "Kinematic_Ctrl [D6→D5]"
 tmux send-keys -t $SESSION_NAME:0.2 "$ROS_SRC_DUAL" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "clear && echo -e '\\e[1;33m>>> [D6→D5] ROVER KINEMATIC CONTROL (dual-context) <<<\\e[0m'" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "ros2 run vision_navigation rover_kinematic_control --ros-args --params-file src/vision_navigation/config/rover_kinematic_control_params.yaml 2>&1 | tee ~/ros2_traces/poc_kinematic_ctrl.log" C-m
+tmux send-keys -t $SESSION_NAME:0.2 "ros2 run vision_navigation rover_kinematic_control --ros-args --params-file ${_ctrl_params} 2>&1 | tee ~/ros2_traces/poc_kinematic_ctrl.log" C-m
 echo "[$(date +%H:%M:%S)] [3/4] rover_kinematic_control sent to pane 2 (D6→D5)"
 sleep 2
 

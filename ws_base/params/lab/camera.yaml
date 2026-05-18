@@ -1,0 +1,20 @@
+# Lab camera configuration — video-file fallback enabled
+# Used by launch_poc_lab.sh → camera_stream_node and lane_detection_node
+
+camera_stream:
+  ros__parameters:
+    width: 1280
+    height: 720
+    fps: 30
+    open_cam: false              # Headless: no camera preview
+    enable_depth: false
+    video_path: ""               # Empty → try D415 first, then fallback_video
+    fallback_video: "/home/yupi/Almond/ros2-jetson-ws/001.mp4"
+                                 # If D415 cannot open, stream from this file (lab only)
+    loop_video: true
+    json_config: ""
+    device_serial: "806312060441"  # Intel RealSense D415
+
+lane_detection:
+  ros__parameters:
+    show_window: false           # Headless: no lane visualization
