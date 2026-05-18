@@ -1,0 +1,20 @@
+# Lab controller gains — conservative, stable for indoor/bench testing
+# Used by launch_poc_lab.sh → rover_kinematic_control
+
+rover_kinematic_control:
+  ros__parameters:
+    # Error weights (combined error: e = k_e1*theta + k_e2*b)
+    k_e1: 1.0                    # Weight on heading error (theta)
+    k_e2: 0.1                    # Weight on lateral offset (b)
+
+    # PID gains (control law: u = kp*e + ki*∫e*dt + kd*de/dt)
+    k_p: 4.0                     # Proportional gain
+    k_i: 0.01                    # Integral gain
+    k_d: 0.01                    # Derivative gain
+
+    # Filtering
+    ema_alpha: 0.05              # Exponential moving average smoothing (0-1)
+
+    # Output saturation
+    steer_max_deg: 60.0          # Maximum steering angle (±degrees)
+    steer_when_lost: 0.0         # Steering when lane not detected

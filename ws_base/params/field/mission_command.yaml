@@ -1,0 +1,12 @@
+mission_command_node:
+  ros__parameters:
+    # ── On-Field Test Settings ──────────────────────────────────────────────
+    # *** EDIT THESE BEFORE EACH FIELD RUN ***
+    # Verify GPS coordinates against the physical test area map before deployment.
+
+    rover_spd: 15              # Speed limit 0-100%  (field: moderate, increase after stability confirmed)
+    des_lat: 8.007286          # *** Target latitude  — UPDATE with actual waypoint ***
+    des_long: 101.90203        # *** Target longitude — UPDATE with actual waypoint ***
+    action_watchdog_timeout_sec: 30.0
+                               # Longer timeout for field — Wi-Fi may drop briefly
+                               # Cancel goal if no feedback for this many seconds

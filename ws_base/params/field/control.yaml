@@ -1,0 +1,24 @@
+# Field controller gains — *** EDIT BEFORE FIELD RUN ***
+# Used by launch_poc_field.sh → rover_kinematic_control
+# Start with these defaults, tune iteratively across field runs.
+
+rover_kinematic_control:
+  ros__parameters:
+    # Error weights (combined error: e = k_e1*theta + k_e2*b)
+    k_e1: 1.0                    # Weight on heading error (theta)
+    k_e2: 0.1                    # Weight on lateral offset (b)
+
+    # PID gains — tuning notes:
+    #   k_p too high → oscillation on straight lane
+    #   k_i too high → overshoot at curve entry
+    #   k_d too high → noise amplification on rough terrain
+    k_p: 4.0                     # Proportional gain  (start here, adjust ±1)
+    k_i: 0.01                    # Integral gain
+    k_d: 0.01                    # Derivative gain
+
+    # Filtering — increase on rough terrain to smooth sensor noise
+    ema_alpha: 0.05              # Exponential moving average (0.01=heavy smooth, 0.3=fast react)
+
+    # Output saturation
+    steer_max_deg: 60.0          # Maximum steering angle (±degrees)
+    steer_when_lost: 0.0         # Steering when lane not detected (0=straight)

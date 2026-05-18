@@ -355,7 +355,9 @@ ws_base/
 ├── build_inc.sh                # Incremental build
 ├── launch_base_single_domain.sh  # POC single-domain launch
 ├── launch_base_tmux.sh
-├── launch_poc_experiment.sh    # Full automated POC run (collectors + nodes + CSV pull)
+├── launch_poc_lab.sh            # Laboratory POC run (camera fallback, verbose)
+├── launch_poc_field.sh          # On-field POC run (live camera, Ctrl-C emergency stop)
+├── launch_poc_experiment.sh    # Legacy POC script (superseded by lab/field split)
 ├── fastdds_base.xml            # FastDDS profile pinned to 192.168.1.4
 ├── tools/
 │   ├── monitoring/             # collect_topic_bw.py, collect_net_stats.py

@@ -1,14 +1,18 @@
 /**
  * mission_monitoring_node_pc.cpp
- * Workspace:  ws_base  |  Package: mission_control  |  Domain: 4
+ * Workspace:  ws_base  |  Package: mission_control  |  Domain: 4/5
  *
  * Purpose:
  *   Telemetry display node on the base station PC.
- *   Subscribes only to the pre-aggregated TelemetryRelay from the RPi
- *   (Domain 4). No direct Domain 5 subscriptions — avoids STM32 memory cost.
+ *   Subscribes only to the pre-aggregated TelemetryRelay from the RPi.
+ *   Writes a CSV log of every received telemetry message for post-run analysis.
  *
- * Subscribed Topics (Domain 4):
+ * Subscribed Topics:
  *   /tpc_telemetry_relay (msgs_ifaces/TelemetryRelay) - unified rover state at 5 Hz
+ *
+ * Parameters:
+ *   csv_path (string, default ""): path for the telemetry CSV.
+ *     If empty, auto-generates ~/almondmatcha_poc/telemetry_relay_YYYYMMDD_HHMMSS.csv
  *
  * Author: AlmondMatcha Rover Team
  * Date:   February 27, 2026
@@ -17,10 +21,53 @@
 #include "rclcpp/rclcpp.hpp"
 #include "msgs_ifaces/msg/telemetry_relay.hpp"
 #include <iomanip>
+#include <fstream>
+#include <sstream>
+#include <chrono>
+#include <ctime>
+#include <cstdlib>
+#include <sys/stat.h>
 
 class MissionMonitoringNodePc : public rclcpp::Node {
 public:
     MissionMonitoringNodePc() : Node("mission_monitoring_node_pc") {
+        // CSV path parameter — override to write directly to a run directory
+        this->declare_parameter("csv_path", std::string(""));
+        std::string csv_path = this->get_parameter("csv_path").as_string();
+
+        if (csv_path.empty()) {
+            // Auto-generate path: ~/almondmatcha_poc/telemetry_relay_YYYYMMDD_HHMMSS.csv
+            const char* home = std::getenv("HOME");
+            std::string dir = std::string(home ? home : "/tmp") + "/almondmatcha_poc";
+            mkdir(dir.c_str(), 0755);
+            auto now = std::chrono::system_clock::now();
+            auto t   = std::chrono::system_clock::to_time_t(now);
+            struct tm tm_buf;
+            localtime_r(&t, &tm_buf);
+            char ts[32];
+            strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", &tm_buf);
+            csv_path = dir + "/telemetry_relay_" + ts + ".csv";
+        }
+
+        csv_file_.open(csv_path, std::ios::out | std::ios::trunc);
+        if (csv_file_.is_open()) {
+            // Write CSV header
+            csv_file_ << "wall_time,ros_stamp_sec,ros_stamp_nsec,"
+                      << "mission_active,dist_km,"
+                      << "ublox_valid,ublox_lat,ublox_lon,ublox_alt_m,ublox_fix,ublox_acc_cm,ublox_sats,"
+                      << "spresense_valid,spresense_lat,spresense_lon,spresense_alt_m,spresense_sats,"
+                      << "chassis_cmd_valid,cmd_spd_l,cmd_spd_r,"
+                      << "chassis_sensors_valid,enc_left,enc_right,voltage,current,power_w,"
+                      << "chassis_imu_valid,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,"
+                      << "steering_valid,steering_cmd,"
+                      << "lane_valid,lane_detected,lane_theta,lane_b,"
+                      << "dest_valid,dest_lat,dest_lon\n";
+            csv_file_.flush();
+            RCLCPP_INFO(this->get_logger(), "Telemetry CSV: %s", csv_path.c_str());
+        } else {
+            RCLCPP_WARN(this->get_logger(), "Cannot open CSV path: %s — CSV logging disabled", csv_path.c_str());
+        }
+
         // Subscribe to aggregated telemetry relay ONLY
         sub_telemetry_relay_ = this->create_subscription<msgs_ifaces::msg::TelemetryRelay>(
             "tpc_telemetry_relay", 10,
@@ -33,8 +80,59 @@ public:
         RCLCPP_INFO(this->get_logger(), "=========================================================");
     }
 
+    ~MissionMonitoringNodePc() {
+        if (csv_file_.is_open()) {
+            csv_file_.flush();
+            csv_file_.close();
+        }
+    }
+
 private:
+    std::ofstream csv_file_;
+
+    void write_csv_row(const msgs_ifaces::msg::TelemetryRelay::SharedPtr& msg) {
+        if (!csv_file_.is_open()) return;
+        auto now = std::chrono::system_clock::now();
+        auto wall_sec = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now.time_since_epoch()).count() / 1000.0;
+        csv_file_ << std::fixed << std::setprecision(3) << wall_sec << ","
+                  << msg->header.stamp.sec << "," << msg->header.stamp.nanosec << ","
+                  << (msg->mission_active ? 1 : 0) << ","
+                  << std::setprecision(6) << msg->distance_remaining_km << ","
+                  << (msg->ublox_valid ? 1 : 0) << ","
+                  << std::setprecision(8) << msg->ublox_latitude << ","
+                  << msg->ublox_longitude << ","
+                  << std::setprecision(3) << msg->ublox_altitude << ","
+                  << msg->ublox_fix_quality << ","
+                  << std::setprecision(1) << msg->ublox_centimeter_error << ","
+                  << msg->ublox_satellites << ","
+                  << (msg->spresense_valid ? 1 : 0) << ","
+                  << std::setprecision(6) << msg->spresense_latitude << ","
+                  << msg->spresense_longitude << ","
+                  << std::setprecision(3) << msg->spresense_altitude << ","
+                  << msg->spresense_satellites << ","
+                  << (msg->chassis_cmd_valid ? 1 : 0) << ","
+                  << std::setprecision(2) << msg->chassis_cmd_left_speed << ","
+                  << msg->chassis_cmd_right_speed << ","
+                  << (msg->chassis_sensors_valid ? 1 : 0) << ","
+                  << msg->encoder_left << "," << msg->encoder_right << ","
+                  << msg->voltage << "," << msg->current << "," << msg->power_watts << ","
+                  << (msg->chassis_imu_valid ? 1 : 0) << ","
+                  << msg->accel_x << "," << msg->accel_y << "," << msg->accel_z << ","
+                  << msg->gyro_x << "," << msg->gyro_y << "," << msg->gyro_z << ","
+                  << (msg->steering_valid ? 1 : 0) << ","
+                  << msg->steering_command << ","
+                  << (msg->lane_valid ? 1 : 0) << ","
+                  << (msg->lane_detected ? 1 : 0) << ","
+                  << msg->lane_theta << "," << msg->lane_b << ","
+                  << (msg->destination_valid ? 1 : 0) << ","
+                  << std::setprecision(6) << msg->destination_latitude << ","
+                  << msg->destination_longitude << "\n";
+        csv_file_.flush();
+    }
+
     void telemetry_callback(const msgs_ifaces::msg::TelemetryRelay::SharedPtr msg) {
+        write_csv_row(msg);
         // Clear screen for better display (optional - comment out if not desired)
         // std::cout << "\033[2J\033[1;1H";
         

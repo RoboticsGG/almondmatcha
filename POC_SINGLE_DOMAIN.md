@@ -93,9 +93,13 @@ minicom -b 115200 -D /dev/ttyACM1
 
 ```bash
 cd ~/almondmatcha
-bash ws_base/launch_poc_experiment.sh
-# or override duration / ports:
-bash ws_base/launch_poc_experiment.sh --duration 600 --chassis /dev/ttyACM1 --sensors /dev/ttyACM0
+# Laboratory run (camera fallback to video file, verbose output)
+bash ws_base/launch_poc_lab.sh
+bash ws_base/launch_poc_lab.sh --duration 600 --chassis /dev/ttyACM1 --sensors /dev/ttyACM0
+
+# On-field run (live D415 camera only, Ctrl-C = emergency stop)
+bash ws_base/launch_poc_field.sh
+bash ws_base/launch_poc_field.sh --duration 600
 ```
 
 The script runs the full sequence automatically: starts all collectors, waits for STM32 topics, runs the timed measurement window, stops and pulls all CSVs, then calls post_run.sh.
@@ -758,10 +762,14 @@ git checkout single-domain
 
 ## Running the POC Experiment
 
-### Option A — Automated (recommended): `launch_poc_experiment.sh`
+### Option A — Automated (recommended): `launch_poc_lab.sh` / `launch_poc_field.sh`
 
-A single script handles the entire sequence from the base PC — starting collectors,
-prompting for the power-cycle, launching all ROS2 nodes, waiting, and pulling CSVs.
+Two scripts handle the entire sequence — choose based on context:
+
+| Script | When to use |
+|--------|-------------|
+| `launch_poc_lab.sh` | Indoor/bench testing — camera fallback to video file, verbose output |
+| `launch_poc_field.sh` | Outdoor field run — live D415 mandatory, Ctrl-C = emergency stop |
 
 **Before running:** verify which `/dev/ttyACM*` port is which:
 ```bash
@@ -772,21 +780,25 @@ minicom -b 115200 -D /dev/ttyACM1
 # USB enumeration order depends on plug-in sequence — verify before each run.
 ```
 
+**For on-field runs, edit params first:**
+```bash
+nano ws_base/params/field/control.yaml          # k_p, k_i, k_d, ema_alpha
+nano ws_base/params/field/mission_command.yaml  # des_lat, des_long, rover_spd
+```
+
 **Run the experiment:**
 ```bash
 cd ~/almondmatcha
 
-# Default: 5-minute run, /dev/ttyACM1=chassis, /dev/ttyACM0=sensors
-bash ws_base/launch_poc_experiment.sh
+# Laboratory run (camera fallback, verbose)
+bash ws_base/launch_poc_lab.sh
+bash ws_base/launch_poc_lab.sh --duration 600
+bash ws_base/launch_poc_lab.sh --chassis /dev/ttyACM0 --sensors /dev/ttyACM1
+bash ws_base/launch_poc_lab.sh --skip-launch    # collectors only
 
-# Override run duration (seconds)
-bash ws_base/launch_poc_experiment.sh --duration 600
-
-# If ttyACM order is reversed
-bash ws_base/launch_poc_experiment.sh --chassis /dev/ttyACM0 --sensors /dev/ttyACM1
-
-# Collectors only — skip ROS2 node launch (nodes already running)
-bash ws_base/launch_poc_experiment.sh --skip-launch
+# On-field run (live camera, emergency-stop ready)
+bash ws_base/launch_poc_field.sh
+bash ws_base/launch_poc_field.sh --duration 600
 ```
 
 **What the script does:**
