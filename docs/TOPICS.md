@@ -75,8 +75,6 @@ data: [theta, b, detected]
 
 ---
 
----
-
 ## Control Topics (Jetson/Base)
 
 ### `tpc_rover_ctrl_cmd`

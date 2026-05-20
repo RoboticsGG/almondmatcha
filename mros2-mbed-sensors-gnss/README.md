@@ -55,7 +55,7 @@ sudo ./build.bash all NUCLEO_F767ZI sensors_node
 ### Method 1: Drag-and-Drop (Easiest)
 
 1. Connect NUCLEO board via USB
-2. Board appears as `NOD_F767ZI` or `NODE_F767ZI` mass storage device
+2. Board appears as `NODE_F767ZI` mass storage device
 3. Copy `build/mros2-mbed.bin` to the board mount point
 4. Board auto-resets and runs new firmware
 
