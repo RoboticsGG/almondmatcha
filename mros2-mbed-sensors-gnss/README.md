@@ -7,6 +7,7 @@ STM32 firmware for rover sensor acquisition (encoders, power monitoring, GNSS) u
 ```bash
 cd ~/almondmatcha/mros2-mbed-sensors-gnss
 sudo ./build.bash all NUCLEO_F767ZI sensors_node
+sudo ./build.bash rebuild NUCLEO_F767ZI sensors_node
 # Flash: Copy build/mros2-mbed.bin to NUCLEO board (drag-and-drop)
 ```
 
