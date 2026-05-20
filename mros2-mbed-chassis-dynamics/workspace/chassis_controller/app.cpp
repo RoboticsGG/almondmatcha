@@ -223,12 +223,19 @@ void rover_control_callback(msgs_ifaces::msg::ChassisCtrl* msg) {
     rover_cmd.motor_speed = msg->spd_msg;
     rover_cmd.command_updated = true;
     rover_cmd_mutex.unlock();
-    
+
+    // Guard MROS2_DEBUG with the serial mutex so it cannot interleave with the
+    // 1 Hz STM32_STATS JSON emitted by _mr_task() via _mr_stdout_mtx.
+    // This callback fires at 5-10 Hz during navigation — without the lock a
+    // preemption mid-fwrite() corrupts the JSON and the collector silently
+    // drops that sample.
+    mr_serial_lock();
     MROS2_DEBUG("\nROS2 CB: front=%d angle=%f back=%d speed=%d",
                msg->fdr_msg,
                msg->ro_ctrl_msg,
                msg->bdr_msg,
                msg->spd_msg);
+    mr_serial_unlock();
 }
 
 /* =====================================

@@ -9,7 +9,7 @@
  *    "heap_used":<B>,"heap_max":<B>,"heap_free":<B>,"alloc_fail":<n>,
  *    "cpu_busy_pct":<0-100>,"cpu_idle_pct":<0-100>,
  *    "stack_peak_b":<B>,"stack_min_free_b":<B>,
- *    "udp_recv":<delta>,"udp_drop":<delta>,"udp_sent":<delta>,
+ *    "udp_recv":<delta>,"udp_xmit":<delta>,"udp_drop_pct":<0-100>,
  *    "eth_miss":<delta>}
  *
  * Field semantics:
@@ -19,7 +19,8 @@
  *   stack_peak_b     — highest observed stack usage across all threads (bytes)
  *   stack_min_free_b — smallest remaining free stack margin (bytes);
  *                      <512 B indicates critical stack pressure
- *   udp_recv/drop/sent — lwIP UDP datagram counts DELTA since last interval
+ *   udp_drop_pct    — UDP drop rate % over last interval: drop/(recv+drop)*100;
+ *                      0 when no UDP traffic; 100 means every datagram was dropped
  *   eth_miss         — ETH DMA hardware missed/dropped frames DELTA
  *                      (auto-clears on read; covers host-buffer-full +
  *                      FIFO-overflow events before packets reach the IP stack)

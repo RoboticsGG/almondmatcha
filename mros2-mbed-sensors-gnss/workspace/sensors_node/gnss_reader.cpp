@@ -10,6 +10,7 @@
  */
 
 #include "gnss_reader.h"
+#include "memory_reporter.h"
 #include "mbed.h"
 #include <cstring>
 
@@ -84,7 +85,9 @@ void gnss_reader_init() {
         /* stop bits */ 1
     );
     
+    mr_serial_lock();
     printf("[GNSS] USART6 initialized on Arduino D0/D1 (115200 bps, 8N1)\r\n");
+    mr_serial_unlock();
     
     // Give interface time to stabilize
     osDelay(100);

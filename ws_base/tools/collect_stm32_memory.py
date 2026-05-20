@@ -107,6 +107,8 @@ def read_serial_thread(port: str, label: str, rows: list, lock: threading.Lock,
     raw_log_path.parent.mkdir(parents=True, exist_ok=True)
     raw_log = open(raw_log_path, "w")
     buf = b""
+    corrupt_count = 0   # JSON lines that matched the type filter but failed to parse
+    mismatch_warned = False  # warn once if firmware node name != collector label
 
     while not stop_event.is_set():
         chunk = ser.read(256)
@@ -131,7 +133,25 @@ def read_serial_thread(port: str, label: str, rows: list, lock: threading.Lock,
             try:
                 data = json.loads(line)
             except json.JSONDecodeError:
+                corrupt_count += 1
+                raw_log.write(
+                    f"{datetime.utcnow().isoformat()} [CORRUPT_JSON #{corrupt_count}] {line}\n"
+                )
+                raw_log.flush()
                 continue
+            # Cross-check: warn if the firmware's "node" field doesn't match the
+            # port label assigned by the caller (catches swapped USB port order).
+            fw_node = data.get("node", "")
+            if fw_node and fw_node != label and not mismatch_warned:
+                mismatch_warned = True
+                print(f"[{label}] WARNING: firmware reports node='{fw_node}' but "
+                      f"this port was assigned label='{label}'. "
+                      f"Check --chassis / --sensors port order (USB enumeration may have swapped them).")
+                raw_log.write(
+                    f"{datetime.utcnow().isoformat()} "
+                    f"[NODE_MISMATCH] label={label} fw_node={fw_node}\n"
+                )
+                raw_log.flush()
             row = {
                 "wall_clock":      datetime.utcnow().isoformat(),
                 "type":            data.get("type", ""),
@@ -178,6 +198,9 @@ def read_serial_thread(port: str, label: str, rows: list, lock: threading.Lock,
 
     ser.close()
     raw_log.close()
+    if corrupt_count > 0:
+        print(f"[{label}] WARNING: {corrupt_count} JSON line(s) dropped "
+              f"(corrupt or interleaved serial output) — see [CORRUPT_JSON] entries in {raw_log_path}")
 
 
 def writer_thread(out_path: Path, rows: list, lock: threading.Lock,
