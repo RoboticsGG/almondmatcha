@@ -31,7 +31,7 @@ bash launch_base_single_domain.sh
 | Node | Function |
 |------|----------|
 | `mission_command_node` | Send navigation goals (action `/des_data`), speed limits (service `/srv_spd_limit`) — **Domain 5** |
-| `mission_monitoring_node_pc` | Subscribe `/tpc_telemetry_relay` on **Domain 4** — real-time telemetry display |
+| `mission_monitoring_node_pc` | Subscribe `/tpc_telemetry_relay` on **Domain 5** — real-time telemetry display |
 
 ## Building
 
@@ -230,7 +230,7 @@ ros2 node list
 
 # Expected (when rover is running):
 # /mission_command_node           (D5)
-# /mission_monitoring_node_pc     (D4 — only visible if ROS_DOMAIN_ID=4)
+# /mission_monitoring_node_pc     (D5)
 # /chassis_controller_node        (ws_rpi, D5)
 # /gnss_mission_monitor_node      (ws_rpi, D5)
 # /gnss_spresense_node            (ws_rpi, D5)
@@ -377,22 +377,16 @@ ws_base/
 
 ## System Integration
 
-**Base Station Dual-Domain Role:**
+**Base Station Role (Single-Domain — all D5):**
 - `mission_command_node` (D5): sends mission goals/speed limits, calls RPi action/service servers
-- `mission_monitoring_node_pc` (D4): subscribes to `/tpc_telemetry_relay` — telemetry display only (NOT a D5 participant)
+- `mission_monitoring_node_pc` (D5): subscribes to `/tpc_telemetry_relay` — real-time telemetry display
 
 **Architecture:**
 ```
 Domain 5: mission_command_node (Base) ←→ ws_rpi ←→ ws_jetson(rover_kinematic_control)
-                                              ↕
-                                         STM32 Boards
-
-Domain 4: mission_monitoring_node_pc (Base) + rover_local_monitoring_node (Jetson)
-                                        ↑
-                             tpc_telemetry_relay (5 Hz relay from RPi)
+       mission_monitoring_node_pc (Base)   ↕             ↕
+                             tpc_telemetry_relay      STM32 Boards
 ```
-
-Domain 4 nodes are invisible to STM32 boards — no additional STM32 memory cost.
 
 ## Detailed Documentation
 
@@ -407,5 +401,5 @@ See `docs/` subdirectory for:
 
 **Platform:** Linux PC (Ubuntu 20.04+)  
 **ROS2:** Humble or Iron  
-**Domains:** 5 (command) + 4 (monitoring)  
+**Domain:** 5 (all nodes)  
 **Network:** 192.168.1.0/24 (rover network)

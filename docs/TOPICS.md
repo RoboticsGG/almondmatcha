@@ -73,8 +73,6 @@ data: [theta, b, detected]
 
 ---
 
----
-
 ## Control Topics (Jetson/Base)
 
 ### `tpc_rover_ctrl_cmd`
@@ -385,7 +383,7 @@ uint8 ack           # Acknowledgment
 
 ### `tpc_telemetry` (Removed)
 
-This topic was planned for aggregated telemetry and has been superseded by `tpc_telemetry_relay` on Domain 4 (see below).
+This topic was planned for aggregated telemetry and has been superseded by `tpc_telemetry_relay` on D5 (see below).
 
 ### `tpc_command` (Archived)
 

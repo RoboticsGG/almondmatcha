@@ -174,7 +174,7 @@ the multicast locator to know where to send SEDP.
 ### Memory reporter (`memory_reporter.h`)
 
 Both boards include a shared header that creates a background thread
-emitting periodic JSON memory snapshots (`{"type":"STM32_MEM",...}`)
+emitting periodic JSON memory snapshots (`{"type":"STM32_STATS",...}`)
 over USB serial at 1-second intervals.  Used by `collect_stm32_memory.py`
 on the base PC for POC measurements.
 
@@ -307,16 +307,18 @@ sudo ./build.bash rebuild NUCLEO_F767ZI sensors_node
 
 Flash via OpenOCD with ST-LINK:
 ```bash
-# Sensors board (serial number known)
-sudo openocd -f interface/stlink.cfg \
-  -c "adapter serial 066DFF3932504E3043014542" \
-  -f target/stm32f7x.cfg \
-  -c "program build/NUCLEO_F767ZI/sensors_node/sensors_node.bin 0x08000000 verify reset exit"
+# Sensors board (with known ST-LINK serial; omit -c hla_serial if only one board connected)
+cd ~/almondmatcha/mros2-mbed-sensors-gnss
+sudo openocd -f interface/stlink.cfg -f target/stm32f7x.cfg \
+  -c "hla_serial 066DFF3932504E3043014542" \
+  -c "reset_config srst_only connect_assert_srst" \
+  -c "program build/mros2-mbed.bin verify reset exit 0x08000000"
 
-# Chassis board (use other serial or default if only one ST-LINK connected)
-sudo openocd -f interface/stlink.cfg \
-  -f target/stm32f7x.cfg \
-  -c "program build/NUCLEO_F767ZI/chassis_controller/chassis_controller.bin 0x08000000 verify reset exit"
+# Chassis board (default ST-LINK, or add -c 'hla_serial <serial>' for the other debugger)
+cd ~/almondmatcha/mros2-mbed-chassis-dynamics
+sudo openocd -f interface/stlink.cfg -f target/stm32f7x.cfg \
+  -c "reset_config srst_only connect_assert_srst" \
+  -c "program build/mros2-mbed.bin verify reset exit 0x08000000"
 ```
 
 ---

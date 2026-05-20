@@ -57,7 +57,7 @@ ws_rpi/runs/
 **Language**: Python
 
 **Characteristics**:
-- Subscribes to `/tpc_telemetry_relay` on Domain 4 (aggregated message)
+- Subscribes to `/tpc_telemetry_relay` on Domain 5 (aggregated message)
 - Logs at 5 Hz (telemetry relay rate)
 - Single subscription (lower overhead than 10+ subscriptions)
 - High-capacity Jetson storage (vs limited RPi SD card)
