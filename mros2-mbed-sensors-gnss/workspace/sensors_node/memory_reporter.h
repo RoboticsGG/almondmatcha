@@ -80,15 +80,17 @@
 #define _MR_MAX_THREADS 16
 
 // ── Serial output mutex ───────────────────────────────────────────────────────
-// Shared by the memory reporter thread and the application heartbeat printf so
-// their output never interleaves.  App code calls mr_serial_lock / _unlock.
-// Defined outside the anonymous namespace so the inline helpers are visible.
-static Mutex _mr_stdout_mtx;
+// Shared by the memory reporter thread and any other file that includes this
+// header (e.g. gnss_reader.cpp).  Using a function-local static ensures there
+// is exactly ONE Mutex instance regardless of how many TUs include this header.
+// App code calls mr_serial_lock / _unlock.
 
+/** Return the one shared serial-output mutex (function-local static). */
+inline Mutex& mr_serial_mutex() { static Mutex m; return m; }
 /** Acquire the serial-output mutex before a printf/fwrite block. */
-inline void mr_serial_lock()   { _mr_stdout_mtx.lock(); }
+inline void mr_serial_lock()   { mr_serial_mutex().lock(); }
 /** Release the serial-output mutex after a printf/fwrite block. */
-inline void mr_serial_unlock() { _mr_stdout_mtx.unlock(); }
+inline void mr_serial_unlock() { mr_serial_mutex().unlock(); }
 namespace {
 
 static char   _mr_node_name[MEM_REPORTER_NODE_NAME_MAX] = "stm32";
@@ -222,10 +224,10 @@ void _mr_task()
             eth_miss);
 
         if (len > 0 && len < (int)sizeof(buf)) {
-            _mr_stdout_mtx.lock();
+            mr_serial_lock();
             fwrite(buf, 1, (size_t)len, stdout);
             fflush(stdout);
-            _mr_stdout_mtx.unlock();
+            mr_serial_unlock();
         }
 
         ThisThread::sleep_for(chrono::milliseconds(MEM_REPORT_INTERVAL_MS));
