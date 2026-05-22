@@ -152,6 +152,64 @@ source install/setup.bash
 ros2 launch mission_control mission_control.launch.py
 ```
 
+### Environment Variables
+
+Two environment variables **must** be set in every terminal that runs `ros2` commands
+or talks to the rover. The launch scripts (`launch_base_single_domain.sh`, etc.) set
+them automatically inside each tmux pane — but a plain shell or a manual `ros2 topic list`
+will fail silently without them.
+
+| Variable | Required value | Purpose |
+|----------|---------------|---------|
+| `ROS_DOMAIN_ID` | `5` | Places this participant on Domain 5 (all rover nodes) |
+| `FASTRTPS_DEFAULT_PROFILES_FILE` | `$HOME/almondmatcha/ws_base/fastdds_base.xml` | Binds FastDDS to the rover Ethernet NIC; joins the mROS2 SPDP multicast group |
+
+#### Why `FASTRTPS_DEFAULT_PROFILES_FILE` is required
+
+The base PC has **two NICs**:
+- `enp0s31f6` — 192.168.1.4 (Ethernet, rover LAN)
+- `wlp4s0` — 172.30.x.x (WiFi, internet uplink)
+
+Without the XML profile FastDDS may bind to the WiFi interface. All STM32 boards
+(mROS-2 / embeddedRTPS) live on 192.168.1.0/24 and use **multicast SPDP** for
+discovery (unicast peer-to-peer discovery is not supported in embeddedRTPS). If FastDDS
+is on the wrong NIC it never sees their SPDP announcements and `ros2 topic list` shows
+no STM32 topics.
+
+The profile (`fastdds_base.xml`) does three things:
+1. Restricts UDPv4 transport to `192.168.1.4` (enp0s31f6 only)
+2. Adds `239.255.0.1:8650` to `metatrafficMulticastLocatorList` so FastDDS **joins**
+   the SPDP multicast group (domain 5 SPDP port = 7400 + 250 × 5 = 8650)
+3. Lists rover unicast peers for direct Linux-to-Linux SPDP fallback
+
+#### Set once per terminal
+
+```bash
+export ROS_DOMAIN_ID=5
+export FASTRTPS_DEFAULT_PROFILES_FILE=$HOME/almondmatcha/ws_base/fastdds_base.xml
+```
+
+#### Make permanent (recommended)
+
+Add to `~/.bashrc` so every new shell has the variables set:
+
+```bash
+echo 'export ROS_DOMAIN_ID=5' >> ~/.bashrc
+echo 'export FASTRTPS_DEFAULT_PROFILES_FILE=$HOME/almondmatcha/ws_base/fastdds_base.xml' >> ~/.bashrc
+source ~/.bashrc
+```
+
+#### After changing the variable in a running shell
+
+The `ros2` CLI shares state with a background daemon process. If the daemon was started
+before the variable was exported (or with a different value), restart it:
+
+```bash
+ros2 daemon stop
+ros2 daemon start
+ros2 topic list     # should now show rover + STM32 topics
+```
+
 ### Network Setup
 
 **Topology:** Connect base station to same Ethernet switch as rover systems
@@ -276,23 +334,40 @@ ros2 service call /srv_spd_limit services_ifaces/srv/SpdLimit \
 
 ### No Topics Visible
 
-**Symptom:** `ros2 topic list` shows no rover topics
+**Symptom:** `ros2 topic list` shows no rover topics, or STM32 topics are missing
 
-**Solutions:**
+**Step 1 — Check both required env vars:**
 ```bash
-# Verify domain
-echo $ROS_DOMAIN_ID  # Should be 5
-
-# Check network connectivity
-ping 192.168.1.1  # Raspberry Pi
-
-# Verify rover nodes running
+echo $ROS_DOMAIN_ID                     # must be 5
+echo $FASTRTPS_DEFAULT_PROFILES_FILE    # must NOT be empty
+```
+If `FASTRTPS_DEFAULT_PROFILES_FILE` is empty, FastDDS will bind to the wrong NIC (WiFi)
+and miss all STM32 SPDP announcements. Set it and restart the daemon:
+```bash
 export ROS_DOMAIN_ID=5
-ros2 node list
+export FASTRTPS_DEFAULT_PROFILES_FILE=$HOME/almondmatcha/ws_base/fastdds_base.xml
+ros2 daemon stop && ros2 daemon start
+ros2 topic list
+```
 
-# Restart ROS2 daemon
-ros2 daemon stop
-ros2 daemon start
+**Step 2 — Verify network reachability:**
+```bash
+ping 192.168.1.1    # Raspberry Pi
+ping 192.168.1.2    # STM32 chassis-dynamics
+ping 192.168.1.6    # STM32 sensors-gnss
+```
+
+**Step 3 — Confirm SPDP multicast is flowing on the rover NIC:**
+```bash
+# Domain 5 SPDP port = 7400 + 250*5 = 8650
+sudo timeout 5 tcpdump -i enp0s31f6 'dst host 239.255.0.1 and udp port 8650' -nn -c 3
+```
+Expected: packets from 192.168.1.2 and/or 192.168.1.6.
+No packets → boards are offline or firmware is not running.
+
+**Step 4 — Check rover nodes are running:**
+```bash
+ros2 node list
 ```
 
 ### Build Failures
