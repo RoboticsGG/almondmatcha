@@ -336,7 +336,19 @@ ros2 service call /srv_spd_limit services_ifaces/srv/SpdLimit \
 
 **Symptom:** `ros2 topic list` shows no rover topics, or STM32 topics are missing
 
-**Step 1 — Check both required env vars:**
+**Step 1 — Restart the ROS2 daemon (try this first):**
+
+The daemon accumulates stale DDS participant state across sessions. Even if the boards
+are running fine, stale records in the daemon can block discovery and cause
+`ros2 topic list` to show nothing. This is the most common cause of topics disappearing
+unexpectedly mid-session.
+```bash
+ros2 daemon stop && ros2 daemon start
+ros2 topic list
+```
+If topics reappear, you are done.
+
+**Step 2 — Check both required env vars:**
 ```bash
 echo $ROS_DOMAIN_ID                     # must be 5
 echo $FASTRTPS_DEFAULT_PROFILES_FILE    # must NOT be empty
@@ -350,22 +362,32 @@ ros2 daemon stop && ros2 daemon start
 ros2 topic list
 ```
 
-**Step 2 — Verify network reachability:**
+**Step 3 — Verify network reachability:**
 ```bash
 ping 192.168.1.1    # Raspberry Pi
 ping 192.168.1.2    # STM32 chassis-dynamics
 ping 192.168.1.6    # STM32 sensors-gnss
 ```
 
-**Step 3 — Confirm SPDP multicast is flowing on the rover NIC:**
+**Step 4 — Confirm boards are sending RTPS (not ICMP):**
+```bash
+sudo timeout 4 tcpdump -i enp0s31f6 \
+  'src host 192.168.1.2 or src host 192.168.1.6' -nn -c 6
+```
+- **UDP packets** from .2/.6 → mROS2 is running, discovery in progress — wait ~20 s.
+- **ICMP port unreachable** from .2/.6 → mROS2 RTPS is not bound. Do the daemon
+  restart first (Step 1), then power-cycle both Nucleo boards and wait ~20 s.
+- **No packets at all** → board is offline or network issue (recheck Step 3).
+
+**Step 5 — Confirm SPDP multicast is flowing:**
 ```bash
 # Domain 5 SPDP port = 7400 + 250*5 = 8650
-sudo timeout 5 tcpdump -i enp0s31f6 'dst host 239.255.0.1 and udp port 8650' -nn -c 3
+sudo timeout 5 tcpdump -i enp0s31f6 \
+  'dst host 239.255.0.1 and udp port 8650' -nn -c 3
 ```
 Expected: packets from 192.168.1.2 and/or 192.168.1.6.
-No packets → boards are offline or firmware is not running.
 
-**Step 4 — Check rover nodes are running:**
+**Step 6 — Check rover nodes are running:**
 ```bash
 ros2 node list
 ```
