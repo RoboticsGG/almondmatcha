@@ -15,7 +15,7 @@ source install/setup.bash
 
 - **Purpose:** Monitor rover telemetry and send commands from base station
 - **Platform:** Linux PC (Ubuntu 20.04/22.04)
-- **Network:** Connect to rover Ethernet switch (192.168.1.10 recommended)
+- **Network:** Connect to rover Ethernet switch (base-IP pool: 192.168.1.4 / .10 / .11, one active machine)
 - **Domain:** ROS2 **Dual-domain**: 5 (mission_command_node — commands/actions) + 4 (mission_monitoring_node_pc — telemetry display)
 - **Communication:** Gigabit Ethernet via switch - all systems on same LAN
 
@@ -125,10 +125,17 @@ ros2 launch mission_control mission_control.launch.py
 
 **Topology:** Connect base station to same Ethernet switch as rover systems
 
-**Recommended IP:** 192.168.1.10 (or any .10-.99 to avoid conflicts)
+**Approved base-IP pool (one active machine at a time):**
+- `192.168.1.4`
+- `192.168.1.10`
+- `192.168.1.11`
+
+The FastDDS profiles in this repository are preconfigured for this pool.
+Use one of these addresses on the active base PC.
 
 ```bash
 # Option 1: NetworkManager (recommended)
+# Example: choose one approved base IP (here: 192.168.1.10)
 sudo nmcli con mod "Wired connection 1" ipv4.addresses 192.168.1.10/24
 sudo nmcli con mod "Wired connection 1" ipv4.method manual
 sudo nmcli con up "Wired connection 1"

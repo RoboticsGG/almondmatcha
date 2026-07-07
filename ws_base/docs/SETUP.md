@@ -6,8 +6,17 @@
 
 Use this section when replacing the lab PC with a different laptop for an outdoor
 field run. The rover network uses `192.168.1.0/24` and the lab PC is permanently
-assigned `192.168.1.4`.  **Assign the same IP to the field laptop** — this means
-zero changes to any XML file or any config on the RPi/Jetson.
+assigned `192.168.1.4`.
+
+You can use a **base-IP pool** for convenience, with exactly one active base
+machine at a time:
+
+- `192.168.1.4`
+- `192.168.1.10`
+- `192.168.1.11`
+
+No XML edits are needed as long as the active base machine uses one of these
+three addresses.
 
 ### Hardware prerequisites
 
@@ -17,33 +26,33 @@ zero changes to any XML file or any config on the RPi/Jetson.
 
 ---
 
-### Step 1 — Assign static IP 192.168.1.4
+### Step 1 - Assign one approved static base IP
 
 ```bash
 # Find the Ethernet interface name first
 ip link show          # look for the wired interface, e.g. enp3s0, eth0, enx...
 
 # Assign static IP (replace <iface> with your interface name)
+# Use ONE approved base IP: 192.168.1.4 / 192.168.1.10 / 192.168.1.11
 sudo nmcli con mod "Wired connection 1" \
     ipv4.method manual \
-    ipv4.addresses 192.168.1.4/24 \
+    ipv4.addresses 192.168.1.10/24 \
     ipv4.gateway "" \
     ipv4.dns ""
 sudo nmcli con up "Wired connection 1"
 
 # Verify
-ip addr show <iface>   # should show 192.168.1.4/24
+ip addr show <iface>   # should show one of: .4 / .10 / .11
 ping -c 2 192.168.1.1  # RPi should reply
 ```
 
-> **Why 192.168.1.4?**  `fastdds_base.xml` whitelists exactly this IP in its
-> UDPv4 transport.  The RPi's `fastdds_rover.xml` sends unicast SPDP to
-> `192.168.1.4`.  Using the same IP requires no edits on any machine.
+> **Why this works:** `fastdds_base.xml`, `fastdds_rover.xml`, and
+> `fastdds_jetson.xml` are preconfigured for the approved base-IP pool
+> (`.4`, `.10`, `.11`).
 >
-> If you must use a different IP (e.g. `192.168.1.10`), you need to:
-> 1. Edit `ws_base/fastdds_base.xml` → change `<address>192.168.1.4</address>` to your IP
-> 2. Edit `ws_rpi/fastdds_rover.xml` on the RPi → update the `192.168.1.4` peer entry
-> 3. Re-push or rsync both XML files to the respective machines
+> **Important:** only one machine may use an approved base IP at a time.
+> If two machines share the same IP simultaneously, DDS discovery and routing
+> become undefined.
 
 ---
 
@@ -167,7 +176,7 @@ bash ws_base/tools/check_connectivity.sh
 ### Quick checklist
 
 ```
-[ ] Ethernet interface assigned 192.168.1.4/24
+[ ] Ethernet interface assigned one approved base IP (.4 / .10 / .11)
 [ ] ping 192.168.1.1 (RPi) replies
 [ ] FASTRTPS_DEFAULT_PROFILES_FILE set in ~/.bashrc
 [ ] ros2 daemon restarted after setting env var
