@@ -3,27 +3,27 @@
 
 set -e
 
-# Source ROS2 base
-if [ -f "/opt/ros/humble/setup.bash" ]; then
+# Source ROS2 — prefer workspace install, fall back to system ROS2.
+# If your ROS2 is at a non-standard path, source it before running:
+#   source ~/ros2_humble/install/setup.bash && bash build_inc.sh
+if [[ -f "install/setup.bash" ]]; then
+    source install/setup.bash
+elif [[ -f "../install/setup.bash" ]]; then
+    source ../install/setup.bash
+elif [[ -f "/opt/ros/humble/setup.bash" ]]; then
     source /opt/ros/humble/setup.bash
-fi
-
-# Source common_ifaces for msgs_ifaces (it is NOT built in ws_base to avoid duplicate .so files)
-COMMON_IFACES="$(cd "$(dirname "$0")/.." && pwd)/common_ifaces/install/setup.bash"
-if [ ! -f "$COMMON_IFACES" ]; then
-    echo "ERROR: common_ifaces not built."
+elif [[ -z "${ROS_DISTRO:-}" ]]; then
+    echo ""
+    echo "ERROR: ROS2 Humble not found at /opt/ros/humble/ and not already sourced."
+    echo "Source your ROS2 installation before running this script:"
+    echo "  source <ros2_path>/install/setup.bash && bash build_inc.sh"
+    echo ""
     exit 1
 fi
-source "$COMMON_IFACES"
 
-# Source existing ws_base install for incremental builds
-if [ -f "install/setup.bash" ]; then
-    source install/setup.bash
-fi
-
-# Incremental build — action_ifaces and services_ifaces (msgs_ifaces is from common_ifaces)
+# Incremental build — interfaces first so CMake can find them
 echo "Incremental build for ws_base workspace..."
-colcon build --symlink-install --packages-select action_ifaces services_ifaces
+colcon build --symlink-install --packages-select action_ifaces msgs_ifaces services_ifaces
 
 # Re-source so mission_control can find the interfaces
 if [ -f "install/setup.bash" ]; then

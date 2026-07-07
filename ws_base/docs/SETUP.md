@@ -85,18 +85,22 @@ git checkout main          # production branch
 
 ### Step 4 — Build workspaces
 
-Build in this order — `common_ifaces` must be built first:
+Source ROS2 first, then run the build script:
 
 ```bash
-# 1. Shared message interfaces
-cd ~/almondmatcha/common_ifaces
+# Standard debian install path
 source /opt/ros/humble/setup.bash
-colcon build --symlink-install --packages-select msgs_ifaces action_ifaces services_ifaces
 
-# 2. Base station workspace
+# OR if your ROS2 was built from source (adjust path to your actual install):
+# source ~/ros2_humble/install/setup.bash
+
 cd ~/almondmatcha/ws_base
-colcon build
+bash build_clean.sh
 ```
+
+`build_clean.sh` builds interface packages first, sources the install, then builds
+`mission_control`. Plain `colcon build` will also work (package.xml deps are correct)
+but `build_clean.sh` is more robust and produces cleaner output.
 
 ---
 
@@ -108,8 +112,9 @@ Add to `~/.bashrc` (run once, takes effect in new terminals):
 cat >> ~/.bashrc << 'EOF'
 
 # ROS2 + Almondmatcha rover
+# Adjust the ROS2 source line if your install is not at /opt/ros/humble:
 source /opt/ros/humble/setup.bash
-source $HOME/almondmatcha/common_ifaces/install/setup.bash
+# source ~/ros2_humble/install/setup.bash   # ← use this instead for source builds
 source $HOME/almondmatcha/ws_base/install/setup.bash
 export ROS_DOMAIN_ID=5
 export FASTRTPS_DEFAULT_PROFILES_FILE=$HOME/almondmatcha/ws_base/fastdds_base.xml
