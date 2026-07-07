@@ -1,5 +1,183 @@
 # Setup & Troubleshooting
 
+---
+
+## Field Laptop Onboarding
+
+Use this section when replacing the lab PC with a different laptop for an outdoor
+field run. The rover network uses `192.168.1.0/24` and the lab PC is permanently
+assigned `192.168.1.4`.  **Assign the same IP to the field laptop** — this means
+zero changes to any XML file or any config on the RPi/Jetson.
+
+### Hardware prerequisites
+
+- Laptop with a wired Ethernet port (USB-C adapter works)
+- Ubuntu 22.04 LTS (ROS2 Humble requirement — 20.04 also works but untested)
+- tmux installed (`sudo apt install tmux`)
+
+---
+
+### Step 1 — Assign static IP 192.168.1.4
+
+```bash
+# Find the Ethernet interface name first
+ip link show          # look for the wired interface, e.g. enp3s0, eth0, enx...
+
+# Assign static IP (replace <iface> with your interface name)
+sudo nmcli con mod "Wired connection 1" \
+    ipv4.method manual \
+    ipv4.addresses 192.168.1.4/24 \
+    ipv4.gateway "" \
+    ipv4.dns ""
+sudo nmcli con up "Wired connection 1"
+
+# Verify
+ip addr show <iface>   # should show 192.168.1.4/24
+ping -c 2 192.168.1.1  # RPi should reply
+```
+
+> **Why 192.168.1.4?**  `fastdds_base.xml` whitelists exactly this IP in its
+> UDPv4 transport.  The RPi's `fastdds_rover.xml` sends unicast SPDP to
+> `192.168.1.4`.  Using the same IP requires no edits on any machine.
+>
+> If you must use a different IP (e.g. `192.168.1.10`), you need to:
+> 1. Edit `ws_base/fastdds_base.xml` → change `<address>192.168.1.4</address>` to your IP
+> 2. Edit `ws_rpi/fastdds_rover.xml` on the RPi → update the `192.168.1.4` peer entry
+> 3. Re-push or rsync both XML files to the respective machines
+
+---
+
+### Step 2 — Install ROS2 Humble
+
+```bash
+# Official one-liner (Ubuntu 22.04)
+sudo apt install software-properties-common curl -y
+sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+    -o /usr/share/keyrings/ros-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
+    http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" \
+    | sudo tee /etc/apt/sources.list.d/ros2.list
+sudo apt update && sudo apt install ros-humble-desktop python3-colcon-common-extensions -y
+```
+
+---
+
+### Step 3 — Clone the repository
+
+```bash
+cd ~
+git clone https://github.com/RoboticsGG/almondmatcha.git
+cd almondmatcha
+git checkout main          # production branch
+# git checkout single-domain  # for POC measurement runs
+```
+
+---
+
+### Step 4 — Build workspaces
+
+Build in this order — `common_ifaces` must be built first:
+
+```bash
+# 1. Shared message interfaces
+cd ~/almondmatcha/common_ifaces
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install --packages-select msgs_ifaces action_ifaces services_ifaces
+
+# 2. Base station workspace
+cd ~/almondmatcha/ws_base
+colcon build
+```
+
+---
+
+### Step 5 — Configure environment
+
+Add to `~/.bashrc` (run once, takes effect in new terminals):
+
+```bash
+cat >> ~/.bashrc << 'EOF'
+
+# ROS2 + Almondmatcha rover
+source /opt/ros/humble/setup.bash
+source $HOME/almondmatcha/common_ifaces/install/setup.bash
+source $HOME/almondmatcha/ws_base/install/setup.bash
+export ROS_DOMAIN_ID=5
+export FASTRTPS_DEFAULT_PROFILES_FILE=$HOME/almondmatcha/ws_base/fastdds_base.xml
+EOF
+source ~/.bashrc
+```
+
+**Why `FASTRTPS_DEFAULT_PROFILES_FILE` is mandatory** — even with one NIC:
+
+The `fastdds_base.xml` does three things that are always required:
+1. Pins FastDDS to the rover Ethernet NIC (prevents accidental WiFi binding)
+2. Adds `239.255.0.1:8650` to `metatrafficMulticastLocatorList` → FastDDS **joins** the
+   STM32's SPDP multicast group; without this, STM32 topics are invisible
+3. Lists rover unicast peer IPs for faster Linux-to-Linux discovery
+
+Restart the daemon after setting the variable:
+```bash
+ros2 daemon stop && ros2 daemon start
+```
+
+---
+
+### Step 6 — Set up SSH keys (required for `launch_field.sh`)
+
+`launch_field.sh` SSH-launches nodes on RPi and Jetson without a password prompt.
+If the keys are not set up, the script will hang at the auth step.
+
+```bash
+# Generate a key if you don't have one
+ssh-keygen -t ed25519 -C "field-laptop" -f ~/.ssh/id_ed25519
+
+# Authorise on RPi
+ssh-copy-id curry@192.168.1.1
+
+# Authorise on Jetson
+ssh-copy-id yupi@192.168.1.5
+
+# Test (should connect without a password)
+ssh curry@192.168.1.1 hostname
+ssh yupi@192.168.1.5  hostname
+```
+
+---
+
+### Step 7 — Verify full setup
+
+With the rover powered on and connected:
+
+```bash
+cd ~/almondmatcha
+bash ws_base/tools/check_connectivity.sh
+```
+
+Expected output: all 5 checks pass (ping, SPDP multicast, multicast group, topic
+discovery, data flow).  If STM32 topics fail, restart the daemon and retry:
+
+```bash
+ros2 daemon stop && ros2 daemon start
+bash ws_base/tools/check_connectivity.sh
+```
+
+---
+
+### Quick checklist
+
+```
+[ ] Ethernet interface assigned 192.168.1.4/24
+[ ] ping 192.168.1.1 (RPi) replies
+[ ] FASTRTPS_DEFAULT_PROFILES_FILE set in ~/.bashrc
+[ ] ros2 daemon restarted after setting env var
+[ ] SSH to curry@192.168.1.1 works without password
+[ ] SSH to yupi@192.168.1.5 works without password
+[ ] check_connectivity.sh passes all 5 steps
+```
+
+---
+
 ## Prerequisites
 
 - Ubuntu 20.04/22.04
