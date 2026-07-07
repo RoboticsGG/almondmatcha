@@ -3,13 +3,22 @@
 
 set -e
 
-# Source ROS2 setup if available (check multiple locations)
-if [ -f "install/setup.bash" ]; then
+# Source ROS2 — prefer workspace install, fall back to system ROS2.
+# If your ROS2 is at a non-standard path, source it before running:
+#   source ~/ros2_humble/install/setup.bash && bash build_inc.sh
+if [[ -f "install/setup.bash" ]]; then
     source install/setup.bash
-elif [ -f "../install/setup.bash" ]; then
+elif [[ -f "../install/setup.bash" ]]; then
     source ../install/setup.bash
-elif [ -f "/opt/ros/humble/setup.bash" ]; then
+elif [[ -f "/opt/ros/humble/setup.bash" ]]; then
     source /opt/ros/humble/setup.bash
+elif [[ -z "${ROS_DISTRO:-}" ]]; then
+    echo ""
+    echo "ERROR: ROS2 Humble not found at /opt/ros/humble/ and not already sourced."
+    echo "Source your ROS2 installation before running this script:"
+    echo "  source <ros2_path>/install/setup.bash && bash build_inc.sh"
+    echo ""
+    exit 1
 fi
 
 # Incremental build — interfaces first so CMake can find them
