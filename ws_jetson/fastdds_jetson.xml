@@ -1,21 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Fast-DDS profile for ws_jetson (Jetson, 192.168.1.5).
+  fastdds_jetson.xml — Fast-DDS profile for ws_jetson (192.168.1.5)
 
-  Purpose:
-    1. UDPv4 transport restricted to 192.168.1.5 (rover Ethernet only).
-    2. initialPeersList includes the SPDP multicast group (239.255.0.1:8650)
-       so FastDDS joins and receives STM32 announcements (embeddedRTPS only
-       supports multicast discovery). Unicast peer IPs are listed for
-       Linux-to-Linux FastDDS discovery.
-
-  Usage:
-    export FASTRTPS_DEFAULT_PROFILES_FILE=~/almondmatcha/ws_jetson/fastdds_jetson.xml
-    (added automatically by launch_jetson_single_domain.sh)
+  Multi-base-PC support:
+    Any one active base PC can use one of the approved base IPs:
+    192.168.1.4, 192.168.1.10, 192.168.1.11.
 -->
 <profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
 
-  <!-- ── Transport: bind to rover Ethernet interface only ── -->
   <transport_descriptors>
     <transport_descriptor>
       <transport_id>rover_udp</transport_id>
@@ -26,7 +18,6 @@
     </transport_descriptor>
   </transport_descriptors>
 
-  <!-- ── Participant: use rover transport + add all rover unicast peers ── -->
   <participant profile_name="default_participant" is_default_profile="true">
     <rtps>
       <userTransports>
@@ -35,11 +26,6 @@
       <useBuiltinTransports>false</useBuiltinTransports>
 
       <builtin>
-        <!-- metatrafficMulticastLocatorList: tells FastDDS to JOIN the SPDP
-             multicast group for RECEIVING announcements. Without this,
-             useBuiltinTransports=false means no multicast reception —
-             initialPeersList only controls where SPDP is SENT TO.
-             Port 8650 = DDS SPDP port for domain 5 (7400 + 250*5). -->
         <metatrafficMulticastLocatorList>
           <locator>
             <udpv4>
@@ -48,33 +34,39 @@
             </udpv4>
           </locator>
         </metatrafficMulticastLocatorList>
+
         <initialPeersList>
-          <!-- Unicast peers for direct SPDP + multicast for belt-and-suspenders -->
           <locator>
             <udpv4>
               <address>239.255.0.1</address>
               <port>8650</port>
             </udpv4>
           </locator>
-          <!-- RPi (thehive) -->
           <locator>
             <udpv4>
               <address>192.168.1.1</address>
             </udpv4>
           </locator>
-          <!-- STM32 chassis-dynamics board -->
           <locator>
             <udpv4>
               <address>192.168.1.2</address>
             </udpv4>
           </locator>
-          <!-- ws_base -->
           <locator>
             <udpv4>
               <address>192.168.1.4</address>
             </udpv4>
           </locator>
-          <!-- STM32 sensors-gnss board -->
+          <locator>
+            <udpv4>
+              <address>192.168.1.10</address>
+            </udpv4>
+          </locator>
+          <locator>
+            <udpv4>
+              <address>192.168.1.11</address>
+            </udpv4>
+          </locator>
           <locator>
             <udpv4>
               <address>192.168.1.6</address>
