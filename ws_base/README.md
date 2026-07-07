@@ -6,7 +6,7 @@ ROS2 workspace for ground station telemetry monitoring and rover command/control
 
 ```bash
 cd ~/almondmatcha/ws_base
-colcon build
+bash build_clean.sh      # two-step build: interfaces first, then mission_control
 source install/setup.bash
 ./launch_base_screen.sh
 ```
