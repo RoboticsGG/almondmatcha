@@ -110,7 +110,7 @@ tmux send-keys   -t $SESSION_NAME:0.8 "clear && echo -e '\\e[1;90m>>> [SPARE] sh
 
 # Focus on Mission Monitor pane and attach
 tmux select-pane -t $SESSION_NAME:0.2
-tmux attach-session -t $SESSION_NAME
+[[ "${SKIP_ATTACH:-0}" != "1" ]] && tmux attach-session -t $SESSION_NAME
 
 # CONTROLS:
 # Ctrl+b arrow keys : Navigate between panes
