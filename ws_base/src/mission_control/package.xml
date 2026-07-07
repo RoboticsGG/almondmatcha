@@ -17,9 +17,8 @@
   <depend>rclcpp_action</depend>
   <depend>action_msgs</depend>
   <depend>msgs_ifaces</depend>
-
-  <build_depend>ifaces_base</build_depend>
-  <exec_depend>ifaces_base</exec_depend>
+  <depend>action_ifaces</depend>
+  <depend>services_ifaces</depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
