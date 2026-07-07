@@ -10,9 +10,22 @@ rm -rf build/ install/ log/
 # Clear stale AMENT_PREFIX_PATH to avoid warnings from colcon
 unset AMENT_PREFIX_PATH
 
-# Source ROS2 setup from standard location if available
-if [ -f "/opt/ros/humble/setup.bash" ]; then
+# Source ROS2 Humble — try standard debian path; skip if already sourced.
+# If your ROS2 is installed at a non-standard path (e.g. built from source),
+# source it BEFORE running this script:
+#   source ~/ros2_humble/install/setup.bash && bash build_clean.sh
+if [[ -n "${ROS_DISTRO:-}" ]]; then
+    : # already sourced by caller
+elif [[ -f "/opt/ros/humble/setup.bash" ]]; then
     source /opt/ros/humble/setup.bash
+else
+    echo ""
+    echo "ERROR: ROS2 Humble not found at /opt/ros/humble/ and not already sourced."
+    echo "Source your ROS2 installation before running this script:"
+    echo "  source <ros2_path>/install/setup.bash && bash build_clean.sh"
+    echo "  # e.g. for a source build: source ~/ros2_humble/install/setup.bash && bash build_clean.sh"
+    echo ""
+    exit 1
 fi
 
 # msgs_ifaces is NOT built in ws_base (COLCON_IGNORE present in ws_base/src/msgs_ifaces/).
