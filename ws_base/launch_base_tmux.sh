@@ -225,7 +225,7 @@ main() {
     print_info "Attaching to tmux session..."
     echo ""
     
-    tmux attach-session -t $SESSION_NAME
+    [[ "${SKIP_ATTACH:-0}" != "1" ]] && tmux attach-session -t $SESSION_NAME
 }
 
 # Run main function

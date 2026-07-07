@@ -72,7 +72,7 @@ tmux send-keys -t $SESSION_NAME:0.3 "ros2 run rover_monitoring rover_local_monit
 
 # Focus on camera pane and attach
 tmux select-pane -t 0
-tmux attach-session -t $SESSION_NAME
+[[ "${SKIP_ATTACH:-0}" != "1" ]] && tmux attach-session -t $SESSION_NAME
 
 # CONTROLS:
 # Ctrl+b then arrow keys: Navigate between panes
