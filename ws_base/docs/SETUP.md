@@ -201,9 +201,9 @@ bash ws_base/tools/check_connectivity.sh
 cd ~
 git clone https://github.com/RoboticsGG/almondmatcha.git
 
-# 2. Build workspace
+# 2. Build workspace  (must use build_clean.sh — two-step build required)
 cd ~/almondmatcha/ws_base
-colcon build
+bash build_clean.sh
 
 # 3. Source workspace
 source install/setup.bash
