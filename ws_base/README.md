@@ -5,10 +5,16 @@ ROS2 workspace for ground station telemetry monitoring and rover command/control
 ## Quick Start
 
 ```bash
+# Build (first time)
 cd ~/almondmatcha/ws_base
-bash build_clean.sh      # two-step build: interfaces first, then mission_control
+bash build_clean.sh
 source install/setup.bash
-./launch_base_screen.sh
+
+# Lab POC run — single command, camera fallback enabled, verbose
+bash launch_poc_lab.sh
+
+# Field POC run — single command, live D415 required, Ctrl-C = emergency stop
+bash launch_poc_field.sh
 ```
 
 ## Overview
@@ -40,55 +46,47 @@ source install/setup.bash
 
 ## Running
 
-### Launch Script (Recommended)
+### Script Reference
 
-**Using ROS2 Launch File:**
+| Script | What it does | When to use |
+|--------|-------------|-------------|
+| **`launch_poc_lab.sh`** | SSH-launches RPi + Jetson + base; camera video-file fallback enabled; verbose live dashboard; measurement collectors | **In-lab POC — single command from base PC** |
+| **`launch_poc_field.sh`** | Same but live D415 only (no fallback); Ctrl-C = clean emergency stop across all machines | **Field POC — single command from base PC** |
+| `launch_poc_experiment.sh` | Older full-experiment launcher (superseded by the two above) | Legacy |
+| `launch_base_multi_domain.sh` | Starts base-station nodes only (D5 command + D4 monitoring, tmux) | Base nodes only — RPi and Jetson already running |
+| `launch_base_single_domain.sh` | Starts base-station nodes only (all D5, tmux) | Non-standard base session |
+| `launch_monitoring.sh` | Starts `mission_monitoring_node_pc` only (D4 display) | Watch telemetry without commanding |
+
+### In-lab POC run (single command)
+
 ```bash
-export ROS_DOMAIN_ID=5
+cd ~/almondmatcha
+bash ws_base/launch_poc_lab.sh                    # default 5-min run
+bash ws_base/launch_poc_lab.sh --duration 600     # 10-min run
+bash ws_base/launch_poc_lab.sh --skip-stm32       # skip STM32 serial collection
+```
+
+Results saved to `ws_base/runs/multi_domain/run_NNN/`.
+
+### Field POC run (single command)
+
+```bash
+cd ~/almondmatcha
+bash ws_base/launch_poc_field.sh                  # default 5-min run
+bash ws_base/launch_poc_field.sh --duration 600   # 10-min run
+# Ctrl-C at any time = clean emergency stop on all machines
+```
+
+See [POC_MULTI_DOMAIN.md](../POC_MULTI_DOMAIN.md) for the full measurement guide
+(clock sync, STM32 serial port identification, analysis scripts).
+
+### Base station nodes only
+
+Use when RPi and Jetson are already running:
+
+```bash
 cd ~/almondmatcha/ws_base
-source install/setup.bash
-ros2 launch mission_control mission_control.launch.py
-```
-
-This automatically loads parameters from `config/params.yaml`.
-
-**GNU Screen:**
-```bash
-./launch_base_screen.sh
-```
-
-**Tmux:**
-```bash
-./launch_base_tmux.sh
-```
-
-**Screen Commands:**
-- `Ctrl+a` then `n` - Next window
-- `Ctrl+a` then `p` - Previous window
-- `Ctrl+a` then `d` - Detach session
-- `screen -r base` - Reattach session
-- `Ctrl+a` then `k` - Kill window
-
-### Manual Launch (Advanced)
-
-**Note:** When running nodes manually with `ros2 run`, you must specify parameters:
-
-```bash
-export ROS_DOMAIN_ID=5
-cd ~/almondmatcha/ws_base
-source install/setup.bash
-
-# Option 1: Load from params.yaml
-ros2 run mission_control mission_command_node --ros-args --params-file src/mission_control/config/params.yaml
-
-# Option 2: Specify parameters inline
-ros2 run mission_control mission_command_node --ros-args \
-  -p rover_spd:=15 \
-  -p des_lat:=8.007286 \
-  -p des_long:=101.50203
-
-# Terminal 2: Monitoring node (Domain 4)
-ros2 run mission_control mission_monitoring_node_pc
+bash launch_base_multi_domain.sh    # D5 command + D4 monitoring (baseline topology)
 ```
 
 ## Configuration
