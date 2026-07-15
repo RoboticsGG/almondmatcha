@@ -8,7 +8,7 @@ echo "Cleaning previous build artefacts..."
 rm -rf build/ install/ log/
 
 # Clear stale AMENT_PREFIX_PATH to avoid warnings from colcon
-unset AMENT_PREFIX_PATH
+# unset AMENT_PREFIX_PATH
 
 # Source ROS2 Humble — try standard debian path; skip if already sourced.
 # If your ROS2 is installed at a non-standard path (e.g. built from source),
