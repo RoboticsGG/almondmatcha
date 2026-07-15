@@ -240,7 +240,7 @@ source install/setup.bash
 
 # Base Station
 cd ~/almondmatcha/ws_base
-colcon build
+bash build_clean.sh
 source install/setup.bash
 ```
 
@@ -269,37 +269,37 @@ ping 192.168.1.1 && ping 192.168.1.5 && ping 192.168.1.2 && ping 192.168.1.6
 
 ### 3. Launch System
 
-**Optimal sequence (~25s startup):**
+**Single command from the base PC — starts everything:**
 
 ```bash
-# 1. Power on STM32 boards → wait for "Discovery complete" (~10s)
-
-# 2. Launch Raspberry Pi (Domain 5 - wait 3-5s)
-ssh curry@192.168.1.1
-cd ~/almondmatcha/ws_rpi
-export ROS_DOMAIN_ID=5
-./launch_rover_tmux.sh
-
-# 3. Launch Jetson (Domains 6 + 5 - wait 3-5s)
-ssh yupi@192.168.1.5
-cd ~/almondmatcha/ws_jetson
-# Note: Script handles both Domain 6 (vision) and Domain 5 (control) automatically
-./launch_headless.sh
-
-# 4. Launch Base Station (Domains 4 + 5)
-cd ~/almondmatcha/ws_base
-# Note: Script handles both domains automatically
-# - mission_command_node: Domain 5 (commands/actions)
-# - mission_monitoring_node_pc: Domain 4 (telemetry display)
-./launch_base_tmux.sh
+cd ~/almondmatcha
+bash ws_base/launch_field.sh
+# Ctrl-C at any time = clean emergency stop across all machines
 ```
 
-**Domain Architecture:**
-- **Domain 6:** Jetson vision (camera, lane detection) - localhost isolation, 30 FPS streams
-- **Domain 5:** Rover control network + base command node (mission_command_node for actions/services)
-- **Domain 4:** Base telemetry display only (mission_monitoring_node_pc for read-only monitoring)
+`launch_field.sh` SSH-launches rover nodes on RPi, vision nodes on Jetson, then starts
+base station nodes locally — in the correct order with proper startup delays.
 
-See [docs/LAUNCH_INSTRUCTIONS.md](docs/LAUNCH_INSTRUCTIONS.md) for detailed timing and [docs/DOMAINS.md](docs/DOMAINS.md) for architecture details.
+Reconnect to individual machine sessions at any time:
+```bash
+ssh curry@192.168.1.1 -t 'tmux attach-session -t rover'          # RPi
+ssh yupi@192.168.1.5  -t 'tmux attach-session -t jetson_vision'  # Jetson
+tmux attach-session -t base_station                               # base PC
+```
+
+**Manual per-machine launch** (if preferred):
+```bash
+# RPi
+ssh curry@192.168.1.1 'cd ~/almondmatcha/ws_rpi && bash launch_rover_tmux.sh'
+
+# Jetson
+ssh yupi@192.168.1.5 'cd ~/almondmatcha/ws_jetson && bash launch_jetson_tmux.sh'
+
+# Base PC
+cd ~/almondmatcha/ws_base && bash launch_base_tmux.sh
+```
+
+See [docs/LAUNCH_INSTRUCTIONS.md](docs/LAUNCH_INSTRUCTIONS.md) for timing details and [docs/DOMAINS.md](docs/DOMAINS.md) for architecture details.
 
 ### 4. Verify Operation
 

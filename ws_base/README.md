@@ -5,10 +5,13 @@ ROS2 workspace for ground station telemetry monitoring and rover command/control
 ## Quick Start
 
 ```bash
+# Build (first time)
 cd ~/almondmatcha/ws_base
-bash build_clean.sh      # two-step build: interfaces first, then mission_control
+bash build_clean.sh
 source install/setup.bash
-./launch_base_screen.sh
+
+# Run — single command, starts RPi + Jetson + base PC
+bash launch_field.sh
 ```
 
 ## Overview
@@ -40,55 +43,40 @@ source install/setup.bash
 
 ## Running
 
-### Launch Script (Recommended)
+### Script Reference
 
-**Using ROS2 Launch File:**
+| Script | What it does | When to use |
+|--------|-------------|-------------|
+| **`launch_field.sh`** | SSH-launches RPi + Jetson + base PC in order; Ctrl-C kills everything across all machines | **Production — single command from base PC** |
+| `launch_base_tmux.sh` | Starts base-station nodes only (tmux, 2 panes) | Base nodes only — RPi and Jetson already running |
+| `launch_base_screen.sh` | Same as above but GNU screen | Preference for screen over tmux |
+| `launch_monitoring.sh` | Starts `mission_monitoring_node_pc` only (D4 display) | Watch telemetry without commanding |
+
+### Production launch (single command)
+
 ```bash
-export ROS_DOMAIN_ID=5
+cd ~/almondmatcha
+bash ws_base/launch_field.sh
+# Ctrl-C at any time = clean stop on all machines
+```
+
+Reconnect to individual machine sessions after launch:
+```bash
+ssh curry@192.168.1.1 -t 'tmux attach-session -t rover'          # RPi
+ssh yupi@192.168.1.5  -t 'tmux attach-session -t jetson_vision'  # Jetson
+tmux attach-session -t base_station                               # base PC
+```
+
+### Base station nodes only
+
+Use this when RPi and Jetson are already running (e.g. after `launch_field.sh` was
+run previously and the rover sessions are still live):
+
+```bash
 cd ~/almondmatcha/ws_base
-source install/setup.bash
-ros2 launch mission_control mission_control.launch.py
-```
-
-This automatically loads parameters from `config/params.yaml`.
-
-**GNU Screen:**
-```bash
-./launch_base_screen.sh
-```
-
-**Tmux:**
-```bash
-./launch_base_tmux.sh
-```
-
-**Screen Commands:**
-- `Ctrl+a` then `n` - Next window
-- `Ctrl+a` then `p` - Previous window
-- `Ctrl+a` then `d` - Detach session
-- `screen -r base` - Reattach session
-- `Ctrl+a` then `k` - Kill window
-
-### Manual Launch (Advanced)
-
-**Note:** When running nodes manually with `ros2 run`, you must specify parameters:
-
-```bash
-export ROS_DOMAIN_ID=5
-cd ~/almondmatcha/ws_base
-source install/setup.bash
-
-# Option 1: Load from params.yaml
-ros2 run mission_control mission_command_node --ros-args --params-file src/mission_control/config/params.yaml
-
-# Option 2: Specify parameters inline
-ros2 run mission_control mission_command_node --ros-args \
-  -p rover_spd:=15 \
-  -p des_lat:=8.007286 \
-  -p des_long:=101.50203
-
-# Terminal 2: Monitoring node (Domain 4)
-ros2 run mission_control mission_monitoring_node_pc
+bash launch_base_tmux.sh      # tmux session: base_station
+# or
+bash launch_base_screen.sh    # GNU screen
 ```
 
 ## Configuration
