@@ -30,8 +30,8 @@ int32 ublox_satellites
 bool chassis_cmd_valid
 float32 chassis_cmd_left_speed
 float32 chassis_cmd_right_speed
-float32 chassis_cmd_left_direction
-float32 chassis_cmd_right_direction
+float32 chassis_cmd_steer_dir       # fdr_msg: steering direction (1=right 2=straight 3=left)
+float32 chassis_cmd_drive_dir        # bdr_msg: drive direction (0=stop 1=forward 2=backward)
 
 # ===== Chassis Sensors (from STM32) =====
 bool chassis_sensors_valid

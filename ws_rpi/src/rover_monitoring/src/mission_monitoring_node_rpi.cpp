@@ -197,8 +197,8 @@ private:
     bool chassis_cmd_valid_ = false;
     float chassis_cmd_left_speed_ = 0.0f;
     float chassis_cmd_right_speed_ = 0.0f;
-    float chassis_cmd_left_direction_ = 0.0f;
-    float chassis_cmd_right_direction_ = 0.0f;
+    float chassis_cmd_steer_dir_ = 0.0f;   // fdr_msg: 1=right, 2=straight, 3=left
+    float chassis_cmd_drive_dir_ = 0.0f;   // bdr_msg: 0=stop, 1=forward, 2=backward
     
     // Chassis sensors
     bool chassis_sensors_valid_ = false;
@@ -361,7 +361,7 @@ private:
         
         csv_chassis_cmd_.open(log_dir_ + "/chassis_cmd.csv", std::ios::out);
         if (csv_chassis_cmd_.is_open()) {
-            csv_chassis_cmd_ << "Timestamp_us,Left_Speed,Right_Speed,Left_Direction,Right_Direction\n";
+            csv_chassis_cmd_ << "Timestamp_us,Left_Speed,Right_Speed,Steer_Dir,Drive_Dir\n";
         }
         
         csv_mission_state_.open(log_dir_ + "/mission_state.csv", std::ios::out);
@@ -420,8 +420,8 @@ private:
         // This is a placeholder - adjust based on actual message fields
         chassis_cmd_left_speed_ = msg->spd_msg;
         chassis_cmd_right_speed_ = msg->spd_msg;
-        chassis_cmd_left_direction_ = msg->fdr_msg;
-        chassis_cmd_right_direction_ = msg->bdr_msg;
+        chassis_cmd_steer_dir_ = msg->fdr_msg;
+        chassis_cmd_drive_dir_ = msg->bdr_msg;
         
         // CSV logging (event-driven, ~50 Hz)
         if (csv_chassis_cmd_.is_open()) {
@@ -429,8 +429,8 @@ private:
                 std::chrono::system_clock::now().time_since_epoch()
             ).count();
             csv_chassis_cmd_ << timestamp_us << "," << chassis_cmd_left_speed_ << "," << chassis_cmd_right_speed_ << ","
-                           << static_cast<int>(chassis_cmd_left_direction_) << "," 
-                           << static_cast<int>(chassis_cmd_right_direction_) << "\n";
+                           << static_cast<int>(chassis_cmd_steer_dir_) << ","
+                           << static_cast<int>(chassis_cmd_drive_dir_) << "\n";
             csv_chassis_cmd_.flush();
         }
     }
@@ -561,8 +561,8 @@ private:
         telemetry.chassis_cmd_valid = chassis_cmd_valid_;
         telemetry.chassis_cmd_left_speed = chassis_cmd_left_speed_;
         telemetry.chassis_cmd_right_speed = chassis_cmd_right_speed_;
-        telemetry.chassis_cmd_left_direction = chassis_cmd_left_direction_;
-        telemetry.chassis_cmd_right_direction = chassis_cmd_right_direction_;
+        telemetry.chassis_cmd_steer_dir = chassis_cmd_steer_dir_;
+        telemetry.chassis_cmd_drive_dir = chassis_cmd_drive_dir_;
         
         // Chassis sensors
         telemetry.chassis_sensors_valid = chassis_sensors_valid_;

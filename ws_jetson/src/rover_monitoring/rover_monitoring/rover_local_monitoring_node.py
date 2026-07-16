@@ -117,7 +117,7 @@ class RoverLocalMonitoringNode(Node):
             'Timestamp', 'Mission_Active', 'Distance_Remaining_km',
             'Spresense_Valid', 'Spresense_Lat', 'Spresense_Lon', 'Spresense_Alt', 'Spresense_Sats',
             'Ublox_Valid', 'Ublox_Lat', 'Ublox_Lon', 'Ublox_Alt', 'Ublox_Fix', 'Ublox_Err_cm', 'Ublox_Sats',
-            'Chassis_Cmd_Valid', 'Cmd_Left_Speed', 'Cmd_Right_Speed', 'Cmd_Left_Dir', 'Cmd_Right_Dir',
+            'Chassis_Cmd_Valid', 'Cmd_Left_Speed', 'Cmd_Right_Speed', 'Cmd_Steer_Dir', 'Cmd_Drive_Dir',
             'Chassis_Sensors_Valid', 'Encoder_Left', 'Encoder_Right', 'Voltage_V', 'Current_A', 'Power_W',
             'Chassis_IMU_Valid', 'Accel_X', 'Accel_Y', 'Accel_Z', 'Gyro_X', 'Gyro_Y', 'Gyro_Z',
             'Steering_Valid', 'Steering_Cmd',
@@ -138,7 +138,7 @@ class RoverLocalMonitoringNode(Node):
             'Timestamp',
             'Sensors_Valid', 'Encoder_Left', 'Encoder_Right', 'Voltage_V', 'Current_A', 'Power_W',
             'IMU_Valid', 'Accel_X', 'Accel_Y', 'Accel_Z', 'Gyro_X', 'Gyro_Y', 'Gyro_Z',
-            'Cmd_Valid', 'Cmd_Left_Speed', 'Cmd_Right_Speed', 'Cmd_Left_Dir', 'Cmd_Right_Dir'
+            'Cmd_Valid', 'Cmd_Left_Speed', 'Cmd_Right_Speed', 'Cmd_Steer_Dir', 'Cmd_Drive_Dir'
         ])
         
         self.writer_mission_state.writerow([
@@ -162,7 +162,7 @@ class RoverLocalMonitoringNode(Node):
             msg.ublox_valid, msg.ublox_latitude, msg.ublox_longitude, 
             msg.ublox_altitude, msg.ublox_fix_quality, msg.ublox_centimeter_error, msg.ublox_satellites,
             msg.chassis_cmd_valid, msg.chassis_cmd_left_speed, msg.chassis_cmd_right_speed, 
-            msg.chassis_cmd_left_direction, msg.chassis_cmd_right_direction,
+            msg.chassis_cmd_steer_dir, msg.chassis_cmd_drive_dir,
             msg.chassis_sensors_valid, msg.encoder_left, msg.encoder_right, 
             msg.voltage, msg.current, msg.power_watts,
             msg.chassis_imu_valid, msg.accel_x, msg.accel_y, msg.accel_z, 
@@ -197,7 +197,7 @@ class RoverLocalMonitoringNode(Node):
             msg.chassis_imu_valid, msg.accel_x, msg.accel_y, msg.accel_z, 
             msg.gyro_x, msg.gyro_y, msg.gyro_z,
             msg.chassis_cmd_valid, msg.chassis_cmd_left_speed, msg.chassis_cmd_right_speed, 
-            msg.chassis_cmd_left_direction, msg.chassis_cmd_right_direction
+            msg.chassis_cmd_steer_dir, msg.chassis_cmd_drive_dir
         ])
         self.csv_chassis_data.flush()
         
