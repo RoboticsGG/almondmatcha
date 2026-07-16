@@ -24,10 +24,10 @@
 #   bash ws_base/launch_field.sh --skip-base    # skip local base station launch
 #
 # Prerequisites (one-time, per machine):
-#   • All workspaces built:
-#       cd ~/almondmatcha/ws_rpi    && colcon build
-#       cd ~/almondmatcha/ws_jetson && colcon build
-#       cd ~/almondmatcha/ws_base   && colcon build
+#   • Base PC: ws_base built
+#       cd ~/almondmatcha/ws_base   && bash build_clean.sh
+#   • RPi:     ws_rpi built   (checked via SSH in pre-flight)
+#   • Jetson:  ws_jetson built (checked via SSH in pre-flight)
 #   • On base PC, add to ~/.bashrc:
 #       export ROS_DOMAIN_ID=5
 #       export FASTRTPS_DEFAULT_PROFILES_FILE=$HOME/almondmatcha/ws_base/fastdds_base.xml
@@ -135,9 +135,7 @@ preflight() {
     command -v tmux &>/dev/null || die "tmux not installed"
     command -v ssh  &>/dev/null || die "ssh not installed"
 
-    [[ -d "$WORKSPACE/ws_rpi/install"    ]] || die "ws_rpi not built — run: cd $WORKSPACE/ws_rpi && colcon build"
-    [[ -d "$WORKSPACE/ws_jetson/install" ]] || die "ws_jetson not built — run: cd $WORKSPACE/ws_jetson && colcon build"
-    [[ -d "$WORKSPACE/ws_base/install"   ]] || die "ws_base not built — run: cd $WORKSPACE/ws_base && colcon build"
+    [[ -d "$WORKSPACE/ws_base/install"   ]] || die "ws_base not built — run: cd $WORKSPACE/ws_base && bash build_clean.sh"
     ok "  Workspace builds verified"
 
     if [[ -z "${FASTRTPS_DEFAULT_PROFILES_FILE:-}" ]]; then
