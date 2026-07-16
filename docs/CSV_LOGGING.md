@@ -30,7 +30,7 @@ The rover implements a **dual-tier CSV logging system** to ensure data redundanc
 - `spresense_gnss.csv` (~10 Hz): GPS data from Sony Spresense
 - `chassis_imu.csv` (~10 Hz): Accelerometer and gyroscope from STM32
 - `chassis_sensors.csv` (~4 Hz): Encoders, voltage, current, power
-- `chassis_cmd.csv` (~50 Hz): Motor commands (left/right speed & direction)
+- `chassis_cmd.csv` (~50 Hz): Motor commands (speed, steering direction, drive direction)
 - `mission_state.csv` (event-driven): Mission status, destination, steering, lane detection
 
 **Directory Structure**:
@@ -117,9 +117,12 @@ Timestamp(us), Accel_X, Accel_Y, Accel_Z, Gyro_X, Gyro_Y, Gyro_Z
 
 ### RPi: chassis_cmd.csv
 ```
-Timestamp(us), Left_Speed, Right_Speed, Left_Dir, Right_Dir
-1704373852123456, 50, 50, 1, 1
+Timestamp(us), Left_Speed, Right_Speed, Steer_Dir, Drive_Dir
+1704373852123456, 50, 50, 2, 1
 ```
+
+`Steer_Dir` = `fdr_msg`: 1=right, 2=straight, 3=left  
+`Drive_Dir` = `bdr_msg`: 0=stop, 1=forward, 2=backward
 
 ### RPi: rtk_gnss.csv
 ```
