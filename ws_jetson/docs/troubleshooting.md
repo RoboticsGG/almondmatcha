@@ -54,9 +54,11 @@ realsense-viewer  # Visual test
 
 **Solutions**:
 1. Increase `green_mask` threshold to filter more grass
-2. Tighten `red_mask` thresholds for lane markers
-3. Increase contour area minimum threshold
-4. Check lighting and shadows
+2. Narrow the ROI (`roi_base_points` in the params yaml) so less background falls inside the crop
+3. Check lighting and shadows
+
+Note: noise-blob filtering now uses a fixed 3x3 morphological opening (not a
+separately tunable contour-area threshold).
 
 ---
 
@@ -97,6 +99,16 @@ ros2 topic info /tpc_rover_ctrl_cmd
 2. Decrease EMA smoothing: `ema_alpha:=0.1`
 3. Increase error weights: `k_e1:=1.5 k_e2:=0.2`
 4. Add integral control: `k_i:=0.1`
+
+### Steering Reacts Late on Curves
+
+**Problem**: Rover steers in only after it's already partway through a curve (PID feedback alone reacts to heading/offset error, not the curve ahead)
+
+**Solutions**:
+1. Increase feedforward gain: `k_ff:=1500.0` (default 1000.0)
+2. If it now steers in *before* the curve actually starts, `k_ff` is too high -- lower it
+3. Check `curvature` is actually being detected: `ros2 topic echo /tpc_rover_nav_lane` (data[0] is curvature; data = [curvature, theta, b, detected])
+4. Tune `k_ff` incrementally in the field -- its correct value depends on your camera's ROI calibration and isn't derivable from first principles
 
 ---
 

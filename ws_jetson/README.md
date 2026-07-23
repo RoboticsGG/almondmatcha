@@ -126,17 +126,18 @@ ros2 launch vision_navigation control_domain5.launch.py
 - `vision_nav_headless.yaml` - Headless mode (no visualization)
 
 **Control tuning:**
-- `steering_control_params.yaml` - PID gains, filtering, limits
+- `rover_kinematic_control_params.yaml` - PID + feedforward gains, filtering, limits
 
-Example PID tuning:
+Example tuning:
 ```yaml
-steering_control:
+rover_kinematic_control:
   ros__parameters:
     k_p: 4.5      # Proportional gain
     k_i: 0.1      # Integral gain
     k_d: 0.15     # Derivative gain
     k_e1: 0.7     # Heading error weight
     k_e2: 0.3     # Lateral offset weight
+    k_ff: 1000.0  # Feedforward gain on filtered curvature
     ema_alpha: 0.3
 ```
 
@@ -264,7 +265,7 @@ ros2 daemon stop && ros2 daemon start
 **Domain 6 (localhost only):**
 - `tpc_rover_d415_rgb` - RGB stream (30 FPS)
 - `tpc_rover_d415_depth` - Depth stream (30 FPS)
-- `tpc_rover_nav_lane` - Lane parameters [theta, b, detected] (30 FPS)
+- `tpc_rover_nav_lane` - Lane parameters [curvature, theta, b, detected] (30 FPS)
 
 **Domain 5 (network-wide):**
 - `tpc_rover_ctrl_cmd` - Kinematic control commands [steer_angle, speed_cmd, detected] (50 Hz)

@@ -45,12 +45,17 @@ camera_stream --ros-args -p enable_depth:=True
 - `/tpc_rover_d415_rgb` (sensor_msgs/Image): RGB camera stream
 
 **Published Topics**:
-- `/tpc_rover_nav_lane` (std_msgs/Float32MultiArray): [theta, b, detected]
+- `/tpc_rover_nav_lane` (std_msgs/Float32MultiArray): [curvature, theta, b, detected]
 
 **Parameters**:
 - `show_window` (bool, default: False): Display lane detection visualization
+- `roi_base_points` (double array, 8 values): ROI trapezoid corners at (roi_base_width x roi_base_height)
+- `roi_base_width` / `roi_base_height` (float, default: 1280.0 / 720.0)
+- `crop_margin_px` (float, default: 20.0): margin around the ROI bounding box before cropping
+- `sliding_windows` (int, default: 9), `window_margin` (int, default: 100)
+- `min_window_pixels` (int, default: 50), `min_lane_pixels` (int, default: 50)
 
-**CSV Logging**: `lane_pub_log.csv` (timestamp, theta, b, detected)
+**CSV Logging**: columns (timestamp, curvature, theta, b, detected), written on a background thread
 
 **Run individually**:
 ```bash
@@ -70,7 +75,7 @@ lane_detection --ros-args -p show_window:=True
 **Purpose**: Closed-loop steering control for lane following
 
 **Subscribed Topics**:
-- `/tpc_rover_nav_lane` (std_msgs/Float32MultiArray): Lane parameters [theta, b, detected]
+- `/tpc_rover_nav_lane` (std_msgs/Float32MultiArray): Lane parameters [curvature, theta, b, detected]
 
 **Published Topics**:
 - `/tpc_rover_ctrl_cmd` (std_msgs/Float32MultiArray): [steer_angle, speed_cmd, detected]
@@ -81,13 +86,14 @@ lane_detection --ros-args -p show_window:=True
 - `k_p` (float, default: 4.0): Proportional gain
 - `k_i` (float, default: 0.0): Integral gain
 - `k_d` (float, default: 0.0): Derivative gain
-- `ema_alpha` (float, default: 0.05): Exponential moving average smoothing factor
+- `k_ff` (float, default: 1000.0): Feedforward gain on filtered curvature
+- `ema_alpha` (float, default: 0.05): Exponential moving average smoothing factor (theta, b, curvature)
 - `steer_max_deg` (float, default: 60.0): Maximum steering angle saturation (±degrees)
 - `speed_ref` (float, default: 50.0): Base speed command when lane is detected (0–100% duty cycle)
 - `speed_lost_ratio` (float, default: 0.5): Speed multiplier when lane is temporarily lost
 - `detection_timeout_sec` (float, default: 10.0): Seconds before speed drops to 0 on sustained lane loss
 
-**CSV Logging**: `logs/ws_jetson_kinematic_ctrl_TIMESTAMP.csv` (time_sec, theta_ema, b_ema, pid_u, e_sum, steer_angle, speed_cmd, detected)
+**CSV Logging**: `logs/ws_jetson_kinematic_ctrl_TIMESTAMP.csv` (time_sec, theta_ema, b_ema, curvature_ema, pid_u, e_sum, steer_angle, speed_cmd, detected)
 
 **Run individually**:
 ```bash

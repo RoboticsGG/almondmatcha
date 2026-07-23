@@ -33,7 +33,8 @@ Steering Actuator (Front Module)
 - **Depth frames**: `sensor_msgs/Image` (16UC1 format, optional)
 
 ### Lane Detection
-- **Lane parameters**: `std_msgs/Float32MultiArray` with [theta, b, detected]
+- **Lane parameters**: `std_msgs/Float32MultiArray` with [curvature, theta, b, detected]
+  - `curvature`: Parabola coefficient A (x = A*y^2 + B*y + C), rover-centered warped frame
   - `theta`: Heading error from lane center (degrees)
   - `b`: Lateral offset from lane center (pixels)
   - `detected`: Detection flag (1.0 = valid, 0.0 = not detected)
@@ -51,20 +52,23 @@ Steering Actuator (Front Module)
 
 ## Lane Detection Pipeline
 
-1. RGB to LAB color space conversion
-2. Color-based lane filtering
-3. Sobel gradient edge detection
+1. Crop frame to the ROI bounding box (plus margin) before the steps below
+2. LAB color space filtering (green background removal)
+3. Sobel gradient edge detection (CV_32F + cv2.cartToPolar)
 4. Binary image creation
-5. Perspective transform (bird's-eye view)
-6. Polyfit lane boundary detection
-7. Theta and b parameter calculation
+5. Morphological opening (noise removal)
+6. Perspective transform (bird's-eye view)
+7. 2nd-degree polyfit lane boundary detection (parabola)
+8. Curvature, theta, and b parameter calculation (rover-centered frame)
 
 ## Control Algorithm
 
 ```
-Combined Error: e = k_e1 * theta_ema + k_e2 * b_ema
-PID Output: u = k_p * e + k_i * integral(e, dt) + k_d * de/dt
-Steering: steer = clamp(u, -steer_max_deg, steer_max_deg)
+Combined Error:  e       = k_e1 * theta_ema + k_e2 * b_ema
+Feedback (PID):  u_pid   = k_p * e + k_i * integral(e, dt) + k_d * de/dt
+Feedforward:     u_ff    = k_ff * curvature_ema
+Combined Output: u_total = u_pid + u_ff
+Steering:        steer   = clamp(u_total, -steer_max_deg, steer_max_deg)
 If lane not detected: steer = steer_when_lost
 ```
 
@@ -76,4 +80,4 @@ If lane not detected: steer = steer_when_lost
 | Typical end-to-end latency | 100-150 ms |
 | EMA filter warmup time | ~1.5 seconds (default alpha=0.05) |
 | Memory per node | 150-200 MB |
-| Processing resolution | 1280x720 |
+| Camera resolution | 960x540 |
