@@ -6,8 +6,8 @@
 
 camera_stream:
   ros__parameters:
-    width: 1280
-    height: 720
+    width: 960
+    height: 540
     fps: 30
     device_serial: "806312060441"
     fallback_video: "/home/yupi/Almond/ros2-jetson-ws/001.mp4"
@@ -20,3 +20,14 @@ camera_stream:
 lane_detection:
   ros__parameters:
     show_window: true            # GUI: lane visualization enabled
+
+    # Keep in sync with vision_nav_headless.yaml so GUI debugging reflects
+    # production ROI/crop behavior.
+    roi_base_points: [0.0, 500.0, 1280.0, 500.0, 900.0, 200.0, 400.0, 200.0]
+    roi_base_width: 1280.0
+    roi_base_height: 720.0
+    crop_margin_px: 20.0
+    sliding_windows: 9
+    window_margin: 100
+    min_window_pixels: 50
+    min_lane_pixels: 50

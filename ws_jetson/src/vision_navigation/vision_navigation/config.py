@@ -95,7 +95,11 @@ class LaneDetectionConfig:
         [900, 200],      # Top-right
         [400, 200]       # Top-left
     ]
-    
+    ROI_BASE_WIDTH = 1280.0   # Reference resolution ROI_BASE_POINTS were authored against
+    ROI_BASE_HEIGHT = 720.0
+    CROP_MARGIN_PX = 20.0     # Margin around the ROI bounding box before cropping
+                              # (in ROI_BASE_WIDTH/HEIGHT units, scaled to actual frame size)
+
     # Destination margins for warped image
     PERSPECTIVE_LEFT_MARGIN = 0.25   # 25% from left
     PERSPECTIVE_RIGHT_MARGIN = 0.75  # 75% from right
@@ -122,7 +126,12 @@ class ControlConfig:
     K_P = 4.0          # Proportional gain (primary response)
     K_I = 0.0          # Integral gain (steady-state correction)
     K_D = 0.0          # Derivative gain (damping)
-    
+
+    # ===== Feedforward Gain =====
+    # u_ff = K_FF * curvature_ema -- anticipates curves ahead instead of
+    # reacting only after heading/offset error (PID feedback) builds up.
+    K_FF = 1000.0      # Feedforward gain on filtered curvature
+
     # ===== Error Weights =====
     # Combined error: e_total = k_e1*theta + k_e2*b
     K_E1 = 1.0         # Weight on heading error (theta)

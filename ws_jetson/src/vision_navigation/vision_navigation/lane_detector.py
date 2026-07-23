@@ -16,67 +16,64 @@ import numpy as np
 from typing import Tuple
 import matplotlib.pyplot as plt
 
+from vision_navigation.config import LaneDetectionConfig
+
 # ================================
 # 1. Threshold + Preprocess
 # ================================
-def preprocess_frame(frame_bgr: np.ndarray, min_area: int = 100) -> np.ndarray:
+def preprocess_frame(frame_bgr: np.ndarray) -> np.ndarray:
     """
     Preprocess frame: color filtering and edge detection.
-    
-    Removes green lane markers and detects lane boundaries using
-    LAB color space filtering and gradient-based edge detection.
-    
+
+    Removes green background (trees) via LAB color-space masking -- the
+    track surface is red with white lane lines against green surroundings,
+    so this segmentation is required for a clean edge signal, not optional.
+    Gradient magnitude/direction use cv2.cartToPolar (replaces the slower
+    np.sqrt / np.arctan2 calls), and small noise blobs are removed with a
+    vectorized morphological opening instead of a per-contour Python loop.
+
     Args:
         frame_bgr: Input BGR image from camera
-        min_area: Minimum contour area for noise filtering (pixels)
-        
+
     Returns:
         Binary image with detected lane markers
     """
-    img_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-    frame = cv2.GaussianBlur(img_rgb, (5, 5), 0)
-    frame = cv2.medianBlur(frame, 5)
-
-    # Convert to LAB color space for filtering
+    # Convert to LAB color space for filtering. Operates directly on
+    # frame_bgr -- the previous BGR->RGB blur/median-blur pass here was
+    # computed but never consumed by the rest of the pipeline.
     lab = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2LAB)
-    L = lab[:, :, 0]
     A = lab[:, :, 1]
     B = lab[:, :, 2]
 
-    # Create mask for green pixels (to remove from processing)
-    green_mask = np.zeros_like(A, dtype=np.uint8)
-    green_mask[(A < 120) & (B > 130)] = 1
-
-    # Create mask for red pixels (to keep)
-    red_mask = np.zeros_like(A, dtype=np.uint8)
-    red_mask[(A > 140) & (B < 140)] = 1
-
-    # Remove green pixels from LAB image
+    # Remove green pixels (tree/background) from the LAB image
+    green_mask = (A < 120) & (B > 130)
     lab_no_green = lab.copy()
-    lab_no_green[green_mask == 1] = 0
+    lab_no_green[green_mask] = 0
 
     # Convert back to RGB for gradient computation
     img_rgb_no_green = cv2.cvtColor(lab_no_green, cv2.COLOR_LAB2RGB)
     gray = cv2.cvtColor(img_rgb_no_green, cv2.COLOR_RGB2GRAY)
 
-    # Sobel x, y
-    abs_sobel_x = np.absolute(cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3))
-    abs_sobel_y = np.absolute(cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3))
+    # Sobel x, y (CV_32F required by cv2.cartToPolar)
+    sobel_x = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+    sobel_y = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+    abs_sobel_x = np.absolute(sobel_x).astype(np.float32)
+    abs_sobel_y = np.absolute(sobel_y).astype(np.float32)
+
     gradx = np.zeros_like(gray, dtype=np.uint8)
     grady = np.zeros_like(gray, dtype=np.uint8)
     gradx[(abs_sobel_x >= 50) & (abs_sobel_x <= 100)] = 1
     grady[(abs_sobel_y >= 50) & (abs_sobel_y <= 100)] = 1
 
-    # Magnitude
-    mag = np.sqrt(abs_sobel_x**2 + abs_sobel_y**2)
-    mag = (mag / (np.max(mag) / 255.0 + 1e-6)).astype(np.uint8)
+    # Magnitude + direction in one optimized call (replaces np.sqrt / np.arctan2)
+    mag_f, dir_f = cv2.cartToPolar(abs_sobel_x, abs_sobel_y, angleInDegrees=False)
+    mag = cv2.normalize(mag_f, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
     mag_binary = np.zeros_like(mag)
     mag_binary[(mag >= 30) & (mag <= 100)] = 1
 
     # Direction
-    dir_binary = np.zeros_like(gray)
-    absgraddir = np.arctan2(abs_sobel_y, abs_sobel_x + 1e-9)
-    dir_binary[(absgraddir >= 0.7) & (absgraddir <= 1.3)] = 1
+    dir_binary = np.zeros_like(gray, dtype=np.uint8)
+    dir_binary[(dir_f >= 0.7) & (dir_f <= 1.3)] = 1
 
     # White pixel detection (emphasize white lane lines)
     white_binary = np.zeros_like(gray, dtype=np.uint8)
@@ -88,43 +85,113 @@ def preprocess_frame(frame_bgr: np.ndarray, min_area: int = 100) -> np.ndarray:
              ((mag_binary == 1) & (dir_binary == 1)) |
              (white_binary == 1)] = 1
 
-    # Noise filtering: remove small contours
-    contours, _ = cv2.findContours(combined, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    for cnt in contours:
-        if cv2.contourArea(cnt) < min_area:
-            cv2.drawContours(combined, [cnt], 0, 0, -1)
+    # Noise filtering: vectorized morphological opening (replaces the
+    # per-contour Python loop). Small 3x3 kernel clears speckle noise
+    # without eroding away thin lane-line strokes.
+    noise_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    combined = cv2.morphologyEx(combined, cv2.MORPH_OPEN, noise_kernel)
 
     return combined
 
 
 # ================================
-# 2. Perspective Transform
+# 2. ROI Scaling & Cropping
+# ================================
+def get_scaled_roi_points(
+    frame_width: int,
+    frame_height: int,
+    roi_base_points: np.ndarray,
+    roi_base_width: float = LaneDetectionConfig.ROI_BASE_WIDTH,
+    roi_base_height: float = LaneDetectionConfig.ROI_BASE_HEIGHT,
+) -> np.ndarray:
+    """
+    Scale ROI corner points (authored at roi_base_width x roi_base_height) to
+    the actual frame size.
+
+    Args:
+        frame_width: Actual frame width (pixels)
+        frame_height: Actual frame height (pixels)
+        roi_base_points: Array-like, shape (4, 2) -- ROI corners in base-resolution coordinates
+        roi_base_width: Reference width roi_base_points were authored against
+        roi_base_height: Reference height roi_base_points were authored against
+
+    Returns:
+        np.float32 array, shape (4, 2): ROI corners scaled to (frame_width, frame_height)
+    """
+    roi_base_points = np.float32(roi_base_points)
+    sx = frame_width / roi_base_width
+    sy = frame_height / roi_base_height
+    return np.float32([[p[0] * sx, p[1] * sy] for p in roi_base_points])
+
+
+def crop_to_roi(
+    frame_bgr: np.ndarray,
+    roi_points: np.ndarray,
+    margin_x: float = 0.0,
+    margin_y: float = 0.0,
+) -> Tuple[np.ndarray, int, int]:
+    """
+    Crop a frame to the bounding box of the ROI polygon (plus margin).
+
+    Runs before the expensive per-pixel preprocessing so CPU cost scales
+    with the ROI area the perspective transform actually uses, rather than
+    the full camera frame -- unlike a sensor-level resolution cut, this
+    doesn't reduce pixel density (ground-sample-distance) inside the ROI,
+    so it doesn't cost curve-fitting accuracy the way downscaling does.
+
+    Args:
+        frame_bgr: Input BGR frame
+        roi_points: np.float32 array, shape (4, 2) -- ROI corners already
+            scaled to this frame's size (see get_scaled_roi_points)
+        margin_x: Extra margin added left/right of the ROI bounding box (pixels)
+        margin_y: Extra margin added above/below the ROI bounding box (pixels)
+
+    Returns:
+        Tuple of (cropped_frame, x_offset, y_offset):
+            - cropped_frame: BGR sub-image
+            - x_offset, y_offset: top-left corner of the crop, in the
+              original frame's coordinate system (subtract from roi_points
+              to re-express them relative to the cropped frame)
+    """
+    frame_height, frame_width = frame_bgr.shape[:2]
+
+    x_min = int(np.clip(np.min(roi_points[:, 0]) - margin_x, 0, frame_width))
+    x_max = int(np.clip(np.max(roi_points[:, 0]) + margin_x, 0, frame_width))
+    y_min = int(np.clip(np.min(roi_points[:, 1]) - margin_y, 0, frame_height))
+    y_max = int(np.clip(np.max(roi_points[:, 1]) + margin_y, 0, frame_height))
+
+    cropped_frame = frame_bgr[y_min:y_max, x_min:x_max]
+    return cropped_frame, x_min, y_min
+
+
+# ================================
+# 3. Perspective Transform
 # ================================
 def perspective_transform(
     binary: np.ndarray,
-    frame_size: Tuple[int, int]
+    frame_size: Tuple[int, int],
+    roi_points: np.ndarray
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Apply perspective transformation to bird eye view.
-    
+
     Transforms the image from camera view to top-down view for easier
     lane detection in the transformed coordinate system.
-    
+
     Args:
         binary: Binary input image
-        frame_size: Tuple of (width, height)
-        
+        frame_size: Tuple of (width, height) of `binary`
+        roi_points: np.float32 array, shape (4, 2) -- source ROI quadrilateral
+            corners [bottom-left, bottom-right, top-right, top-left], already
+            scaled (and, if cropped upstream, shifted) to match `binary`
+
     Returns:
         Tuple of (warped, M, M_inv):
             - warped: Transformed binary image (bird eye view)
             - M: Perspective transformation matrix
             - M_inv: Inverse transformation matrix
     """
-    h, w = frame_size
-
-    ROI_BASE = np.float32([[0, 500], [1280, 500], [900, 200], [400, 200]])
-    sx, sy = w / 1280.0, h / 720.0
-    roi_points = np.float32([[p[0] * sx, p[1] * sy] for p in ROI_BASE])
+    w, h = frame_size
 
     dst = np.float32([
         [w * 0.25, h * 1.0],
@@ -137,12 +204,12 @@ def perspective_transform(
     M_inv = cv2.getPerspectiveTransform(dst, roi_points)
 
     warped = cv2.warpPerspective(binary, M, (w, h))
-    
+
     return warped, M, M_inv
 
 
 # ================================
-# 3. Lane Finding (single center line)
+# 4. Lane Finding (single center line)
 # ================================
 def find_center_line(
     binary_warped: np.ndarray,
@@ -195,62 +262,155 @@ def find_center_line(
 
 
 # ================================
-# 4. Fit single line & Params
+# 5. Fit single line & Params
 # ================================
-def compute_lane_params(binary_warped: np.ndarray) -> dict:
+def compute_lane_params(
+    binary_warped: np.ndarray,
+    sliding_windows: int = LaneDetectionConfig.SLIDING_WINDOWS,
+    window_margin: int = LaneDetectionConfig.WINDOW_MARGIN,
+    min_window_pixels: int = LaneDetectionConfig.MIN_WINDOW_PIXELS,
+    min_lane_pixels: int = LaneDetectionConfig.MIN_LANE_PIXELS,
+) -> dict:
     """
-    Compute lane parameters (steering angle, lateral offset) from binary image.
-    
+    Compute lane parameters (curvature, steering angle, lateral offset) from binary image.
+
+    Detected pixels are translated into a rover-centered frame before
+    fitting: y is measured from the bottom row of the image (the rover's
+    position, y=0) and x is measured from the image's horizontal center
+    (x=0). Fitting the parabola x = A*y^2 + B*y + C directly in this frame
+    means the fit coefficients themselves ARE the quantities the controller
+    needs at the rover's position -- B is the heading slope and C is the
+    lateral offset -- with no separate "evaluate the polynomial at y=height"
+    step (and its extra floating-point error) afterward.
+
+    sliding_windows/window_margin/min_window_pixels/min_lane_pixels are
+    exposed as arguments (not hardcoded) because their correct values are
+    tied to the working canvas size -- since the ROI is now cropped before
+    this point, the canvas is much smaller than the un-cropped frame, so
+    these need to be tunable without editing code.
+
     Args:
         binary_warped: Binary bird eye view image
-        
+        sliding_windows: Number of vertical search windows (see find_center_line)
+        window_margin: Search window half-width in pixels (see find_center_line)
+        min_window_pixels: Minimum pixels to recenter a window (see find_center_line)
+        min_lane_pixels: Minimum total detected pixels required for a valid fit
+
     Returns:
         Dictionary with keys:
-            - theta: Steering angle (degrees), NaN if not detected
-            - b: Lateral offset from center (pixels), NaN if not detected
+            - curvature: Parabola coefficient A (x = A*y^2 + B*y + C), NaN if not detected
+            - theta: Steering angle (degrees) at the rover's position, NaN if not detected
+            - b: Lateral offset from center (pixels) at the rover's position, NaN if not detected
             - detected: Boolean flag indicating valid detection
     """
-    x_coords, y_coords = find_center_line(binary_warped)
+    x_coords, y_coords = find_center_line(
+        binary_warped,
+        num_windows=sliding_windows,
+        window_margin=window_margin,
+        min_pixels=min_window_pixels,
+    )
     height, width = binary_warped.shape[:2]
 
-    result = {"theta": np.nan, "b": np.nan, "detected": False}
+    result = {"curvature": np.nan, "theta": np.nan, "b": np.nan, "detected": False}
 
-    if len(x_coords) >= 50:
-        # Fit line: x = m*y + b (y is vertical axis)
-        slope, intercept = np.polyfit(y_coords, x_coords, 1)
-        theta = np.degrees(np.arctan(slope))
-        b_centered = intercept - (width // 2)
+    if len(x_coords) >= min_lane_pixels:
+        # Translate to rover-centered frame: y=0 at the bottom row (rover
+        # position), x=0 at the horizontal center, before fitting.
+        y_shifted = y_coords.astype(np.float64) - height
+        x_shifted = x_coords.astype(np.float64) - (width / 2.0)
 
-        result = {"theta": theta, "b": b_centered, "detected": True}
+        # Fit parabola: x = A*y^2 + B*y + C in the shifted frame
+        coeff_a, coeff_b, coeff_c = np.polyfit(y_shifted, x_shifted, 2)
+
+        # At y_shifted = 0 (the rover's position), the fit coefficients are
+        # directly the heading slope (B) and lateral offset (C).
+        theta = np.degrees(np.arctan(coeff_b))
+        b_centered = coeff_c
+
+        result = {
+            "curvature": coeff_a,
+            "theta": theta,
+            "b": b_centered,
+            "detected": True,
+        }
 
     return result
 
 # ================================
-# 5. Full Pipeline
+# 6. Full Pipeline
 # ================================
-# ================================
-# 5. Full Pipeline
-# ================================
-def process_frame(frame_bgr: np.ndarray) -> Tuple[float, float, bool]:
+def process_frame(
+    frame_bgr: np.ndarray,
+    roi_base_points: np.ndarray = None,
+    roi_base_width: float = LaneDetectionConfig.ROI_BASE_WIDTH,
+    roi_base_height: float = LaneDetectionConfig.ROI_BASE_HEIGHT,
+    crop_margin_px: float = LaneDetectionConfig.CROP_MARGIN_PX,
+    sliding_windows: int = LaneDetectionConfig.SLIDING_WINDOWS,
+    window_margin: int = LaneDetectionConfig.WINDOW_MARGIN,
+    min_window_pixels: int = LaneDetectionConfig.MIN_WINDOW_PIXELS,
+    min_lane_pixels: int = LaneDetectionConfig.MIN_LANE_PIXELS,
+) -> Tuple[float, float, float, bool]:
     """
-    Complete lane detection pipeline: preprocess -> transform -> detect -> compute params.
-    
+    Complete lane detection pipeline: crop -> preprocess -> transform -> detect -> compute params.
+
+    Crops to the ROI's bounding box (plus margin) before the expensive
+    per-pixel preprocessing runs, so CPU cost scales with the ROI area the
+    perspective transform actually uses rather than the full camera frame,
+    without reducing pixel density inside the ROI the way a sensor-level
+    resolution cut would.
+
     Args:
         frame_bgr: Input BGR frame from camera
-        
+        roi_base_points: ROI trapezoid corners at (roi_base_width x roi_base_height);
+            defaults to LaneDetectionConfig.ROI_BASE_POINTS
+        roi_base_width: Reference width roi_base_points were authored against
+        roi_base_height: Reference height roi_base_points were authored against
+        crop_margin_px: Extra margin (in roi_base_width/height units) added
+            around the ROI bounding box before cropping
+        sliding_windows: Number of vertical search windows
+        window_margin: Search window half-width in pixels
+        min_window_pixels: Minimum pixels to recenter a search window
+        min_lane_pixels: Minimum total detected pixels required for a valid fit
+
     Returns:
-        Tuple of (theta, b, detected):
+        Tuple of (curvature, theta, b, detected):
+            - curvature: Parabola coefficient A (x = A*y^2 + B*y + C)
             - theta: Steering angle error (degrees)
             - b: Lateral offset (pixels)
             - detected: Boolean detection flag
     """
-    binary = preprocess_frame(frame_bgr)
+    if roi_base_points is None:
+        roi_base_points = LaneDetectionConfig.ROI_BASE_POINTS
+
     frame_width, frame_height = frame_bgr.shape[1], frame_bgr.shape[0]
-    warped, M, M_inv = perspective_transform(binary, (frame_width, frame_height))
-    params = compute_lane_params(warped)
-    plot_lane_lines(frame_bgr, warped, M_inv, params["theta"], params["b"], params["detected"])
-    
-    return params["theta"], params["b"], params["detected"]
+
+    # Scale the ROI (and its margin) from the base calibration resolution to
+    # the actual frame size.
+    roi_points_full = get_scaled_roi_points(
+        frame_width, frame_height, roi_base_points, roi_base_width, roi_base_height
+    )
+    margin_x = crop_margin_px * (frame_width / roi_base_width)
+    margin_y = crop_margin_px * (frame_height / roi_base_height)
+
+    # Crop to the ROI bounding box before the expensive per-pixel preprocessing
+    cropped_frame, x_offset, y_offset = crop_to_roi(frame_bgr, roi_points_full, margin_x, margin_y)
+    crop_width, crop_height = cropped_frame.shape[1], cropped_frame.shape[0]
+
+    # Re-express the ROI corners relative to the cropped frame's new origin
+    roi_points_cropped = roi_points_full - np.float32([x_offset, y_offset])
+
+    binary = preprocess_frame(cropped_frame)
+    warped, M, M_inv = perspective_transform(binary, (crop_width, crop_height), roi_points_cropped)
+    params = compute_lane_params(
+        warped,
+        sliding_windows=sliding_windows,
+        window_margin=window_margin,
+        min_window_pixels=min_window_pixels,
+        min_lane_pixels=min_lane_pixels,
+    )
+    plot_lane_lines(cropped_frame, warped, M_inv, params["theta"], params["b"], params["detected"])
+
+    return params["curvature"], params["theta"], params["b"], params["detected"]
 
 
 def plot_lane_lines(
@@ -315,61 +475,3 @@ def plot_lane_lines(
     if w > screen_width:
         scale = screen_width / w
         combined_vis = cv2.resize(combined_vis, (int(w * scale), int(h * scale)))
-
-
-def plot_lane_lines(frame_bgr, warped, Minv, theta, b, detected):
-    H, W = warped.shape[:2]
-
-    # ----- Step 1: เตรียมแกน y สำหรับ Bird’s eye view -----
-    y_vals = np.linspace(0, H-1, num=H)
-    if detected:
-        m = np.tan(np.radians(theta))
-        x_vals = m * y_vals + (b + W//2)  # ย้าย origin กลับจาก center
-    else:
-        x_vals = np.array([])
-        y_vals = np.array([])
-
-    # ----- Step 2: Bird's-eye view -----
-    bird_eye_vis = cv2.cvtColor((warped*255).astype(np.uint8), cv2.COLOR_GRAY2BGR)
-    # ตัดขอบตามแนวยาว ฝั่งละ 100 px
-    bird_eye_vis = bird_eye_vis[:, 100:W-100]
-    warped = warped[:, 100:W-100]
-    W = W - 200  # ปรับขนาด W หลังตัดขอบ
-    x_vals = x_vals - 100  # ปรับตำแหน่ง x ให้ตรงกับภาพที่ถูกตัดขอบ
-    # cv2.imshow("Bird's Eye View", bird_eye_vis)
-
-    
-
-    if len(x_vals) > 0:
-        pts = np.vstack([x_vals, y_vals]).T.astype(np.int32)
-        cv2.polylines(bird_eye_vis, [pts], isClosed=False, color=(0,0,255), thickness=3)
-
-        # วาดแกน (0,0) ที่กึ่งกลางภาพ
-        cv2.line(bird_eye_vis, (W//2,0), (W//2,H), (0,255,0), 1)
-        cv2.line(bird_eye_vis, (0,H//2), (W,H//2), (255,0,0), 1)
-
-    # ----- Step 3: Original view (inverse warp line กลับ) -----
-    orig_vis = frame_bgr.copy()
-    if len(x_vals) > 0:
-        pts = np.vstack([x_vals, y_vals]).T.reshape(-1,1,2).astype(np.float32)
-        pts = cv2.perspectiveTransform(pts, Minv)  
-
-        pts_int = pts.astype(np.int32)
-        cv2.polylines(orig_vis, [pts_int], isClosed=False, color=(0,0,255), thickness=3)
-
-        # วาดแกน (0,0) กลางภาพ
-        cv2.line(orig_vis, (W//2,0), (W//2,H), (0,255,0), 1)
-        cv2.line(orig_vis, (0,H//2), (W,H//2), (255,0,0), 1)
-
-    # Resize combined visualization to fit screen width
-    # Resize orig_vis to match bird_eye_vis width
-    if orig_vis.shape[1] != bird_eye_vis.shape[1]:
-        orig_vis = cv2.resize(orig_vis, (bird_eye_vis.shape[1], bird_eye_vis.shape[0]))
-    
-    screen_width = 720  
-    combined_vis = np.vstack([bird_eye_vis, orig_vis])
-    h, w = combined_vis.shape[:2]
-    scale = screen_width / w if w > screen_width else 1.0
-    if scale < 1.0:
-        combined_vis = cv2.resize(combined_vis, (int(w * scale), int(h * scale)))
-    # cv2.imshow("Lane Detection (Bird's Eye View + Original)", combined_vis)

@@ -28,10 +28,17 @@ Control Outputs (tpc_rover_ctrl_cmd):
 Steering Control Parameters:
     k_e1: Weight on heading error theta
     k_e2: Weight on lateral offset b
-    k_p / k_i / k_d: PID gains
+    k_p / k_i / k_d: PID feedback gains
+    k_ff: Feedforward gain applied to filtered curvature (anticipates curves
+          ahead instead of reacting only after heading/offset error builds up)
     ema_alpha: Exponential moving average smoothing factor
     steer_max_deg: Maximum steering angle saturation (±degrees)
     steer_when_lost: Steering command when lane not detected (safety)
+
+Control Law:
+    u_pid   = PID(k_e1*theta_ema + k_e2*b_ema)   -- feedback on current error
+    u_ff    = k_ff * curvature_ema               -- feedforward on curve ahead
+    u_total = u_pid + u_ff                        -- combined, then clamped
 
 Speed Control Parameters:
     speed_ref: Desired forward speed when lane is detected (0-100% PWM duty cycle)
@@ -165,12 +172,22 @@ class RoverKinematicControlNode(Node):
         self.k_i: float  = float(self.get_parameter('k_i').value)
         self.k_d: float  = float(self.get_parameter('k_d').value)
 
+        # ===================== Feedforward Gain =====================
+        # u_ff = k_ff * curvature_ema -- anticipates the curve ahead instead
+        # of waiting for heading/offset error (PID feedback) to build up.
+        # 1000.0 is a starting order of magnitude (curvature is ~1e-4 to
+        # 1e-3 for gentle/moderate curves in the warped pixel frame) -- tune
+        # from the field the same way k_p/k_i/k_d were tuned.
+        self.declare_parameter('k_ff', 1000.0)
+        self.k_ff: float = float(self.get_parameter('k_ff').value)
+
         # ===================== EMA Filter =====================
         self.declare_parameter('ema_alpha', 0.05)
         ema_alpha: float = float(self.get_parameter('ema_alpha').value)
 
-        self.ema_theta = ExponentialMovingAverageLPF(ema_alpha)
-        self.ema_b     = ExponentialMovingAverageLPF(ema_alpha)
+        self.ema_theta     = ExponentialMovingAverageLPF(ema_alpha)
+        self.ema_b         = ExponentialMovingAverageLPF(ema_alpha)
+        self.ema_curvature = ExponentialMovingAverageLPF(ema_alpha)
 
         # ===================== Steering Safety Parameters =====================
         self.declare_parameter('steer_max_deg', 60.0)
@@ -225,7 +242,7 @@ class RoverKinematicControlNode(Node):
         self.get_logger().info("Rover Kinematic Control node initialized on Domain 6")
         self.get_logger().info(f"  Subscribe (D6): tpc_rover_nav_lane")
         self.get_logger().info(f"  Publish  (D5):  tpc_rover_ctrl_cmd  [direct via D5InterfaceNode]")
-        self.get_logger().info(f"  Steering PID  Kp={self.k_p} Ki={self.k_i} Kd={self.k_d}")
+        self.get_logger().info(f"  Steering PID  Kp={self.k_p} Ki={self.k_i} Kd={self.k_d}  Kff={self.k_ff}")
         self.get_logger().info(
             f"  Speed ref={self.speed_ref}%  lost_ratio={self.speed_lost_ratio}"
             f"  timeout={self.detection_timeout_sec}s  (unit: 0-100% duty)"
@@ -243,7 +260,7 @@ class RoverKinematicControlNode(Node):
         self.csv_path: str = os.path.join(log_dir, filename)
         self.csv_file = open(self.csv_path, mode="w", newline="")
         self.csv_writer = csv.writer(self.csv_file)
-        self.csv_writer.writerow(["time_sec", "theta_ema", "b_ema", "pid_u", "e_sum",
+        self.csv_writer.writerow(["time_sec", "theta_ema", "b_ema", "curvature_ema", "pid_u", "e_sum",
                                   "steer_angle", "speed_cmd", "detected"])
         self.get_logger().info(f"Logging to: {self.csv_path}")
 
@@ -253,8 +270,12 @@ class RoverKinematicControlNode(Node):
         """
         Process lane detection data and publish combined kinematic control command.
 
-        Expected input  tpc_rover_nav_lane: [theta_deg, b_offset, detected_flag]
+        Expected input  tpc_rover_nav_lane: [curvature, theta_deg, b_offset, detected_flag]
         Published output tpc_rover_ctrl_cmd: [steer_angle, speed_cmd, detected]
+
+        Combines PID feedback (on heading + lateral error) with feedforward
+        (proportional to curve sharpness ahead) so the rover starts steering
+        into a curve before heading/offset error alone would trigger it.
 
         Args:
             msg: Lane parameters from lane_detection node.
@@ -262,34 +283,40 @@ class RoverKinematicControlNode(Node):
         self.lane_msg_count += 1
 
         # ===== Validate input =====
-        if len(msg.data) < 3:
-            self.get_logger().warn("tpc_rover_nav_lane message has fewer than 3 fields — skipping")
+        if len(msg.data) < 4:
+            self.get_logger().warn("tpc_rover_nav_lane message has fewer than 4 fields — skipping")
             return
 
-        theta    = float(msg.data[0])   # Heading error in degrees (+ = needs right turn)
-        b        = float(msg.data[1])   # Lateral pixel offset from lane center
-        detected = bool(msg.data[2])    # Raw detection flag from vision
+        curvature = float(msg.data[0])  # Parabola coefficient A (x = A*y^2 + B*y + C)
+        theta     = float(msg.data[1])  # Heading error in degrees (+ = needs right turn)
+        b         = float(msg.data[2])  # Lateral pixel offset from lane center
+        detected  = bool(msg.data[3])   # Raw detection flag from vision
 
         # ===== Input saturation (prevent filter spikes) =====
         theta = clamp(theta, -35.0, 35.0)
         b     = clamp(b, -100.0, 100.0)
 
         # ===== EMA low-pass filtering =====
-        theta_ema = self.ema_theta.update(theta)
-        b_ema     = self.ema_b.update(b)
+        theta_ema     = self.ema_theta.update(theta)
+        b_ema         = self.ema_b.update(b)
+        curvature_ema = self.ema_curvature.update(curvature)
 
         # ===== Warm-up guard: wait for filter buffers to fill =====
-        buffer_full   = self.ema_theta.is_full() and self.ema_b.is_full()
+        buffer_full = (
+            self.ema_theta.is_full() and
+            self.ema_b.is_full() and
+            self.ema_curvature.is_full()
+        )
         detected_valid = detected and buffer_full
 
-        # ===== Steering: PID on combined heading + lateral error =====
+        # ===== Feedback: PID on combined heading + lateral error =====
         error_sum = (self.k_e1 * theta_ema) + (self.k_e2 * b_ema)
 
         now = time.time()
         dt  = now - self.last_time
         self.last_time = now
 
-        u, self.integral, self.last_error = pid_controller(
+        u_pid, self.integral, self.last_error = pid_controller(
             error_sum,
             self.k_p, self.k_i, self.k_d,
             self.integral,
@@ -298,15 +325,19 @@ class RoverKinematicControlNode(Node):
             integral_limit=200.0
         )
 
-        steer_angle = u if detected_valid else self.steer_when_lost
+        # ===== Feedforward: anticipate the curve ahead using curvature =====
+        u_ff = self.k_ff * curvature_ema
+        u_total = u_pid + u_ff
+
+        steer_angle = u_total if detected_valid else self.steer_when_lost
         steer_angle = float(np.clip(steer_angle, -self.steer_max_deg, self.steer_max_deg))
 
         # ===== Speed: detection-timeout safety logic =====
         speed_cmd = self._compute_speed_cmd(detected_valid)
 
         # ===== Logging =====
-        self._log_control_data(now, theta_ema, b_ema, u, error_sum, steer_angle, speed_cmd,
-                                detected_valid)
+        self._log_control_data(now, theta_ema, b_ema, curvature_ema, u_pid, error_sum,
+                                steer_angle, speed_cmd, detected_valid)
 
         # ---- Publish to Domain 5 via D5InterfaceNode (same process, thread-safe) ----
         cmd_msg = Float32MultiArray()
@@ -317,8 +348,8 @@ class RoverKinematicControlNode(Node):
         # ===== Terminal output =====
         status = "DETECTED" if detected_valid else "LOST"
         self.get_logger().info(
-            f"[KIN] θ={theta_ema:.1f}° b={b_ema:.1f}px err={error_sum:.2f} "
-            f"u={u:.2f} | steer={steer_angle:.1f}° spd={speed_cmd} [{status}]"
+            f"[KIN] θ={theta_ema:.1f}° b={b_ema:.1f}px curv={curvature_ema:.5f} "
+            f"u_pid={u_pid:.2f} u_ff={u_ff:.2f} | steer={steer_angle:.1f}° spd={speed_cmd} [{status}]"
         )
 
     # ===================== Speed Control =====================
@@ -374,6 +405,7 @@ class RoverKinematicControlNode(Node):
         timestamp: float,
         theta_ema: float,
         b_ema: float,
+        curvature_ema: float,
         pid_u: float,
         error_sum: float,
         steer_angle: float,
@@ -383,7 +415,7 @@ class RoverKinematicControlNode(Node):
         """Write one control-loop row to the CSV log."""
         try:
             self.csv_writer.writerow([
-                f"{timestamp:.6f}", f"{theta_ema:.4f}", f"{b_ema:.4f}",
+                f"{timestamp:.6f}", f"{theta_ema:.4f}", f"{b_ema:.4f}", f"{curvature_ema:.6f}",
                 f"{pid_u:.4f}", f"{error_sum:.4f}",
                 f"{steer_angle:.4f}", speed_cmd, int(detected)
             ])

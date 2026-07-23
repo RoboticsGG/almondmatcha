@@ -8,11 +8,16 @@ rover_kinematic_control:
     k_e1: 1.0                    # Weight on heading error (theta)
     k_e2: 0.1                    # Weight on lateral offset (b)
     
-    # PID gains (control law: u = kp*e + ki*∫e*dt + kd*de/dt)
+    # PID gains (control law: u_pid = kp*e + ki*∫e*dt + kd*de/dt)
     k_p: 4.0                     # Proportional gain
     k_i: 0.01                     # Integral gain
     k_d: 0.01                     # Derivative gain
-    
+
+    # Feedforward gain (u_ff = k_ff * curvature_ema; u_total = u_pid + u_ff)
+    # Starting order of magnitude -- curvature is ~1e-4 to 1e-3 for
+    # gentle/moderate curves in the warped pixel frame. Tune from the field.
+    k_ff: 1000.0                 # Feedforward gain on filtered curvature
+
     # Filtering
     ema_alpha: 0.05              # Exponential moving average smoothing (0-1)
     

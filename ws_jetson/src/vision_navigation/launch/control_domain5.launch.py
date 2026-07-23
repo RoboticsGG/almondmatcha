@@ -63,6 +63,8 @@ def generate_launch_description():
                                  description='Integral gain')
     k_d = DeclareLaunchArgument('k_d', default_value=str(ControlConfig.K_D),
                                  description='Derivative gain')
+    k_ff = DeclareLaunchArgument('k_ff', default_value=str(ControlConfig.K_FF),
+                                  description='Feedforward gain on filtered curvature')
     ema_alpha = DeclareLaunchArgument('ema_alpha', default_value=str(ControlConfig.EMA_ALPHA),
                                        description='EMA smoothing factor')
     steer_max_deg = DeclareLaunchArgument('steer_max_deg', default_value=str(ControlConfig.STEER_MAX_DEGREES),
@@ -92,7 +94,7 @@ def generate_launch_description():
         set_domain_id,
         
         # Declare arguments
-        k_e1, k_e2, k_p, k_i, k_d, ema_alpha, steer_max_deg, steer_when_lost,
+        k_e1, k_e2, k_p, k_i, k_d, k_ff, ema_alpha, steer_max_deg, steer_when_lost,
         
         # Startup messages
         LogInfo(msg='========================================'),

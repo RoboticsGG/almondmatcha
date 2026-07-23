@@ -13,7 +13,8 @@ Topics Subscribed:
     /tpc_rover_d415_rgb (sensor_msgs/Image, bgr8) - RGB camera stream
 
 Topics Published:
-    /tpc_rover_nav_lane (std_msgs/Float32MultiArray) - Lane parameters [theta, b, detected]
+    /tpc_rover_nav_lane (std_msgs/Float32MultiArray) - Lane parameters [curvature, theta, b, detected]
+        curvature: Parabola coefficient A (x = A*y^2 + B*y + C), rover-centered frame
         theta: Steering angle error (degrees)
         b: Lateral offset from lane center
         detected: Boolean flag (1.0 = detected, 0.0 = not detected)
@@ -26,13 +27,15 @@ Algorithm:
     2. Color filtering and edge detection (LAB color space)
     3. Gradient analysis and morphological operations
     4. Perspective transform to bird's-eye view
-    5. Lane detection using polyfit
-    6. Parameter calculation (theta, b)
-    7. Publish and log results
+    5. Lane detection using 2nd-degree polyfit (curve fitting)
+    6. Parameter calculation (curvature, theta, b)
+    7. Publish results; log to CSV asynchronously (background thread)
 
 CSV Logging:
     Saves detection results to '~/almondmatcha/runs/logs/ws_jetson_lane_detection_TIMESTAMP.csv' with:
-    timestamp, theta, b, detected
+    timestamp, curvature, theta, b, detected
+    Writes happen on a background thread via a queue so the image callback
+    never blocks on file I/O.
 
 Author: Vision Navigation System
 Date: November 4, 2025
@@ -41,6 +44,8 @@ Date: November 4, 2025
 import math
 import csv
 import os
+import queue
+import threading
 from datetime import datetime
 from typing import Optional, Tuple
 import numpy as np
@@ -55,6 +60,7 @@ from std_msgs.msg import Float32MultiArray
 from cv_bridge import CvBridge
 
 from vision_navigation.lane_detector import process_frame
+from vision_navigation.config import LaneDetectionConfig
 
 
 class LaneDetectionNode(Node):
@@ -98,6 +104,38 @@ class LaneDetectionNode(Node):
         self.declare_parameter('show_window', False)
         self.show_window: bool = bool(self.get_parameter('show_window').value)
 
+        # ===== ROI / crop / sliding-window parameters =====
+        # Exposed as ROS parameters (not hardcoded in lane_detector.py) since
+        # the crop makes their correct values depend on the configured
+        # camera resolution -- tune via the params yaml, not code edits.
+        roi_flat_default = [
+            float(v) for pair in LaneDetectionConfig.ROI_BASE_POINTS for v in pair
+        ]
+        self.declare_parameter('roi_base_points', roi_flat_default)
+        self.declare_parameter('roi_base_width', LaneDetectionConfig.ROI_BASE_WIDTH)
+        self.declare_parameter('roi_base_height', LaneDetectionConfig.ROI_BASE_HEIGHT)
+        self.declare_parameter('crop_margin_px', LaneDetectionConfig.CROP_MARGIN_PX)
+        self.declare_parameter('sliding_windows', LaneDetectionConfig.SLIDING_WINDOWS)
+        self.declare_parameter('window_margin', LaneDetectionConfig.WINDOW_MARGIN)
+        self.declare_parameter('min_window_pixels', LaneDetectionConfig.MIN_WINDOW_PIXELS)
+        self.declare_parameter('min_lane_pixels', LaneDetectionConfig.MIN_LANE_PIXELS)
+
+        roi_flat = [float(v) for v in self.get_parameter('roi_base_points').value]
+        if len(roi_flat) != 8:
+            self.get_logger().warn(
+                f"roi_base_points expected 8 values (4 corners x,y), got {len(roi_flat)} "
+                f"-- falling back to the default ROI"
+            )
+            roi_flat = roi_flat_default
+        self.roi_base_points = np.float32(roi_flat).reshape(4, 2)
+        self.roi_base_width: float = float(self.get_parameter('roi_base_width').value)
+        self.roi_base_height: float = float(self.get_parameter('roi_base_height').value)
+        self.crop_margin_px: float = float(self.get_parameter('crop_margin_px').value)
+        self.sliding_windows: int = int(self.get_parameter('sliding_windows').value)
+        self.window_margin: int = int(self.get_parameter('window_margin').value)
+        self.min_window_pixels: int = int(self.get_parameter('min_window_pixels').value)
+        self.min_lane_pixels: int = int(self.get_parameter('min_lane_pixels').value)
+
         # ===================== Visualization =====================
         self.window_name = "lane_detection"
         if self.show_window:
@@ -114,6 +152,13 @@ class LaneDetectionNode(Node):
         filename = f"ws_jetson_lane_detection_{timestamp}.csv"
         self.csv_path: str = os.path.join(log_dir, filename)
         self._csv_header_written: bool = False
+
+        # ===================== Async CSV Logging =====================
+        # File I/O runs on a background thread so the image callback never
+        # blocks on disk writes (blocking here was dropping camera frames).
+        self._log_queue: "queue.Queue" = queue.Queue()
+        self._log_thread = threading.Thread(target=self._log_worker, daemon=True)
+        self._log_thread.start()
 
         self.get_logger().info(
             f"Navigation processing node initialized. "
@@ -138,22 +183,33 @@ class LaneDetectionNode(Node):
             return
 
         # ===================== Lane Detection =====================
-        theta, b, detected = process_frame(bgr_frame)
+        curvature, theta, b, detected = process_frame(
+            bgr_frame,
+            roi_base_points=self.roi_base_points,
+            roi_base_width=self.roi_base_width,
+            roi_base_height=self.roi_base_height,
+            crop_margin_px=self.crop_margin_px,
+            sliding_windows=self.sliding_windows,
+            window_margin=self.window_margin,
+            min_window_pixels=self.min_window_pixels,
+            min_lane_pixels=self.min_lane_pixels,
+        )
 
         # ===================== Value Validation =====================
         # Handle NaN and None values
+        curvature_clean = self._validate_float(curvature, 0.0)
         theta_clean = self._validate_float(theta, 0.0)
         b_clean = self._validate_float(b, float('nan'))
         detected_val = 1.0 if detected else 0.0
 
         # ===================== Publish Results =====================
         lane_msg = Float32MultiArray()
-        lane_msg.data = [theta_clean, b_clean, detected_val]
+        lane_msg.data = [curvature_clean, theta_clean, b_clean, detected_val]
         self.pub_lane.publish(lane_msg)
 
         # ===================== Logging =====================
-        self._log_to_csv(theta_clean, b_clean, detected_val)
-        self._log_to_terminal(theta_clean, b_clean, detected_val)
+        self._log_to_csv(curvature_clean, theta_clean, b_clean, detected_val)
+        self._log_to_terminal(curvature_clean, theta_clean, b_clean, detected_val)
 
         # ===================== Visualization =====================
         if self.show_window:
@@ -185,34 +241,51 @@ class LaneDetectionNode(Node):
 
     # ===================== Logging Methods =====================
 
-    def _log_to_csv(self, theta: float, b: float, detected: float) -> None:
+    def _log_to_csv(self, curvature: float, theta: float, b: float, detected: float) -> None:
         """
-        Log frame results to CSV file.
-        
+        Enqueue a row for asynchronous CSV logging (non-blocking).
+
         Args:
+            curvature: Parabola coefficient A (x = A*y^2 + B*y + C)
             theta: Steering angle (degrees)
             b: Lateral offset
             detected: Detection flag (1.0 or 0.0)
         """
-        try:
-            timestamp = datetime.now().isoformat()
-            row = [timestamp, theta, b, detected]
-            
-            file_exists = os.path.isfile(self.csv_path)
-            with open(self.csv_path, 'a', newline='', encoding='utf-8') as f:
-                writer = csv.writer(f)
-                if not file_exists and not self._csv_header_written:
-                    writer.writerow(['timestamp', 'theta', 'b', 'detected'])
-                    self._csv_header_written = True
-                writer.writerow(row)
-        except Exception as e:
-            self.get_logger().warn(f"CSV logging failed: {e}")
+        timestamp = datetime.now().isoformat()
+        self._log_queue.put((timestamp, curvature, theta, b, detected))
 
-    def _log_to_terminal(self, theta: float, b: float, detected: float) -> None:
+    def _log_worker(self) -> None:
+        """
+        Background thread: drains the log queue and writes CSV rows.
+
+        Runs off the image callback so a slow disk (SD card / eMMC) never
+        causes camera frames to be dropped waiting on file I/O.
+        """
+        while True:
+            item = self._log_queue.get()
+            if item is None:
+                self._log_queue.task_done()
+                break
+            timestamp, curvature, theta, b, detected = item
+            try:
+                file_exists = os.path.isfile(self.csv_path)
+                with open(self.csv_path, 'a', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    if not file_exists and not self._csv_header_written:
+                        writer.writerow(['timestamp', 'curvature', 'theta', 'b', 'detected'])
+                        self._csv_header_written = True
+                    writer.writerow([timestamp, curvature, theta, b, detected])
+            except Exception as e:
+                self.get_logger().warn(f"CSV logging failed: {e}")
+            finally:
+                self._log_queue.task_done()
+
+    def _log_to_terminal(self, curvature: float, theta: float, b: float, detected: float) -> None:
         """
         Log frame results to terminal.
-        
+
         Args:
+            curvature: Parabola coefficient A (x = A*y^2 + B*y + C)
             theta: Steering angle (degrees)
             b: Lateral offset
             detected: Detection flag (1.0 or 0.0)
@@ -220,7 +293,7 @@ class LaneDetectionNode(Node):
         self.frame_count += 1
         status = "Detected" if detected > 0.5 else "Not Detected"
         self.get_logger().info(
-            f"Frame {self.frame_count}: theta={theta:7.3f} deg, "
+            f"Frame {self.frame_count}: curvature={curvature:9.6f}, theta={theta:7.3f} deg, "
             f"b={b:7.3f}, status={status}"
         )
 
@@ -268,7 +341,12 @@ class LaneDetectionNode(Node):
     # ===================== Cleanup =====================
 
     def destroy_node(self) -> None:
-        """Clean up visualization resources."""
+        """Clean up visualization and background logging resources."""
+        try:
+            self._log_queue.put(None)
+            self._log_thread.join(timeout=2.0)
+        except Exception:
+            pass
         try:
             if self.show_window:
                 cv2.destroyWindow(self.window_name)

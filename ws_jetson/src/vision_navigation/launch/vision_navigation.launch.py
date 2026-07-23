@@ -128,7 +128,13 @@ def generate_launch_description():
         default_value=str(ControlConfig.K_D),
         description='PID derivative gain'
     )
-    
+
+    k_ff = DeclareLaunchArgument(
+        'k_ff',
+        default_value=str(ControlConfig.K_FF),
+        description='Feedforward gain on filtered curvature'
+    )
+
     ema_alpha = DeclareLaunchArgument(
         'ema_alpha',
         default_value=str(ControlConfig.EMA_ALPHA),
@@ -193,6 +199,7 @@ def generate_launch_description():
             'k_p': LaunchConfiguration('k_p'),
             'k_i': LaunchConfiguration('k_i'),
             'k_d': LaunchConfiguration('k_d'),
+            'k_ff': LaunchConfiguration('k_ff'),
             'ema_alpha': LaunchConfiguration('ema_alpha'),
             'steer_max_deg': LaunchConfiguration('steer_max_deg'),
             'steer_when_lost': LaunchConfiguration('steer_when_lost'),
@@ -229,6 +236,7 @@ def generate_launch_description():
         k_p,
         k_i,
         k_d,
+        k_ff,
         ema_alpha,
         steer_max_deg,
         steer_when_lost,

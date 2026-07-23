@@ -102,6 +102,7 @@ def generate_launch_description():
     k_p = DeclareLaunchArgument('k_p', default_value=str(ControlConfig.K_P))
     k_i = DeclareLaunchArgument('k_i', default_value=str(ControlConfig.K_I))
     k_d = DeclareLaunchArgument('k_d', default_value=str(ControlConfig.K_D))
+    k_ff = DeclareLaunchArgument('k_ff', default_value=str(ControlConfig.K_FF))
     ema_alpha = DeclareLaunchArgument('ema_alpha', default_value=str(ControlConfig.EMA_ALPHA))
     steer_max_deg = DeclareLaunchArgument('steer_max_deg', default_value=str(ControlConfig.STEER_MAX_DEGREES))
     steer_when_lost = DeclareLaunchArgument('steer_when_lost', default_value=str(ControlConfig.STEER_WHEN_LOST))
@@ -143,7 +144,7 @@ def generate_launch_description():
         # Declare arguments
         camera_width, camera_height, camera_fps,
         enable_depth, video_path, loop_video, json_config,
-        k_e1, k_e2, k_p, k_i, k_d, ema_alpha, steer_max_deg, steer_when_lost,
+        k_e1, k_e2, k_p, k_i, k_d, k_ff, ema_alpha, steer_max_deg, steer_when_lost,
         
         # Startup messages
         LogInfo(msg='Vision Navigation System starting in HEADLESS MODE...'),
