@@ -1,0 +1,38 @@
+# Closed-Loop Speed Control Parameters
+# chassis_control / chassis_controller_node — Domain 5 (ws_rpi)
+# Date: July 24, 2026
+#
+# The speed loop is driven by /tpc_chassis_sensors (wheel encoders on the
+# sensors STM32, ~4 Hz). PID setpoint/output are in the same 0-100% duty-cycle
+# abstraction as spd_msg/spd_limit_cap_ — not physical units (m/s) — converted
+# to encoder ticks/sec internally via max_ticks_per_sec.
+
+chassis_controller_node:
+  ros__parameters:
+    # Kill-switch: false forces legacy open-loop passthrough with no rebuild
+    # (e.g. `ros2 param set /chassis_controller_node use_closed_loop_speed false`).
+    use_closed_loop_speed: true
+
+    # PID gains (control law: u = kp*e + ki*∫e*dt + kd*de/dt, e in ticks/sec, u in %).
+    # Conservative starting values — tune from the field like k_p/k_ff on the
+    # vision side. Start with kp only (ki=kd=0), then add ki once proportional
+    # response looks stable, then kd if oscillation needs damping.
+    speed_kp: 0.05
+    speed_ki: 0.01
+    speed_kd: 0.0
+
+    # Anti-windup clamp on the integral accumulator (ticks/sec * sec).
+    speed_integral_limit: 200.0
+
+    # Encoder ticks/sec measured at 100% duty on flat ground.
+    # Field-calibrate: drive open-loop at 100% duty, log a run, then compute
+    # ticks/sec from consecutive Encoder_Left/Encoder_Right rows in the
+    # existing chassis_sensors.csv (~10 Hz per docs/CSV_LOGGING.md).
+    # PLACEHOLDER — replace before relying on closed-loop speed in the field.
+    max_ticks_per_sec: 1000.0
+
+    # Encoder feed considered stale after this long with no message —
+    # triggers fallback to open-loop passthrough. tpc_chassis_sensors
+    # publishes at ~4 Hz (250 ms period), so 1.0 s tolerates a few missed
+    # messages before falling back.
+    sensor_timeout_sec: 1.0

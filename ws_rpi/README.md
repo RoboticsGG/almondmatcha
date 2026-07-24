@@ -28,7 +28,7 @@ tmux kill-session -t rover
 
 | Package | Purpose |
 |---------|---------|
-| `chassis_control` | Motor coordination, cruise control |
+| `chassis_control` | Motor coordination, closed-loop speed control (encoder feedback), cruise control |
 | `chassis_sensors` | Sensor data logging (IMU, encoders, power) |
 | `gnss_navigation` | GPS waypoint navigation, mission monitoring || `rover_monitoring` | Telemetry relay publisher (D4), CSV data logger || `rover_bringup` | System-wide launch configuration |
 
@@ -202,6 +202,26 @@ ros2 run chassis_sensors chassis_sensors_node
 ```
 
 ## Configuration
+
+### Chassis Speed Control
+
+`chassis_controller_node` closes the speed loop against `/tpc_chassis_sensors` wheel
+encoder feedback (~4 Hz) instead of applying PWM duty open-loop, so the chassis holds
+its target speed under varying terrain load. Steering keeps updating at the full 50 Hz
+of `/tpc_rover_ctrl_cmd`; only the speed correction is paced by the slower encoder feed.
+Falls back to open-loop passthrough (today's legacy behavior) if the encoder feed goes
+stale.
+
+Tuned via `src/chassis_control/config/chassis_speed_control_params.yaml`
+(`use_closed_loop_speed`, `speed_kp`/`speed_ki`/`speed_kd`, `speed_integral_limit`,
+`max_ticks_per_sec`, `sensor_timeout_sec`) — loaded automatically by
+`ros2 launch rover_bringup rover_startup.launch.py` and by `launch_rover_tmux.sh`.
+Set `use_closed_loop_speed` to `false` (no rebuild needed via `ros2 param set`) to
+force legacy open-loop behavior.
+
+`max_ticks_per_sec` needs field calibration: drive open-loop at 100% duty on flat
+ground, then compute ticks/sec from consecutive `Encoder_Left`/`Encoder_Right` rows in
+the logged `chassis_sensors.csv` (see [docs/CSV_LOGGING.md](../docs/CSV_LOGGING.md)).
 
 ### Network Setup
 
@@ -408,9 +428,11 @@ ws_rpi/
 ├── launch_rover_tmux.sh         # Tmux launcher
 ├── BUILD.md                     # Detailed build documentation
 └── src/
-    ├── chassis_control/     # Motor coordination
+    ├── chassis_control/     # Motor coordination + closed-loop speed control
     │   ├── src/
     │   │   └── chassis_controller_node.cpp
+    │   ├── config/
+    │   │   └── chassis_speed_control_params.yaml
     │   ├── CMakeLists.txt
     │   └── package.xml
     │

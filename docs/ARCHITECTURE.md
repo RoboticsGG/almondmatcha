@@ -108,7 +108,7 @@ graph LR
 
 **Raspberry Pi 4 (192.168.1.1 — Domain 5):**
 ```
-├── chassis_controller_node     - Motor command coordination (D5 sub/pub)
+├── chassis_controller_node     - Motor coordination + closed-loop speed PID (D5 sub/pub)
 ├── chassis_imu_node            - IMU data relay (D5 sub)
 ├── chassis_sensors_node        - Encoder/power relay (D5 sub)
 ├── gnss_spresense_node         - Standard GPS position processing (D5 pub)
@@ -167,6 +167,7 @@ flowchart LR
     LANE -->|tpc_rover_nav_lane| CTRL["rover_kinematic_control\nD6 sub / D5 pub · 50 Hz"]
     CTRL -->|tpc_rover_ctrl_cmd| CC["chassis_controller_node\nD5 · 50 Hz"]
     CC -->|tpc_chassis_cmd| MTR["STM32 chassis_controller\nD5 · 20 Hz"]
+    SNS["STM32 sensors_node\nD5 · 4 Hz"] -->|tpc_chassis_sensors| CC
 ```
 
 **Latency Budget:**

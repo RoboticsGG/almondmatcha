@@ -75,13 +75,15 @@ node.create_publisher<msgs_ifaces::msg::ChassisSensors>("tpc_chassis_sensors", 1
 // → best_effort + volatile
 ```
 
-**Subscriber**: ws_rpi `chassis_sensors_node`
+**Subscribers**: ws_rpi `chassis_sensors_node`, `chassis_controller_node` (closed-loop speed PID)
 ```cpp
 rclcpp::QoS qos(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_sensor_data));
 qos.best_effort();  // Match STM32
 ```
 
-**Rationale**: Same as IMU - real-time sensor data tolerates packet loss
+**Rationale**: Same as IMU - real-time sensor data tolerates packet loss. `chassis_controller_node`
+uses this feed (~4 Hz) to close the speed loop against wheel encoder counts; see
+[rover_bringup.md](rover_bringup.md) for the fallback-to-open-loop behavior on stale data.
 
 ---
 
@@ -313,7 +315,7 @@ Last Updated: November 7, 2025
 | Topic | Publisher | Publisher QoS | Subscriber | Subscriber QoS | Notes |
 |-------|-----------|---------------|------------|----------------|-------|
 | `tpc_chassis_imu` | STM32 chassis_controller | sensor_data + best_effort + volatile | chassis_imu_node, mission_monitoring_node_rpi | Same | High frequency IMU |
-| `tpc_chassis_sensors` | STM32 sensors_node | sensor_data + best_effort + volatile | chassis_sensors_node, mission_monitoring_node_rpi | Same | Encoder/power data |
+| `tpc_chassis_sensors` | STM32 sensors_node | sensor_data + best_effort + volatile | chassis_sensors_node, chassis_controller_node, mission_monitoring_node_rpi | Same | Encoder/power data; chassis_controller_node uses it for closed-loop speed PID |
 | `tpc_gnss_spresense` | gnss_spresense_node | reliable + transient_local | gnss_mission_monitor_node, mission_monitoring_node_rpi | Same | GNSS position |
 | `tpc_chassis_cmd` | chassis_controller_node | reliable + transient_local | STM32 chassis_controller | best_effort (compatible) | Motor commands |
 | `tpc_gnss_mission_active` | gnss_mission_monitor_node | reliable + transient_local | chassis_controller_node, mission_monitoring_node_rpi | Same | Mission status |

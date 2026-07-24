@@ -170,12 +170,15 @@ int32 gyro_z           # Angular rate Z-axis
 
 **Type:** `msgs_ifaces/msg/ChassisSensors`  
 **Publisher:** `sensors_node` (STM32)  
-**Subscribers:** `chassis_sensors_node`, `node_ekf_fusion` (future)  
+**Subscribers:** `chassis_sensors_node`, `chassis_controller_node` (closed-loop speed PID), `node_ekf_fusion` (future)  
 **Rate:** 4 Hz (aggregated from 3 tasks)  
-**QoS:** Reliable, Depth 10  
+**QoS:** Best Effort, Volatile, Depth 10 (sensor_data profile — matches STM32 mbed default)  
 **Domain:** 5  
 
-Encoder, power, and GNSS data from sensors board.
+Encoder, power, and GNSS data from sensors board. `chassis_controller_node` computes
+ticks/sec from consecutive `mt_lf_encode_msg`/`mt_rt_encode_msg` deltas to drive a
+speed PID, falling back to open-loop passthrough if this feed goes stale (see
+[ws_rpi/docs/rover_bringup.md](../ws_rpi/docs/rover_bringup.md)).
 
 **Message Definition:**
 ```
@@ -447,6 +450,7 @@ flowchart LR
 ```mermaid
 flowchart LR
     SNS["sensors_node (STM32)"] -->|tpc_chassis_sensors| MON["mission_monitoring_node_rpi\n(RPi)"]
+    SNS -->|tpc_chassis_sensors ~4Hz| CC["chassis_controller_node\n(RPi, speed PID)"]
     SPRES["gnss_spresense_node (RPi)"] -->|tpc_gnss_spresense| MON
     UBLOX["gnss_ublox_node (RPi)"] -->|tpc_gnss_ublox| MON
     MON -->|tpc_telemetry_relay 5Hz D4| PC["mission_monitoring_node_pc\n(Base, D4)"]
@@ -465,7 +469,7 @@ flowchart LR
 | `tpc_rover_ctrl_cmd` | Best Effort | Volatile | Keep Last | 10 |
 | `tpc_chassis_cmd` | Reliable | Volatile | Keep Last | 10 |
 | `tpc_chassis_imu` | Reliable | Volatile | Keep Last | 10 |
-| `tpc_chassis_sensors` | Reliable | Volatile | Keep Last | 10 |
+| `tpc_chassis_sensors` | Best Effort | Volatile | Keep Last | 10 |
 | `tpc_gnss_*` | Reliable | Volatile | Keep Last | 10 |
 
 **Rationale:**

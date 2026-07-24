@@ -1,7 +1,9 @@
 from launch import LaunchDescription
 from launch.actions import GroupAction, SetEnvironmentVariable
 from launch_ros.actions import Node
+from ament_index_python.packages import get_package_share_directory
 import datetime
+import os
 
 # Rover Startup Launch File
 # ==========================
@@ -34,6 +36,12 @@ set_custom_log_dir = SetEnvironmentVariable(
 )
 
 def generate_launch_description():
+
+    chassis_speed_config = os.path.join(
+        get_package_share_directory('chassis_control'),
+        'config',
+        'chassis_speed_control_params.yaml'
+    )
 
     domain_5_group = GroupAction(
         actions=[
@@ -68,7 +76,8 @@ def generate_launch_description():
                 executable='chassis_controller_node',
                 name='chassis_controller_node',
                 output='log',
-                emulate_tty=True
+                emulate_tty=True,
+                parameters=[chassis_speed_config]
             ),
 
             # Chassis Sensor Nodes

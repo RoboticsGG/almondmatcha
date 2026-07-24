@@ -75,7 +75,7 @@ tmux send-keys   -t $SESSION_NAME:0.4 "ros2 run gnss_navigation gnss_mission_mon
 tmux select-pane -t $SESSION_NAME:0.1 -T "Chassis_Controller"
 tmux send-keys   -t $SESSION_NAME:0.1 "$SRC" C-m
 tmux send-keys   -t $SESSION_NAME:0.1 "clear && echo -e '\\e[1;35m>>> [4/8] CHASSIS CONTROLLER <<<\\e[0m' && sleep 1" C-m
-tmux send-keys   -t $SESSION_NAME:0.1 "ros2 run chassis_control chassis_controller_node" C-m
+tmux send-keys   -t $SESSION_NAME:0.1 "ros2 run chassis_control chassis_controller_node --ros-args --params-file \$(ros2 pkg prefix chassis_control)/share/chassis_control/config/chassis_speed_control_params.yaml" C-m
 
 # Pane 5 (mid-mid): Chassis IMU
 tmux select-pane -t $SESSION_NAME:0.5 -T "Chassis_IMU"

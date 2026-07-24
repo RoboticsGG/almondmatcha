@@ -37,6 +37,7 @@ flowchart TB
 
     LANE -->|tpc_rover_nav_lane| CTRL
     CTRL --> CC --> STM32C
+    STM32S -->|tpc_chassis_sensors ~4Hz| CC
     GNSS --> MON
     STM32C --> MON
     STM32S --> MON

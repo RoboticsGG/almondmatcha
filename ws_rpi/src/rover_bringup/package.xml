@@ -10,6 +10,10 @@
   <!-- Runtime dependencies for any package that uses Python launch files -->
   <depend>launch</depend>
   <depend>launch_ros</depend>
+  <depend>ament_index_python</depend>
+
+  <!-- Needed to locate chassis_control's config/ share directory at launch time -->
+  <exec_depend>chassis_control</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

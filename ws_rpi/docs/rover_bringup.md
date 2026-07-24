@@ -92,10 +92,19 @@ source install/setup.bash
 | `gnss_spresense_node` | gnss_navigation | Sony Spresense GPS reader | Pub: `tpc_gnss_spresense` |
 | `gnss_ublox_node` | gnss_navigation | u-blox RTK GNSS reader | Pub: `tpc_gnss_ublox` |
 | `gnss_mission_monitor_node` | gnss_navigation | Waypoint tracking | Sub: `tpc_gnss_spresense`<br>Pub: `tpc_gnss_mission_active`, `tpc_gnss_mission_remain_dist` |
-| `chassis_controller_node` | chassis_control | Motor command coordination | Sub: `tpc_rover_ctrl_cmd`, `tpc_gnss_mission_active`<br>Pub: `tpc_chassis_cmd` |
+| `chassis_controller_node` | chassis_control | Motor command coordination + closed-loop speed control | Sub: `tpc_rover_ctrl_cmd`, `tpc_gnss_mission_active`, `tpc_chassis_sensors`<br>Pub: `tpc_chassis_cmd`<br>Params: `config/chassis_speed_control_params.yaml` |
 | `chassis_imu_node` | chassis_sensors | IMU data logger | Sub: `tpc_chassis_imu` |
 | `chassis_sensors_node` | chassis_sensors | Encoder/power logger | Sub: `tpc_chassis_sensors` |
 | `mission_monitoring_node_rpi` | rover_monitoring | D5 aggregator → D4 relay + CSV | Sub: 10 D5 topics<br>Pub: D4 `/tpc_telemetry_relay` @ 5 Hz<br>CSV: 6 files in ws_rpi/runs/ |
+
+**`chassis_controller_node` closed-loop speed control:** holds target speed against
+`tpc_chassis_sensors` encoder feedback (~4 Hz) instead of applying `spd_msg` PWM duty
+open-loop; falls back to open-loop passthrough if the encoder feed goes stale.
+Tuned via `chassis_control/config/chassis_speed_control_params.yaml`
+(loaded by `rover_startup.launch.py`; `launch_rover_tmux.sh` passes it with
+`--ros-args --params-file`). Kill-switch: `use_closed_loop_speed` (default `true`) —
+`ros2 param set /chassis_controller_node use_closed_loop_speed false` reverts to
+open-loop with no rebuild.
 
 ### Domain 5 Nodes (ws_base)
 
@@ -120,7 +129,7 @@ source install/setup.bash
 
 **Topics (ws_rpi → rest of D5):**
 - `tpc_chassis_imu` — IMU data (10 Hz)
-- `tpc_chassis_sensors` — Encoder/power (4 Hz)
+- `tpc_chassis_sensors` — Encoder/power (4 Hz), also consumed by `chassis_controller_node` for closed-loop speed control
 - `tpc_gnss_spresense` — GPS position (10 Hz)
 - `tpc_gnss_ublox` — RTK GNSS position (10 Hz)
 - `tpc_chassis_cmd` — Motor commands (50 Hz)

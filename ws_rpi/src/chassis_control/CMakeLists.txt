@@ -31,7 +31,10 @@ target_compile_features(chassis_controller_node PUBLIC c_std_99 cxx_std_17)  # R
 
 install(TARGETS chassis_controller_node
   DESTINATION lib/${PROJECT_NAME})
-  
+
+install(DIRECTORY config/
+  DESTINATION share/${PROJECT_NAME}/config)
+
 #------------------------------------------------------------------------------------#
 
 if(BUILD_TESTING)
