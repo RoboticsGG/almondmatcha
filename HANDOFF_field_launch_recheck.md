@@ -1,4 +1,4 @@
-# Hand-off: Field launch script recheck + passwordless SSH
+# Hand-off: Field launch script recheck
 
 Written 2026-07-26, end of the session that added measured-FPS logging to
 `lane_detection_node.py` and moved `rover_kinematic_control_node.py`'s CSV
@@ -7,7 +7,11 @@ pattern lane_detection already used (commit `1328c94`, pushed to `main`).
 That work is done and unrelated to this task — safe to ignore in a fresh
 session.
 
-## Task 1: Recheck launch scripts for field-run readiness — DONE 2026-07-26
+(A passwordless-SSH task was originally tracked here too — the user
+decided against it, so it's been dropped. If SSH convenience comes up
+again, don't assume the prior investigation still applies; ask fresh.)
+
+## Recheck launch scripts for field-run readiness — DONE 2026-07-26
 
 Audited `launch_field.sh` plus all three tmux launch scripts it calls
 (`launch_rover_tmux.sh`, `launch_jetson_tmux.sh`, `launch_base_tmux.sh`) and
@@ -105,53 +109,8 @@ these are just the obvious candidates from reading the script once):
   `launch_rover_tmux.sh` / `launch_jetson_tmux.sh` (i.e. they still need to
   detach cleanly when invoked non-interactively over SSH).
 
-## Task 2: Passwordless SSH to RPi + Jetson — answered, just needs the user to execute it
-
-The user asked how to stop typing each machine's password on every field
-run, without changing the launch procedure. Short answer: standard SSH
-public-key auth. It requires **zero script changes** — `launch_field.sh`
-already just shells out to plain `ssh` (see its `SSH_OPTS` /
-`ControlMaster=auto`); once each remote's `~/.ssh/authorized_keys` has the
-base PC's public key, those exact same `ssh` calls stop prompting.
-
-This is already the documented procedure, at `ws_base/docs/SETUP.md:145-158`
-— nothing new to design. This session just confirmed current state on this
-machine (hostname `spa`, user `yupi`):
-
-- A local keypair already exists: `~/.ssh/id_ed25519` / `.pub` — no need to
-  run `ssh-keygen` again.
-- Both `192.168.1.1` (RPi) and `192.168.1.5` (Jetson) are reachable on port
-  22 from here.
-- Key auth is **not yet authorized** on either remote — tested with
-  `ssh -o BatchMode=yes ... curry@192.168.1.1` and `...yupi@192.168.1.5`,
-  both returned `Permission denied (publickey,password)`.
-
-**Remaining step** — this needs a human at a real terminal, since it
-requires typing each machine's password interactively one last time (not
-something to automate/paste into an agent):
-
-```bash
-ssh-copy-id curry@192.168.1.1   # RPi    — prompts for curry's password once
-ssh-copy-id yupi@192.168.1.5    # Jetson — prompts for yupi's password once
-```
-
-Verify with `ssh curry@192.168.1.1 hostname` and `ssh yupi@192.168.1.5 hostname`
-— both should return instantly, no password prompt.
-
-**Closing this task = confirming the user ran `ssh-copy-id`, not writing
-any code.** If they come back saying it's still prompting, check: the
-right local user ran it (keys are per-user, `~/.ssh` is per-`$HOME`), and
-that `~/.ssh/authorized_keys` permissions on the remote are `600` (SSH
-silently ignores group/world-writable `authorized_keys`).
-
 ## Traps
 
-- Don't reach for `sshpass` or embed a plaintext password anywhere as a
-  "workaround" if asked to make this fully non-interactive — key auth is
-  the already-decided, already-documented method; a hardcoded password
-  would be a real regression, not a shortcut, and this repo/scripts get
-  used in the field where the laptop could be lost/stolen.
 - `launch_base_tmux.sh` / `launch_base_screen.sh` mention `sudo apt install
   tmux/screen` only inside their own "tool not found" error messages —
-  that's not a runtime sudo call against RPi/Jetson, don't confuse it with
-  the SSH password question above.
+  that's not a runtime sudo call against RPi/Jetson.
