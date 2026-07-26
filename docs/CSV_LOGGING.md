@@ -13,15 +13,25 @@ The rover implements a **dual-tier CSV logging system** to ensure data redundanc
 
 ### Tier 1: RPi High-Fidelity Logging
 
-**Node**: `mission_monitoring_node_rpi` (rover_monitoring)  
-**Domain**: 5 (rover control domain)  
-**Location**: ws_rpi/runs/  
+**Node**: `rover_monitoring_node` (rover_monitoring)
+**Domain**: 5 (rover control domain)
+**Location**: ws_rpi/runs/
 **Language**: C++
 
+This is the *only* RPi node that writes local CSVs. `mission_monitoring_node_rpi`
+(same package) also subscribes to most of these Domain 5 topics, but purely to
+aggregate and relay them to the base station on Domain 4 (see Tier 2 note
+below) — it intentionally carries no local-storage responsibility, since it's
+the planned home for a future low-bitrate LPWAN telemetry link and needs to
+stay lean. The two used to duplicate each other's CSV writing (same filenames,
+different incompatible schemas, colliding in the same run directory) until
+this was split apart — don't reintroduce CSV writing in
+`mission_monitoring_node_rpi`.
+
 **Characteristics**:
-- Subscribes to 10 Domain 5 topics directly
-- Logs each topic at native sensor rate (event-driven)
-- 6 separate CSV files for different data categories
+- Subscribes to Domain 5 topics directly (STM32 sensors/commands, Jetson steering + lane + speed-PID debug)
+- Logs each topic at native rate (event-driven)
+- 7 separate CSV files for different data categories
 - Full-resolution data capture (4-50 Hz depending on sensor)
 - Minimal overhead (direct subscription → CSV write)
 
@@ -30,8 +40,9 @@ The rover implements a **dual-tier CSV logging system** to ensure data redundanc
 - `spresense_gnss.csv` (~10 Hz): GPS data from Sony Spresense
 - `chassis_imu.csv` (~10 Hz): Accelerometer and gyroscope from STM32
 - `chassis_sensors.csv` (~4 Hz): Encoders, voltage, current, power
-- `chassis_cmd.csv` (~50 Hz): Motor commands (speed, steering direction, drive direction)
+- `chassis_cmd.csv` (~50 Hz): Motor commands (speed, steering angle + direction, drive direction)
 - `mission_state.csv` (event-driven): Mission status, destination, steering, lane detection
+- `chassis_speed_pid.csv` (~4 Hz): Closed-loop speed PID internals (measured/target wheel speed, error, output)
 
 **Directory Structure**:
 ```
@@ -42,7 +53,8 @@ ws_rpi/runs/
 │   ├── chassis_imu.csv
 │   ├── chassis_sensors.csv
 │   ├── chassis_cmd.csv
-│   └── mission_state.csv
+│   ├── mission_state.csv
+│   └── chassis_speed_pid.csv
 └── run_002_20250104_151823/
     └── ...
 ```
@@ -91,8 +103,8 @@ ws_jetson/runs/
 |--------|-------------|----------------|
 | **Data Rate** | 4-50 Hz (per-topic) | 5 Hz (aggregated) |
 | **Resolution** | Full-fidelity | Down-sampled |
-| **Subscriptions** | 10 topics (D5) | 1 topic (D4) |
-| **CSV Files** | 6 per-topic files | 5 files (1 unified + 4 categorical) |
+| **Subscriptions** | 11 topics (D5) | 1 topic (D4) |
+| **CSV Files** | 7 per-topic files | 5 files (1 unified + 4 categorical) |
 | **Storage** | Limited (SD card) | High-capacity (SSD/eMMC) |
 | **Language** | C++ | Python |
 | **DB Migration** | Difficult | Easy (SQLite/PostgreSQL) |
@@ -109,12 +121,16 @@ Source: `tpc_gnss_ublox` topic (~10 Hz) — u-blox ZED-F9P RTK receiver
 | Column | Type | Unit | Description |
 |--------|------|------|-------------|
 | `Timestamp_us` | int64 | µs | System clock (µs since Unix epoch) — base PC wall clock |
+| `Date` | string | — | Date string as reported by the u-blox receiver |
+| `Time` | string | — | UTC time string as reported by the u-blox receiver |
 | `Latitude` | float64 | °  | WGS84 latitude, positive = North |
 | `Longitude` | float64 | °  | WGS84 longitude, positive = East |
 | `Altitude` | float64 | m  | Height above ellipsoid |
 | `Fix_Quality` | string | — | `"No Fix"`, `"GPS"`, `"DGPS"`, `"RTK Float"`, `"RTK Fixed"` — use `RTK Fixed` for cm-level accuracy |
 | `Centimeter_Error` | float32 | cm | Estimated horizontal position error reported by u-blox |
 | `Satellites` | int32 | count | Number of satellites used in solution |
+| `SNR` | float32 | dB | Signal-to-noise ratio |
+| `Speed_ms` | float64 | m/s | Ground speed reported by the receiver |
 
 ---
 
@@ -124,10 +140,13 @@ Source: `tpc_gnss_spresense` topic (~10 Hz) — Sony Spresense standard GPS
 | Column | Type | Unit | Description |
 |--------|------|------|-------------|
 | `Timestamp_us` | int64 | µs | System clock (µs since Unix epoch) |
-| `Latitude` | float32 | °  | WGS84 latitude |
-| `Longitude` | float32 | °  | WGS84 longitude |
-| `Altitude` | float32 | m  | Height above ellipsoid |
-| `Satellites` | int32 | count | Number of satellites in use |
+| `Date` | string | — | Date string as reported by the Spresense |
+| `Time` | string | — | Time string as reported by the Spresense |
+| `Num_Satellites` | int32 | count | Number of satellites in view |
+| `Fix` | bool | 0/1 | `1` = GNSS fix acquired |
+| `Latitude` | float64 | °  | WGS84 latitude |
+| `Longitude` | float64 | °  | WGS84 longitude |
+| `Altitude` | float64 | m  | Height above ellipsoid |
 
 ---
 
@@ -154,11 +173,15 @@ Source: `tpc_chassis_sensors` topic (~4 Hz) — INA226 + encoders on STM32 senso
 | Column | Type | Unit | Description |
 |--------|------|------|-------------|
 | `Timestamp_us` | int64 | µs | System clock (µs since Unix epoch) |
-| `Encoder_Left` | int32 | counts | Left motor encoder cumulative count |
-| `Encoder_Right` | int32 | counts | Right motor encoder cumulative count |
-| `Voltage_V` | float32 | V | Battery bus voltage measured by INA226 |
-| `Current_A` | float32 | A | Battery bus current measured by INA226 |
-| `Power_W` | float32 | W | Computed: `Voltage_V × Current_A` |
+| `Motor_Left_Encoder` | int32 | counts | Left motor encoder cumulative count |
+| `Motor_Right_Encoder` | int32 | counts | Right motor encoder cumulative count |
+| `System_Current_A` | float32 | A | Battery bus current measured by INA226 |
+| `System_Voltage_V` | float32 | V | Battery bus voltage measured by INA226 |
+| `Power_W` | float32 | W | Computed: `System_Voltage_V × System_Current_A` |
+
+Raw counts are cumulative, not a rate — differentiate against `Timestamp_us`
+to get wheel speed (ticks/sec), or use `chassis_speed_pid.csv` below, which
+already has the measured rate the closed-loop speed controller computed.
 
 ---
 
@@ -168,10 +191,10 @@ Source: `tpc_chassis_cmd` topic (~50 Hz) — commands sent by RPi chassis_contro
 | Column | Type | Unit | Description |
 |--------|------|------|-------------|
 | `Timestamp_us` | int64 | µs | System clock (µs since Unix epoch) |
-| `Left_Speed` | float32 | 0–255 | Speed command (`spd_msg`). Both wheels share the same value. |
-| `Right_Speed` | float32 | 0–255 | Same as `Left_Speed` (logged separately for symmetry) |
-| `Steer_Dir` | int | enum | **Steering direction** (`fdr_msg`): `1`=right, `2`=straight, `3`=left |
-| `Drive_Dir` | int | enum | **Drive direction** (`bdr_msg`): `0`=stop, `1`=forward, `2`=backward |
+| `FDR_Msg` | int | enum | **Steering direction** (`fdr_msg`): `1`=right, `2`=straight, `3`=left |
+| `RO_Ctrl_Deg` | float32 | ° | Continuous steering angle magnitude (`ro_ctrl_msg`) sent to the STM32 servo driver |
+| `SPD_Msg` | int (0–255 range, values 0–100 used) | % duty | Final speed command after closed-loop PID correction (if active) and the operator safety cap. STM32 divides by 100 for PWM duty cycle — both wheels share this one value. |
+| `BDR_Msg` | int | enum | **Drive direction** (`bdr_msg`): `0`=stop, `1`=forward, `2`=backward |
 
 ---
 
@@ -182,13 +205,40 @@ Source: multiple D5 topics (event-driven on any topic change)
 |--------|------|------|-------------|
 | `Timestamp_us` | int64 | µs | System clock (µs since Unix epoch) |
 | `Mission_Active` | bool | 0/1 | `1` = GNSS waypoint mission running; `0` = idle |
-| `Distance_Remaining_km` | float64 | km | Remaining straight-line distance to destination waypoint |
-| `Dest_Latitude` | float64 | °  | Current target waypoint latitude (from base station action) |
-| `Dest_Longitude` | float64 | °  | Current target waypoint longitude |
-| `Steering_Cmd` | float32 | — | Kinematic control output from Jetson (`tpc_rover_ctrl_cmd[0]`). Normalized steering demand fed to chassis_controller_node. |
-| `Lane_Theta` | float64 | — | Lane center-line angle from `tpc_rover_nav_lane[0]`. Output of Hough / lane detection model on Jetson. |
-| `Lane_B` | float64 | px | Lane center-line y-intercept (pixel offset) from `tpc_rover_nav_lane[1]`. Used by the bicycle-model PID. |
-| `Lane_Detected` | bool | 0/1 | `1` = lane markers found in current frame; `0` = no lane (from `tpc_rover_nav_lane[2]`) |
+| `Distance_Remaining_m` | float | m | Remaining straight-line distance to destination waypoint |
+| `Dest_Latitude` | float | °  | Current target waypoint latitude (from base station action) |
+| `Dest_Longitude` | float | °  | Current target waypoint longitude |
+| `Steering_Cmd` | float32 | ° | Kinematic control output from Jetson (`tpc_rover_ctrl_cmd[0]`). Continuous steering angle command fed to chassis_controller_node. |
+| `Lane_Theta` | float32 | ° | Heading error angle from `tpc_rover_nav_lane[1]`. Output of the lane detection model on Jetson. |
+| `Lane_B` | float32 | px | Lateral pixel offset from lane center, from `tpc_rover_nav_lane[2]`. Used by the steering PID. |
+| `Lane_Detected` | bool | 0/1 | `1` = lane markers found in current frame; `0` = no lane (from `tpc_rover_nav_lane[3]`) |
+
+Rides along at whatever rate `Mission_Active`/destination/distance change —
+`Steering_Cmd`/`Lane_*` are the latest value at that moment, not a forced row
+per steering/lane update (that's `chassis_speed_pid.csv` and the Jetson-side
+`ws_jetson_kinematic_ctrl_*.csv`/`ws_jetson_lane_detection_*.csv`, both at full
+control-loop rate).
+
+---
+
+### RPi: chassis_speed_pid.csv
+Source: `tpc_chassis_speed_debug` topic (~4 Hz, paced by the encoder feed) — published by
+`chassis_controller_node`'s closed-loop speed PID (`chassisSensorsCallback()`), which
+otherwise computes and discards these values internally with no external trace.
+
+| Column | Type | Unit | Description |
+|--------|------|------|-------------|
+| `Timestamp_us` | int64 | µs | System clock (µs since Unix epoch) |
+| `Measured_Left_TPS` | float32 | ticks/s | Left wheel speed, from the encoder delta since the previous message |
+| `Measured_Right_TPS` | float32 | ticks/s | Right wheel speed, same basis |
+| `Measured_Avg_TPS` | float32 | ticks/s | Average of left/right — the actual PID process variable |
+| `Target_TPS` | float32 | ticks/s | Setpoint: `(target_speed_pct / 100) × max_ticks_per_sec` |
+| `Error` | float32 | ticks/s | `Target_TPS - Measured_Avg_TPS` |
+| `PID_Output_Pct` | float32 | % duty | PID output before the operator safety cap (compare against `chassis_cmd.csv`'s `SPD_Msg`, which is this value *after* the cap) |
+
+Use this to tune `speed_kp`/`speed_ki`/`speed_kd` and `max_ticks_per_sec` in
+`ws_rpi/src/chassis_control/config/chassis_speed_control_params.yaml` — plot
+`Target_TPS` vs `Measured_Avg_TPS` vs `Error` over time.
 
 ---
 
@@ -294,7 +344,7 @@ Both RPi and Jetson use synchronized run numbering:
 
 ### RPi (ws_rpi)
 
-CSV logging is **automatic** when `mission_monitoring_node_rpi` launches. No additional configuration needed.
+CSV logging is **automatic** when `rover_monitoring_node` launches (started alongside `mission_monitoring_node_rpi` — relay only, no CSVs — by the same launch script). No additional configuration needed.
 
 ```bash
 cd ~/almondmatcha/ws_rpi

@@ -25,6 +25,9 @@
  *
  * Published Topics:
  *   /tpc_chassis_cmd (msgs_ifaces/ChassisCtrl) - motor command to STM32
+ *   /tpc_chassis_speed_debug (std_msgs/Float32MultiArray) - closed-loop speed
+ *       PID internals, ~4 Hz (paced by encoder feed): [measured_left_tps,
+ *       measured_right_tps, measured_avg_tps, target_tps, error, pid_output_pct]
  *
  * Services:
  *   /srv_spd_limit (services_ifaces/SpdLimit) - set speed cap ceiling (0–100% PWM)
@@ -143,6 +146,14 @@ public:
             "tpc_chassis_cmd", qos_reliable
         );
 
+        // --- Speed-loop debug publisher (Domain 5, best-effort, ~4 Hz) ---
+        // Exposes the closed-loop speed PID's internal signals so they can be
+        // logged and used to tune speed_kp/ki/kd — otherwise they're computed
+        // and discarded inside chassisSensorsCallback() with no external trace.
+        pub_speed_debug_ = this->create_publisher<std_msgs::msg::Float32MultiArray>(
+            "tpc_chassis_speed_debug", qos_sensor
+        );
+
         // Status heartbeat
         status_timer_ = this->create_wall_timer(
             std::chrono::seconds(10),
@@ -171,6 +182,7 @@ private:
 
     // === Publishers ===
     rclcpp::Publisher<msgs_ifaces::msg::ChassisCtrl>::SharedPtr pub_chassis_cmd_;
+    rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr pub_speed_debug_;
 
     // === Timers ===
     rclcpp::TimerBase::SharedPtr status_timer_;
@@ -323,6 +335,8 @@ private:
             return;
         }
 
+        const double measured_left_tps  = delta_left / dt;
+        const double measured_right_tps = delta_right / dt;
         const double measured_ticks_per_sec = ((delta_left + delta_right) / 2.0) / dt;
         const double target_ticks_per_sec =
             (static_cast<double>(target_speed_pct_) / 100.0) * max_ticks_per_sec_;
@@ -337,6 +351,18 @@ private:
 
         const double u = speed_kp_ * error + speed_ki_ * speed_integral_ + speed_kd_ * derivative;
         speed_pid_output_pct_ = static_cast<float>(std::clamp(u, 0.0, 100.0));
+
+        // --- Publish debug signals so the PID is tunable from logs instead of opaque ---
+        auto debug_msg = std_msgs::msg::Float32MultiArray();
+        debug_msg.data = {
+            static_cast<float>(measured_left_tps),
+            static_cast<float>(measured_right_tps),
+            static_cast<float>(measured_ticks_per_sec),
+            static_cast<float>(target_ticks_per_sec),
+            static_cast<float>(error),
+            speed_pid_output_pct_
+        };
+        pub_speed_debug_->publish(debug_msg);
     }
 
     /**
