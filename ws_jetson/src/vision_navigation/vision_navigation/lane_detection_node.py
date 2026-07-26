@@ -33,7 +33,10 @@ Algorithm:
 
 CSV Logging:
     Saves detection results to '~/almondmatcha/runs/logs/ws_jetson_lane_detection_TIMESTAMP.csv' with:
-    timestamp, curvature, theta, b, detected
+    timestamp, curvature, theta, b, detected, fps
+    fps is a rolling-window measurement of achieved throughput (wall-clock
+    time between the last FPS_WINDOW processed frames), not the configured
+    camera capture rate.
     Writes happen on a background thread via a queue so the image callback
     never blocks on file I/O.
 
@@ -46,6 +49,8 @@ import csv
 import os
 import queue
 import threading
+import time
+from collections import deque
 from datetime import datetime
 from typing import Optional, Tuple
 import numpy as np
@@ -144,8 +149,16 @@ class LaneDetectionNode(Node):
 
         # ===================== State =====================
         self.frame_count: int = 0
+
+        # ===== Throughput (FPS) measurement =====
+        # Rolling window of frame-processed timestamps, used to compute
+        # achieved throughput rather than the configured capture rate
+        # (camera_stream_node's `fps` param is just a target, not a
+        # measurement -- see HANDOFF_vision_fps_logging.md).
+        self.FPS_WINDOW: int = 30
+        self._frame_times: "deque[float]" = deque(maxlen=self.FPS_WINDOW)
+
         # Centralized logging in runs/logs/ directory
-        import time
         log_dir = os.path.expanduser("~/almondmatcha/runs/logs")
         os.makedirs(log_dir, exist_ok=True)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -207,13 +220,38 @@ class LaneDetectionNode(Node):
         lane_msg.data = [curvature_clean, theta_clean, b_clean, detected_val]
         self.pub_lane.publish(lane_msg)
 
+        # ===================== Throughput Measurement =====================
+        fps = self._update_fps()
+
         # ===================== Logging =====================
-        self._log_to_csv(curvature_clean, theta_clean, b_clean, detected_val)
-        self._log_to_terminal(curvature_clean, theta_clean, b_clean, detected_val)
+        self._log_to_csv(curvature_clean, theta_clean, b_clean, detected_val, fps)
+        self._log_to_terminal(curvature_clean, theta_clean, b_clean, detected_val, fps)
 
         # ===================== Visualization =====================
         if self.show_window:
             self._visualize_frame(bgr_frame, theta_clean, b_clean, detected)
+
+    # ===================== Throughput Methods =====================
+
+    def _update_fps(self) -> float:
+        """
+        Record this frame's processing time and return the rolling-window FPS.
+
+        Windowed rather than instantaneous (1/dt of a single frame gap) so
+        the logged number reflects sustained throughput instead of jitter.
+
+        Returns:
+            Achieved frames-per-second over the last FPS_WINDOW frames, or
+            0.0 until at least two samples have been collected.
+        """
+        now = time.monotonic()
+        self._frame_times.append(now)
+        if len(self._frame_times) < 2:
+            return 0.0
+        elapsed = self._frame_times[-1] - self._frame_times[0]
+        if elapsed <= 0.0:
+            return 0.0
+        return (len(self._frame_times) - 1) / elapsed
 
     # ===================== Data Validation Methods =====================
 
@@ -241,7 +279,7 @@ class LaneDetectionNode(Node):
 
     # ===================== Logging Methods =====================
 
-    def _log_to_csv(self, curvature: float, theta: float, b: float, detected: float) -> None:
+    def _log_to_csv(self, curvature: float, theta: float, b: float, detected: float, fps: float) -> None:
         """
         Enqueue a row for asynchronous CSV logging (non-blocking).
 
@@ -250,9 +288,10 @@ class LaneDetectionNode(Node):
             theta: Steering angle (degrees)
             b: Lateral offset
             detected: Detection flag (1.0 or 0.0)
+            fps: Rolling-window achieved throughput (frames/sec)
         """
         timestamp = datetime.now().isoformat()
-        self._log_queue.put((timestamp, curvature, theta, b, detected))
+        self._log_queue.put((timestamp, curvature, theta, b, detected, fps))
 
     def _log_worker(self) -> None:
         """
@@ -266,21 +305,21 @@ class LaneDetectionNode(Node):
             if item is None:
                 self._log_queue.task_done()
                 break
-            timestamp, curvature, theta, b, detected = item
+            timestamp, curvature, theta, b, detected, fps = item
             try:
                 file_exists = os.path.isfile(self.csv_path)
                 with open(self.csv_path, 'a', newline='', encoding='utf-8') as f:
                     writer = csv.writer(f)
                     if not file_exists and not self._csv_header_written:
-                        writer.writerow(['timestamp', 'curvature', 'theta', 'b', 'detected'])
+                        writer.writerow(['timestamp', 'curvature', 'theta', 'b', 'detected', 'fps'])
                         self._csv_header_written = True
-                    writer.writerow([timestamp, curvature, theta, b, detected])
+                    writer.writerow([timestamp, curvature, theta, b, detected, fps])
             except Exception as e:
                 self.get_logger().warn(f"CSV logging failed: {e}")
             finally:
                 self._log_queue.task_done()
 
-    def _log_to_terminal(self, curvature: float, theta: float, b: float, detected: float) -> None:
+    def _log_to_terminal(self, curvature: float, theta: float, b: float, detected: float, fps: float) -> None:
         """
         Log frame results to terminal.
 
@@ -289,12 +328,13 @@ class LaneDetectionNode(Node):
             theta: Steering angle (degrees)
             b: Lateral offset
             detected: Detection flag (1.0 or 0.0)
+            fps: Rolling-window achieved throughput (frames/sec)
         """
         self.frame_count += 1
         status = "Detected" if detected > 0.5 else "Not Detected"
         self.get_logger().info(
             f"Frame {self.frame_count}: curvature={curvature:9.6f}, theta={theta:7.3f} deg, "
-            f"b={b:7.3f}, status={status}"
+            f"b={b:7.3f}, fps={fps:5.1f}, status={status}"
         )
 
     # ===================== Visualization Methods =====================

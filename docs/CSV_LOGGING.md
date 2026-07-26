@@ -231,6 +231,46 @@ Source: `tpc_telemetry_relay` topic (5 Hz) — aggregated relay from RPi. One ro
 
 ---
 
+## Vision Navigation Logs (ws_jetson, `vision_navigation` package)
+
+Separate from the dual-tier system above — these two files are written directly by
+the vision/control nodes themselves, not by `rover_monitoring`. They land as flat
+timestamped files in `~/almondmatcha/runs/logs/`, not under a `run_NNN_.../`
+directory.
+
+Both write asynchronously: the owning node enqueues a row and a background
+thread drains the queue and appends it to disk, so a slow eMMC/SD card never
+blocks the image-processing or control callback.
+
+### Jetson: ws_jetson_lane_detection_TIMESTAMP.csv
+Source: `lane_detection_node` — one row per processed camera frame.
+
+| Column | Type | Unit | Description |
+|--------|------|------|-------------|
+| `timestamp` | ISO8601 string | — | Wall-clock time the frame finished processing |
+| `curvature` | float | — | Parabola coefficient A (`x = A*y² + B*y + C`), rover-centered frame |
+| `theta` | float | ° | Heading error angle (+ = turn right) |
+| `b` | float | px | Lateral offset from lane center |
+| `detected` | float | 0/1 | `1.0` = lane detected, `0.0` = not detected |
+| `fps` | float | frames/s | Rolling-window achieved throughput over the last 30 processed frames — measures actual image-processing rate, not the camera's configured capture target. `0.0` until the window has ≥2 samples. |
+
+### Jetson: ws_jetson_kinematic_ctrl_TIMESTAMP.csv
+Source: `rover_kinematic_control` — one row per `tpc_rover_nav_lane` message received.
+
+| Column | Type | Unit | Description |
+|--------|------|------|-------------|
+| `time_sec` | float | s | `time.time()` at the control update |
+| `theta_ema` | float | ° | EMA-filtered heading error |
+| `b_ema` | float | px | EMA-filtered lateral offset |
+| `curvature_ema` | float | — | EMA-filtered curvature (feedforward input) |
+| `pid_u` | float | — | PID feedback output (`u_pid`) |
+| `e_sum` | float | — | Combined error fed to the PID (`k_e1*theta_ema + k_e2*b_ema`) |
+| `steer_angle` | float | ° | Final commanded steering angle (PID + feedforward, clamped) |
+| `speed_cmd` | int | 0–100 | Chassis speed command (% PWM duty cycle) |
+| `detected` | int | 0/1 | Detection validity used for this control update (post warm-up/timeout logic) |
+
+---
+
 ## Run Directory Numbering
 
 Both RPi and Jetson use synchronized run numbering:

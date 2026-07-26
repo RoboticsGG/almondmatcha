@@ -51,6 +51,8 @@ Speed Control Parameters:
 
 CSV Logging:
     Records to ~/almondmatcha/runs/logs/ws_jetson_kinematic_ctrl_TIMESTAMP.csv
+    Writes happen on a background thread via a queue so the
+    tpc_rover_nav_lane callback never blocks on file I/O.
 
 Author: AlmondMatcha Rover Team
 Date: February 27, 2026
@@ -59,6 +61,7 @@ Date: February 27, 2026
 import os
 import time
 import csv
+import queue
 import threading
 import numpy as np
 
@@ -258,10 +261,19 @@ class RoverKinematicControlNode(Node):
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         filename = f"ws_jetson_kinematic_ctrl_{timestamp}.csv"
         self.csv_path: str = os.path.join(log_dir, filename)
-        self.csv_file = open(self.csv_path, mode="w", newline="")
-        self.csv_writer = csv.writer(self.csv_file)
-        self.csv_writer.writerow(["time_sec", "theta_ema", "b_ema", "curvature_ema", "pid_u", "e_sum",
-                                  "steer_angle", "speed_cmd", "detected"])
+
+        with open(self.csv_path, mode="w", newline="") as f:
+            csv.writer(f).writerow(["time_sec", "theta_ema", "b_ema", "curvature_ema", "pid_u", "e_sum",
+                                     "steer_angle", "speed_cmd", "detected"])
+
+        # ===================== Async CSV Logging =====================
+        # File I/O runs on a background thread so the tpc_rover_nav_lane
+        # callback (and the tpc_rover_ctrl_cmd publish inside it) never
+        # blocks on disk write -- same pattern as lane_detection_node.py.
+        self._log_queue: "queue.Queue" = queue.Queue()
+        self._log_thread = threading.Thread(target=self._log_worker, daemon=True)
+        self._log_thread.start()
+
         self.get_logger().info(f"Logging to: {self.csv_path}")
 
     # ===================== Subscribers =====================
@@ -412,24 +424,41 @@ class RoverKinematicControlNode(Node):
         speed_cmd: int,
         detected: bool
     ) -> None:
-        """Write one control-loop row to the CSV log."""
-        try:
-            self.csv_writer.writerow([
-                f"{timestamp:.6f}", f"{theta_ema:.4f}", f"{b_ema:.4f}", f"{curvature_ema:.6f}",
-                f"{pid_u:.4f}", f"{error_sum:.4f}",
-                f"{steer_angle:.4f}", speed_cmd, int(detected)
-            ])
-            self.csv_file.flush()
-        except Exception as e:
-            self.get_logger().warn(f"CSV logging failed: {e}")
+        """Enqueue one control-loop row for asynchronous CSV logging (non-blocking)."""
+        row = [
+            f"{timestamp:.6f}", f"{theta_ema:.4f}", f"{b_ema:.4f}", f"{curvature_ema:.6f}",
+            f"{pid_u:.4f}", f"{error_sum:.4f}",
+            f"{steer_angle:.4f}", speed_cmd, int(detected)
+        ]
+        self._log_queue.put(row)
+
+    def _log_worker(self) -> None:
+        """
+        Background thread: drains the log queue and writes CSV rows.
+
+        Runs off the tpc_rover_nav_lane callback so a slow disk never delays
+        the steering/speed command published to tpc_rover_ctrl_cmd.
+        """
+        while True:
+            item = self._log_queue.get()
+            if item is None:
+                self._log_queue.task_done()
+                break
+            try:
+                with open(self.csv_path, 'a', newline='') as f:
+                    csv.writer(f).writerow(item)
+            except Exception as e:
+                self.get_logger().warn(f"CSV logging failed: {e}")
+            finally:
+                self._log_queue.task_done()
 
     # ===================== Cleanup =====================
 
     def destroy_node(self) -> None:
-        """Flush and close the CSV log file on shutdown."""
+        """Drain the log queue and stop the background logging thread on shutdown."""
         try:
-            if hasattr(self, 'csv_file') and self.csv_file:
-                self.csv_file.close()
+            self._log_queue.put(None)
+            self._log_thread.join(timeout=2.0)
         except Exception:
             pass
         super().destroy_node()
