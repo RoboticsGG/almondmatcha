@@ -44,21 +44,27 @@ in line. Now all three machines kill both patterns in both cleanup paths.
   sync with each other. Both hosts are reachable on port 22 right now
   (checked this session).
 
-**Still needs the user, can't be verified from here**:
-- Whether `curry@192.168.1.1` / `yupi@192.168.1.5` are still the *correct*
-  physical machines — I can only confirm the addresses are internally
-  consistent (script ↔ docs) and that something is listening on port 22 at
-  each, not that it's still the same rover hardware. Only matters if the
-  network/hardware changed since `SETUP.md` was written.
-- The Jetson 10s sleep budget: `camera_stream_node.py` blocks ~2s
-  (`time.sleep(2)` at line 236, inside `_init_d415_mode`) plus whatever
-  `pipeline.start()` itself takes; the lane-detection pane separately waits
-  3s, the kinematic-control pane waits 4s, the local-monitoring pane waits
-  5s — but these are independent per-pane countdowns from t=0, not chained
-  to actual readiness, so the real bottleneck is D415 pipeline start time,
-  which I can't measure without the physical camera attached. 10s is
-  plausible but tighter than the RPi's 20s; worth timing on actual hardware
-  next field session rather than assuming.
+**Confirmed by the user (2026-07-26)**: `curry@192.168.1.1` (RPi) and
+`yupi@192.168.1.5` (Jetson) are indeed the current rover hardware — no
+change needed.
+
+**Confirmed by the user (2026-07-26)**: the Jetson pane delays are
+intentional design, not arbitrary padding —
+- The 2s `time.sleep(2)` in `camera_stream_node.py:236` (`_init_d415_mode`)
+  is deliberate: lets the D415 settle (auto-exposure/auto-white-balance)
+  before frames get processed, not just a pipeline-start wait.
+- The staggered per-pane waits in `launch_jetson_tmux.sh` (lane-detection
+  3s, kinematic-control 4s, local-monitoring 5s) are deliberately staggered
+  to prevent startup race conditions / crash potential (nodes subscribing
+  or hitting resources before their upstream publisher exists), not just
+  slack for slow init.
+
+**Confirmed by the user (2026-07-26)**: the outer 10s sleep budget worked
+fine in the last field test — no observed startup race/crash issues. The
+user isn't fully certain it's got comfortable margin (vs. just happening to
+be enough), so if a future field run ever shows Jetson nodes coming up in
+a bad order or missing early data, revisit this number first — but there's
+no known problem today and no change is being made speculatively.
 
 **What actually runs in the field**, in call order:
 
