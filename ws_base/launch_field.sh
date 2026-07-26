@@ -95,12 +95,14 @@ cleanup() {
     # ── Base PC ───────────────────────────────────────────────────────────────
     tmux kill-session -t base_station 2>/dev/null || true
     pkill -TERM -f "ros2 run"         2>/dev/null || true
+    pkill -TERM -f "ros2 launch"      2>/dev/null || true
 
     # ── RPi ───────────────────────────────────────────────────────────────────
     log "  Stopping RPi nodes ($RPI_HOST)..."
     ssh $SSH_OPTS "$RPI_HOST" "
         tmux kill-session -t rover 2>/dev/null || true
-        pkill -TERM -f 'ros2 run'  2>/dev/null || true
+        pkill -TERM -f 'ros2 run'    2>/dev/null || true
+        pkill -TERM -f 'ros2 launch' 2>/dev/null || true
     " 2>/dev/null || warn "  RPi stop had errors (non-fatal)"
 
     # ── Jetson ────────────────────────────────────────────────────────────────
