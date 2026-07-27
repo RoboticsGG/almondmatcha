@@ -15,9 +15,16 @@
 
 chassis_controller_node:
   ros__parameters:
-    # Kill-switch: false forces legacy open-loop passthrough with no rebuild
-    # (e.g. `ros2 param set /chassis_controller_node use_closed_loop_speed false`).
-    use_closed_loop_speed: true
+    # Kill-switch: false forces open-loop passthrough with no rebuild
+    # (e.g. `ros2 param set /chassis_controller_node use_closed_loop_speed true`).
+    #
+    # DEFAULT OFF until max_ticks_per_sec below is calibrated. With the
+    # placeholder value the loop limit-cycles: if the real tick rate is higher
+    # than max_ticks_per_sec, measured speed reads as >100% of full scale, duty
+    # is slammed to 0, the wheels stop, measured drops to 0, duty is slammed to
+    # 100, and the cycle repeats at the encoder rate -- felt as a ~2 Hz
+    # stop-and-spin judder. Open-loop is smooth; turn this on once calibrated.
+    use_closed_loop_speed: false
 
     # --- PID gains (error and output both in % duty) ---------------------------
     # Starting values chosen by simulating the loop at the ~4 Hz encoder rate

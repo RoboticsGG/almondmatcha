@@ -89,6 +89,7 @@ public:
         this->declare_parameter<double>("speed_ki", 0.5);
         this->declare_parameter<double>("speed_kd", 0.0);
         this->declare_parameter<double>("speed_integral_limit", 100.0);
+        this->declare_parameter<double>("speed_max_duty_step_pct", 15.0);
         this->declare_parameter<double>("max_ticks_per_sec", 1000.0);
         this->declare_parameter<double>("sensor_timeout_sec", 1.0);
 
@@ -97,6 +98,7 @@ public:
         speed_ki_              = this->get_parameter("speed_ki").as_double();
         speed_kd_              = this->get_parameter("speed_kd").as_double();
         speed_integral_limit_  = this->get_parameter("speed_integral_limit").as_double();
+        speed_max_duty_step_pct_ = this->get_parameter("speed_max_duty_step_pct").as_double();
         max_ticks_per_sec_     = this->get_parameter("max_ticks_per_sec").as_double();
         sensor_timeout_sec_    = this->get_parameter("sensor_timeout_sec").as_double();
 
@@ -213,6 +215,11 @@ private:
     // Anti-windup clamp, in %·s. The integral's duty authority is ki * this limit
     // (0.5 * 100 = ±50% duty of trim on top of the feedforward term).
     double speed_integral_limit_  = 100.0;
+    // Max change in commanded duty per encoder update (~4 Hz), in % points.
+    // 15 %/update ≈ 60 %/s — fast enough not to blunt real load correction,
+    // slow enough that a bad calibration surges instead of hammering 0<->100.
+    double speed_max_duty_step_pct_ = 15.0;
+    int    overspeed_strikes_       = 0;   // consecutive samples reading >150% of full scale
     double max_ticks_per_sec_     = 1000.0; // Encoder ticks/sec at 100% duty on flat ground — field-calibrate
     double sensor_timeout_sec_    = 1.0;    // Encoder feed considered stale after this long with no message
 
@@ -397,7 +404,38 @@ private:
                        + speed_kp_ * error_pct
                        + speed_ki_ * speed_integral_
                        + speed_kd_ * derivative;
-        speed_pid_output_pct_ = static_cast<float>(std::clamp(u, 0.0, 100.0));
+
+        // --- Slew-rate limit on the duty output ---
+        // Bounds how far the commanded duty can move per encoder update. A
+        // badly calibrated max_ticks_per_sec otherwise produces a hard
+        // 0 <-> 100 limit cycle at the encoder rate (measured reads as >100%
+        // of full scale -> duty slammed to 0 -> wheels stop -> measured 0 ->
+        // duty slammed to 100 -> repeat), felt as a ~2 Hz stop-and-spin
+        // judder. This turns that failure into a slow surge rather than a
+        // drivetrain-hammering square wave -- it does not fix the calibration,
+        // it just stops a wrong constant from being violent.
+        const double desired = std::clamp(u, 0.0, 100.0);
+        const double max_step = speed_max_duty_step_pct_;
+        const double prev = static_cast<double>(speed_pid_output_pct_);
+        const double stepped = std::clamp(desired, prev - max_step, prev + max_step);
+        speed_pid_output_pct_ = static_cast<float>(std::clamp(stepped, 0.0, 100.0));
+
+        // --- Calibration sanity check ---
+        // Sustained measured speed far above full scale means max_ticks_per_sec
+        // is set well below the true tick rate. Warn rather than silently
+        // fighting it, since this is the one input the loop cannot infer.
+        if (measured_pct > 150.0) {
+            if (++overspeed_strikes_ == 8) {   // ~2 s at the 4 Hz encoder rate
+                RCLCPP_WARN(this->get_logger(),
+                    "Measured speed reads %.0f%% of full scale — max_ticks_per_sec (%.0f) "
+                    "looks too LOW for the real encoders. The speed loop cannot settle "
+                    "and will surge. Calibrate it (measured_tps / (duty/100)) or set "
+                    "use_closed_loop_speed:=false.",
+                    measured_pct, max_ticks_per_sec_);
+            }
+        } else if (overspeed_strikes_ > 0) {
+            overspeed_strikes_ = 0;
+        }
 
         publishSpeedDebug(measured_left_tps, measured_right_tps, measured_ticks_per_sec,
                           target_ticks_per_sec, error_pct, speed_pid_output_pct_);

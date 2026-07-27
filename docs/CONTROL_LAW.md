@@ -264,6 +264,14 @@ $$
 \text{duty}[k] = \min\Big(\text{clamp}\big(u_v[k],\,0,\,100\big),\; v_{\text{cap}}\Big)
 $$
 
+> **`use_closed_loop_speed` defaults to `false`.** With an uncalibrated
+> `ṅ_max` the loop limit-cycles: measured speed reads above full scale, duty
+> is driven to 0, the wheels stop, measured falls to 0, duty is driven back
+> up — a ~2 Hz stop-and-spin judder at the encoder rate. The slew limit
+> reduces that from a 0↔100 % square wave to a shallow surge, and the node
+> warns when measured speed exceeds 150 % of full scale, but neither is a
+> substitute for calibrating `ṅ_max`. Enable the loop only after that.
+
 **Fallback:** if `tpc_chassis_sensors` goes stale (`> sensor_timeout_sec`)
 or `use_closed_loop_speed = false`, the loop drops to open-loop passthrough
 (`duty = v_target`) and the PID integrator/derivative state resets so it
@@ -304,6 +312,7 @@ flowchart LR
 | `speed_ki` | 0.5 | integral (per second) |
 | `speed_kd` | 0.0 | derivative — left off; the ~4 Hz encoder feed is too coarse to differentiate cleanly |
 | `speed_integral_limit` | 100.0 | anti-windup clamp (%·s) → `k_i × limit` = ±50 % duty of trim authority |
+| `speed_max_duty_step_pct` | 15.0 | slew limit: max change in commanded duty per encoder update (≈60 %/s) |
 | `max_ticks_per_sec` | 1000.0 | **placeholder** — needs flat-ground 100%-duty calibration from encoder logs |
 | `sensor_timeout_sec` | 1.0 s | stale-feed fallback threshold |
 

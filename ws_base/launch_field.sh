@@ -113,6 +113,39 @@ cleanup() {
         pkill -TERM -f 'ros2 launch'       2>/dev/null || true
     " 2>/dev/null || warn "  Jetson stop had errors (non-fatal)"
 
+    # ── Explicit motor stop to the STM32 ──────────────────────────────────────
+    # Killing the ROS nodes does NOT stop the wheels. The STM32 has no command
+    # watchdog: motor_control_task only calls apply_motor_control() when a new
+    # tpc_chassis_cmd arrives, so the PWM registers simply retain the last
+    # commanded duty and the rover keeps driving after every node is dead.
+    #
+    # So send one final zeroed command ourselves. This must happen AFTER the
+    # kills above -- chassis_controller_node publishes tpc_chassis_cmd at ~50 Hz,
+    # so anything sent while it is alive is overwritten by its next frame.
+    #
+    # Published from the RPi: it shares the Domain 5 segment with the STM32 and
+    # already has msgs_ifaces built. Repeated at 10 Hz for ~3 s because a fresh
+    # publisher needs DDS discovery to complete before its first frame lands.
+    # Fields match chassis_controller_node's own emergency-stop output:
+    # fdr=2 (straight), steering 0, speed 0, bdr=0 (drive stopped).
+    log "  Sending explicit STOP to the chassis STM32..."
+    if ssh $SSH_OPTS "$RPI_HOST" "
+        source /opt/ros/humble/setup.bash 2>/dev/null
+        source ~/almondmatcha/common_ifaces/install/setup.bash 2>/dev/null
+        source ~/almondmatcha/ws_rpi/install/setup.bash 2>/dev/null
+        export ROS_DOMAIN_ID=5
+        timeout 3 ros2 topic pub -r 10 \
+            --qos-reliability reliable --qos-durability transient_local \
+            /tpc_chassis_cmd msgs_ifaces/msg/ChassisCtrl \
+            '{fdr_msg: 2, ro_ctrl_msg: 0.0, spd_msg: 0, bdr_msg: 0}' >/dev/null 2>&1
+        true
+    " 2>/dev/null; then
+        ok "  Chassis STOP sent (motors commanded to zero)"
+    else
+        warn "  Could not send chassis STOP — VERIFY THE ROVER IS STATIONARY"
+        warn "  Motors may still be running: the STM32 holds its last command."
+    fi
+
     # ── Close SSH multiplexed connections ─────────────────────────────────────
     ssh $SSH_OPTS -O exit "$RPI_HOST"    2>/dev/null || true
     ssh $SSH_OPTS -O exit "$JETSON_HOST" 2>/dev/null || true
