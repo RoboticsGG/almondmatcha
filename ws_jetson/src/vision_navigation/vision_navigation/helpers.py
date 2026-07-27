@@ -385,6 +385,50 @@ def draw_text_box(
 
 # ===================== LOGGING HELPERS =====================
 
+def resolve_workspace_log_dir(
+    workspace_name: str = "ws_jetson",
+    subdir: str = "runs/logs"
+) -> str:
+    """
+    Resolve the per-workspace log directory: <workspace_root>/runs/logs.
+
+    Run outputs belong inside the workspace of the machine that produced them,
+    not in a shared top-level ~/almondmatcha/runs/logs. Keeping them separate
+    means a Jetson's vision CSVs and an RPi's chassis CSVs can never land in
+    the same directory, and wiping one machine's runs can't touch another's.
+
+    Resolution order:
+      1. Walk up from the current working directory looking for a directory
+         named `workspace_name` that contains `src/`. The tmux launch scripts
+         cd into the workspace before starting nodes, so this is the normal
+         path.
+      2. Fall back to ~/almondmatcha/<workspace_name>/<subdir>.
+
+    The explicit fallback matters: the cwd-walking loops in the monitoring
+    nodes silently give up and use the bare cwd when they can't find the
+    workspace, which scatters run directories wherever the process happened to
+    start. This never returns a path outside the intended workspace.
+
+    Args:
+        workspace_name: Workspace directory name to search for (e.g. "ws_jetson")
+        subdir: Path relative to the workspace root
+
+    Returns:
+        Absolute path to the log directory (not created — caller does that)
+    """
+    path = os.path.abspath(os.getcwd())
+    while True:
+        if (os.path.basename(path) == workspace_name
+                and os.path.isdir(os.path.join(path, "src"))):
+            return os.path.join(path, subdir)
+        parent = os.path.dirname(path)
+        if parent == path:          # reached filesystem root
+            break
+        path = parent
+
+    return os.path.expanduser(os.path.join("~/almondmatcha", workspace_name, subdir))
+
+
 def setup_csv_logging(
     log_path: str,
     headers: List[str],

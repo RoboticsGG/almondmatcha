@@ -1,6 +1,10 @@
-# ROS logs and data files
-runs/ros_logs/
-runs/logs/*.csv
+# Run outputs: CSV logs, camera recordings, ROS logs.
+# Each machine writes into its own workspace (ws_jetson/runs/, ws_rpi/runs/,
+# ws_base/runs/), so match a `runs/` directory at any depth rather than only
+# the old shared top-level one. Unanchored so it covers every workspace.
+# Note this deliberately also covers *.avi -- camera_recorder_node writes
+# ~25 GB/hour, which must never be a candidate for `git add -A`.
+runs/
 
 # Build artifacts
 build/

@@ -319,7 +319,7 @@ Reusable utility functions (50+ total):
 
 ## Data Output
 
-### Lane Detection Log (`~/almondmatcha/runs/logs/ws_jetson_lane_detection_TIMESTAMP.csv`)
+### Lane Detection Log (`<ws_jetson>/runs/logs/ws_jetson_lane_detection_TIMESTAMP.csv`)
 
 Columns: timestamp, curvature, theta, b, detected
 
@@ -329,7 +329,7 @@ Example:
 2025-11-04T10:30:45.153456,-0.000298,-3.21,42.11,1.0
 ```
 
-### Steering Control Log (`~/almondmatcha/runs/logs/ws_jetson_kinematic_ctrl_TIMESTAMP.csv`)
+### Steering Control Log (`<ws_jetson>/runs/logs/ws_jetson_kinematic_ctrl_TIMESTAMP.csv`)
 
 Columns: time_sec, theta_ema, b_ema, curvature_ema, pid_u, e_sum, steer_angle, speed_cmd, detected
 

@@ -32,7 +32,7 @@ Algorithm:
     7. Publish results; log to CSV asynchronously (background thread)
 
 CSV Logging:
-    Saves detection results to '~/almondmatcha/runs/logs/ws_jetson_lane_detection_TIMESTAMP.csv' with:
+    Saves detection results to '<ws_jetson>/runs/logs/ws_jetson_lane_detection_TIMESTAMP.csv' with:
     timestamp, curvature, theta, b, detected, fps
     fps is a rolling-window measurement of achieved throughput (wall-clock
     time between the last FPS_WINDOW processed frames), not the configured
@@ -66,6 +66,7 @@ from cv_bridge import CvBridge
 
 from vision_navigation.lane_detector import process_frame
 from vision_navigation.config import LaneDetectionConfig
+from vision_navigation.helpers import resolve_workspace_log_dir
 
 
 class LaneDetectionNode(Node):
@@ -158,8 +159,8 @@ class LaneDetectionNode(Node):
         self.FPS_WINDOW: int = 30
         self._frame_times: "deque[float]" = deque(maxlen=self.FPS_WINDOW)
 
-        # Centralized logging in runs/logs/ directory
-        log_dir = os.path.expanduser("~/almondmatcha/runs/logs")
+        # Per-workspace logging: ws_jetson/runs/logs/ (not a shared top-level dir)
+        log_dir = resolve_workspace_log_dir("ws_jetson")
         os.makedirs(log_dir, exist_ok=True)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         filename = f"ws_jetson_lane_detection_{timestamp}.csv"

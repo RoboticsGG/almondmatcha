@@ -291,8 +291,10 @@ Source: `tpc_telemetry_relay` topic (5 Hz) — aggregated relay from RPi. One ro
 
 Separate from the dual-tier system above — these files are written directly by
 the vision/control nodes themselves, not by `rover_monitoring`. They land as flat
-timestamped files in `~/almondmatcha/runs/logs/`, not under a `run_NNN_.../`
-directory.
+timestamped files in `<ws_jetson>/runs/logs/`, not under a `run_NNN_.../`
+directory. Every machine keeps its run output inside its own workspace, so
+Jetson and RPi logs can never collide and wiping one machine's runs cannot
+touch another's.
 
 All three write asynchronously: the owning node enqueues a row/frame and a
 background thread drains the queue and writes it to disk, so a slow eMMC/SD

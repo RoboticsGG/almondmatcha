@@ -224,7 +224,10 @@ almondmatcha/
 │   ├── build.bash                     # Docker-based build
 │   └── workspace/sensors_node/        # Encoder + power + GNSS tasks
 │
-└── runs/logs/                         # Data logging output (CSV files)
+└── ws_*/runs/                         # Per-workspace run output (CSV, video)
+                                       #   ws_jetson/runs/logs/  vision CSVs + camera .avi
+                                       #   ws_jetson/runs/run_NNN_*/  D4 telemetry CSVs
+                                       #   ws_rpi/runs/run_NNN_*/     D5 chassis/GNSS CSVs
 ```
 
 ## Quick Start

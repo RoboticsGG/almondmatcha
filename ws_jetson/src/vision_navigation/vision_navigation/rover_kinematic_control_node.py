@@ -50,7 +50,7 @@ Speed Control Parameters:
     and adding a speed PID callback.
 
 CSV Logging:
-    Records to ~/almondmatcha/runs/logs/ws_jetson_kinematic_ctrl_TIMESTAMP.csv
+    Records to <ws_jetson>/runs/logs/ws_jetson_kinematic_ctrl_TIMESTAMP.csv
     Writes happen on a background thread via a queue so the
     tpc_rover_nav_lane callback never blocks on file I/O.
 
@@ -77,6 +77,7 @@ from vision_navigation.control_filters import (
     clamp,
     pid_controller
 )
+from vision_navigation.helpers import resolve_workspace_log_dir
 
 
 # =============================================================================
@@ -255,7 +256,8 @@ class RoverKinematicControlNode(Node):
 
     def _init_logging(self) -> None:
         """Initialize CSV logging for the control loop."""
-        log_dir = os.path.expanduser("~/almondmatcha/runs/logs")
+        # Per-workspace logging: ws_jetson/runs/logs/ (not a shared top-level dir)
+        log_dir = resolve_workspace_log_dir("ws_jetson")
         os.makedirs(log_dir, exist_ok=True)
 
         timestamp = time.strftime("%Y%m%d_%H%M%S")
