@@ -351,8 +351,12 @@ bottleneck, not the control loop.
   linearity, and the motor deadband — just not to set this constant.
 - `speed_kp/ki/kd` are simulation-derived starting values, not field-tuned.
 - The speed loop's setpoint/error live entirely in the 0–100 % duty
-  abstraction (via `max_ticks_per_sec`), not physical units (m/s) — there is
-  no independent ground-truth speed sensor.
+  abstraction (via `max_ticks_per_sec`), not physical units (m/s). Note the
+  rover *does* carry an independent ground-speed source — `tpc_gnss_ublox`
+  publishes RTK ground speed in m/s (`UbloxGNSS.speed`) on the same Domain 5
+  — but the speed loop does not currently use it. It is the only signal that
+  can distinguish wheel slip (encoders fast, rover stationary) from genuine
+  motion, since encoders alone cannot.
 - Steering has no feedback from actual wheel angle/yaw — it is an open-loop
   angle command to the servo, closed only at the perception level (lane
   error re-measured each frame).

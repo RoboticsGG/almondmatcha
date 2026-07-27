@@ -68,6 +68,51 @@ chassis_controller_node:
     # PLACEHOLDER — replace before relying on closed-loop speed in the field.
     max_ticks_per_sec: 1000.0
 
+    # --- Auto-calibration of max_ticks_per_sec --------------------------------
+    # In open loop the commanded duty is known and the tick rate is measured, so
+    # full-scale capability is directly observable: ticks_per_sec / (duty/100).
+    # That ratio only means "capability" on level ground — on a ramp it drops
+    # because of load. Runs start on near-flat ground, so sampling is confined to
+    # a window that opens when the rover first drives, then the estimate is frozen
+    # for the rest of the run so later terrain can never drag it down.
+    auto_calibrate_max_ticks: true
+
+    # Ignore duty below this: near the deadband the wheels barely turn and the
+    # ratio is meaningless.
+    autocal_min_duty_pct: 25.0
+
+    # Steady samples needed before the estimate is trusted (~10 s at 4 Hz).
+    # Fewer than this when the window closes and it gives up, keeping the value
+    # set above and saying so in the log.
+    autocal_min_samples: 40
+
+    # How long the learning window stays open, from first movement. Keep this
+    # shorter than the flat opening stretch of your course: if a ramp falls
+    # inside the window the estimate is dragged low, and too low is the direction
+    # that makes the loop judder.
+    autocal_window_sec: 60.0
+
+    # Switch to closed-loop automatically once calibration succeeds.
+    # Default false on purpose — changing control mode mid-drive without the
+    # operator asking is not something to do silently. The learned value is
+    # logged either way; flip this on once you trust it.
+    auto_enable_closed_loop: false
+
+    # --- Stall detection ------------------------------------------------------
+    # Distinct from the load case the speed loop exists to handle: on a ramp the
+    # wheels still turn, just slower, and the answer is more duty. If they are not
+    # turning at all, more duty only heats a locked motor — so stop instead.
+    # Latches, so it cannot chatter between stop and retry; clears when speed is
+    # commanded back to zero.
+    #
+    # Note this only claims the near-zero-motion case. Encoders cannot distinguish
+    # a stall from wheel slip (slip reads as fast rotation), so slip is out of
+    # scope here — that needs the RTK ground speed on tpc_gnss_ublox.
+    stall_detect_enabled: true
+    stall_min_duty_pct: 20.0        # only judge when genuinely being asked to drive
+    stall_min_ticks_per_sec: 10.0   # below this counts as "not turning"
+    stall_timeout_sec: 2.0          # sustained this long before stopping
+
     # Encoder feed considered stale after this long with no message —
     # triggers fallback to open-loop passthrough. tpc_chassis_sensors
     # publishes at ~4 Hz (250 ms period), so 1.0 s tolerates a few missed
