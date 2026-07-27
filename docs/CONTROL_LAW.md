@@ -108,7 +108,7 @@ $$
 $$
 \delta_{\text{cmd}}[k] =
 \begin{cases}
-\text{clamp}\big(u_{\text{total}}[k],\, -\delta_{max},\, \delta_{max}\big) & \text{lane detected \& filters warmed up} \\[4pt]
+\text{clamp}\big(u_{\text{total}}[k],\, -\delta_{max},\, \delta_{max}\big) & \text{lane detected, filters warmed up} \\[4pt]
 \delta_{\text{lost}} & \text{otherwise}
 \end{cases}
 $$
