@@ -108,7 +108,7 @@ $$
 $$
 \delta_{\text{cmd}}[k] =
 \begin{cases}
-\operatorname{clamp}\!\big(u_{\text{total}}[k],\, -\delta_{max},\, \delta_{max}\big) & \text{lane detected \& filters warmed up} \\[4pt]
+\text{clamp}\big(u_{\text{total}}[k],\, -\delta_{max},\, \delta_{max}\big) & \text{lane detected \& filters warmed up} \\[4pt]
 \delta_{\text{lost}} & \text{otherwise}
 \end{cases}
 $$
@@ -189,7 +189,7 @@ is published as `data[1]` of `tpc_rover_ctrl_cmd`.
 `v_cmd` is first clamped by the operator safety cap (`srv_spd_limit`):
 
 $$
-v_{\text{target}} = \min\big(\operatorname{clamp}(v_{\text{cmd}}, 0, 100),\; v_{\text{cap}}\big)
+v_{\text{target}} = \min\big(\text{clamp}(v_{\text{cmd}}, 0, 100),\; v_{\text{cap}}\big)
 $$
 
 Wheel-encoder deltas (`tpc_chassis_sensors`, ~4 Hz) give a measured tick
@@ -217,7 +217,7 @@ $$
 Final outgoing duty, safety cap applied last regardless of PID overshoot:
 
 $$
-\text{duty}[k] = \min\Big(\operatorname{clamp}\big(u_v[k],\,0,\,100\big),\; v_{\text{cap}}\Big)
+\text{duty}[k] = \min\Big(\text{clamp}\big(u_v[k],\,0,\,100\big),\; v_{\text{cap}}\Big)
 $$
 
 **Fallback:** if `tpc_chassis_sensors` goes stale (`> sensor_timeout_sec`)
