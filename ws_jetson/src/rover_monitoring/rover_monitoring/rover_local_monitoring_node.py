@@ -160,11 +160,19 @@ class RoverLocalMonitoringNode(Node):
         Prepare CSV logging. Nothing is written to disk here — the run
         directory and each file are created on first use (see LazyCsv).
         """
-        runs_dir = os.path.join(self.resolve_ws_jetson_root(), 'runs')
-
-        run_number = self.get_next_run_number(runs_dir)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.log_dir = os.path.join(runs_dir, f"run_{run_number:03d}_{timestamp}")
+        # One run = one directory shared by every logging node on this machine.
+        # The launch scripts export $ROVER_RUN_DIR once per launch; without it
+        # each process would allocate its own run number and timestamp and this
+        # node's telemetry CSVs would land in a different directory from the
+        # vision node's CSVs, splitting a single run across two folders.
+        from_env = os.environ.get('ROVER_RUN_DIR')
+        if from_env:
+            self.log_dir = os.path.abspath(os.path.expanduser(from_env))
+        else:
+            runs_dir = os.path.join(self.resolve_ws_jetson_root(), 'runs')
+            run_number = self.get_next_run_number(runs_dir)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.log_dir = os.path.join(runs_dir, f"run_{run_number:03d}_{timestamp}")
 
         log = self.get_logger()
 

@@ -34,7 +34,7 @@ Parameters:
         space on the log filesystem drops below this
 
 Storage:
-    Saves to '<ws_jetson>/runs/logs/ws_jetson_camera_TIMESTAMP.avi',
+    Saves to '<ws_jetson>/runs/run_NNN_<stamp>/camera.avi',
     alongside lane_detection_node's and rover_kinematic_control's CSVs for the
     same run (same directory, same timestamp convention -- correlate by
     filename). Raw/uncompressed (no encode step) to keep CPU low, at the cost
@@ -71,7 +71,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 
-from vision_navigation.helpers import resolve_workspace_log_dir
+from vision_navigation.helpers import resolve_run_dir
 
 # Uncompressed AVI (RGB, no inter-frame prediction) -- see module docstring note
 # about confirming this codec is actually available on the Jetson's OpenCV build.
@@ -123,11 +123,12 @@ class CameraRecorderNode(Node):
         self.bridge = CvBridge()
 
         # ===================== Output file (alongside the run's CSVs) =====================
-        # Per-workspace logging: ws_jetson/runs/logs/ (not a shared top-level dir)
-        log_dir = resolve_workspace_log_dir("ws_jetson")
+        # One run = one directory, shared via $ROVER_RUN_DIR (see resolve_run_dir).
+        # Unlike the CSV loggers this must exist before cv2.VideoWriter opens it,
+        # so the directory is created here rather than on first frame.
+        log_dir = resolve_run_dir("ws_jetson")
         os.makedirs(log_dir, exist_ok=True)
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        self.video_path: str = os.path.join(log_dir, f"ws_jetson_camera_{timestamp}.avi")
+        self.video_path: str = os.path.join(log_dir, "camera.avi")
 
         self.writer = cv2.VideoWriter(
             self.video_path, _FOURCC, self.record_fps,

@@ -385,48 +385,79 @@ def draw_text_box(
 
 # ===================== LOGGING HELPERS =====================
 
-def resolve_workspace_log_dir(
-    workspace_name: str = "ws_jetson",
-    subdir: str = "runs/logs"
-) -> str:
+RUN_DIR_ENV_VAR = "ROVER_RUN_DIR"
+
+
+def resolve_workspace_root(workspace_name: str = "ws_jetson") -> str:
     """
-    Resolve the per-workspace log directory: <workspace_root>/runs/logs.
+    Resolve the workspace root directory.
 
-    Run outputs belong inside the workspace of the machine that produced them,
-    not in a shared top-level ~/almondmatcha/runs/logs. Keeping them separate
-    means a Jetson's vision CSVs and an RPi's chassis CSVs can never land in
-    the same directory, and wiping one machine's runs can't touch another's.
+    Walks up from the current working directory for a directory named
+    `workspace_name` that contains `src/` (the launch scripts cd into the
+    workspace before starting nodes), and otherwise falls back to an explicit
+    ~/almondmatcha/<workspace_name>.
 
-    Resolution order:
-      1. Walk up from the current working directory looking for a directory
-         named `workspace_name` that contains `src/`. The tmux launch scripts
-         cd into the workspace before starting nodes, so this is the normal
-         path.
-      2. Fall back to ~/almondmatcha/<workspace_name>/<subdir>.
-
-    The explicit fallback matters: the cwd-walking loops in the monitoring
-    nodes silently give up and use the bare cwd when they can't find the
-    workspace, which scatters run directories wherever the process happened to
-    start. This never returns a path outside the intended workspace.
-
-    Args:
-        workspace_name: Workspace directory name to search for (e.g. "ws_jetson")
-        subdir: Path relative to the workspace root
-
-    Returns:
-        Absolute path to the log directory (not created — caller does that)
+    The explicit fallback matters: the cwd-walking loops this replaced silently
+    gave up and used the bare cwd, scattering run directories wherever the
+    process happened to start. This can only return a workspace root.
     """
     path = os.path.abspath(os.getcwd())
     while True:
         if (os.path.basename(path) == workspace_name
                 and os.path.isdir(os.path.join(path, "src"))):
-            return os.path.join(path, subdir)
+            return path
         parent = os.path.dirname(path)
         if parent == path:          # reached filesystem root
             break
         path = parent
 
-    return os.path.expanduser(os.path.join("~/almondmatcha", workspace_name, subdir))
+    return os.path.expanduser(os.path.join("~/almondmatcha", workspace_name))
+
+
+def next_run_number(runs_dir: str) -> int:
+    """Highest existing run_NNN number under runs_dir, plus one."""
+    max_run = 0
+    try:
+        for name in os.listdir(runs_dir):
+            if name.startswith("run_"):
+                try:
+                    max_run = max(max_run, int(name[4:7]))
+                except ValueError:
+                    pass
+    except OSError:
+        pass
+    return max_run + 1
+
+
+def resolve_run_dir(workspace_name: str = "ws_jetson") -> str:
+    """
+    Resolve this run's output directory: <workspace_root>/runs/run_NNN_<stamp>.
+
+    All of a machine's output for one launch belongs in a single run directory,
+    so a run is one self-contained folder rather than files split across
+    runs/logs/ and runs/run_NNN/.
+
+    Every logging node is a *separate process*, so they cannot each compute this
+    independently — they would allocate different run numbers and timestamps and
+    produce several directories per launch. The launch scripts therefore compute
+    it once and export it as $ROVER_RUN_DIR, which this function prefers.
+
+    Falls back to allocating its own run directory when the variable is unset,
+    which is the case when a node is started by hand with `ros2 run`. In that
+    situation each node gets its own directory — expected, since there is no
+    launcher to coordinate them.
+
+    Returns:
+        Absolute path to the run directory (not created — callers create it
+        lazily on first write, so a run that logs nothing leaves nothing behind)
+    """
+    from_env = os.environ.get(RUN_DIR_ENV_VAR)
+    if from_env:
+        return os.path.abspath(os.path.expanduser(from_env))
+
+    runs_dir = os.path.join(resolve_workspace_root(workspace_name), "runs")
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    return os.path.join(runs_dir, f"run_{next_run_number(runs_dir):03d}_{stamp}")
 
 
 def setup_csv_logging(

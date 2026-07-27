@@ -32,7 +32,7 @@ Algorithm:
     7. Publish results; log to CSV asynchronously (background thread)
 
 CSV Logging:
-    Saves detection results to '<ws_jetson>/runs/logs/ws_jetson_lane_detection_TIMESTAMP.csv' with:
+    Saves detection results to '<ws_jetson>/runs/run_NNN_<stamp>/lane_detection.csv' with:
     timestamp, curvature, theta, b, detected, fps
     fps is a rolling-window measurement of achieved throughput (wall-clock
     time between the last FPS_WINDOW processed frames), not the configured
@@ -66,7 +66,7 @@ from cv_bridge import CvBridge
 
 from vision_navigation.lane_detector import process_frame
 from vision_navigation.config import LaneDetectionConfig
-from vision_navigation.helpers import resolve_workspace_log_dir
+from vision_navigation.helpers import resolve_run_dir
 
 
 class LaneDetectionNode(Node):
@@ -159,12 +159,10 @@ class LaneDetectionNode(Node):
         self.FPS_WINDOW: int = 30
         self._frame_times: "deque[float]" = deque(maxlen=self.FPS_WINDOW)
 
-        # Per-workspace logging: ws_jetson/runs/logs/ (not a shared top-level dir)
-        log_dir = resolve_workspace_log_dir("ws_jetson")
-        os.makedirs(log_dir, exist_ok=True)
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        filename = f"ws_jetson_lane_detection_{timestamp}.csv"
-        self.csv_path: str = os.path.join(log_dir, filename)
+        # One run = one directory: <ws_jetson>/runs/run_NNN_<stamp>/, shared with
+        # every other logging node on this machine via $ROVER_RUN_DIR.
+        # Created lazily by the log worker, so a run with no frames leaves nothing.
+        self.csv_path: str = os.path.join(resolve_run_dir("ws_jetson"), "lane_detection.csv")
         self._csv_header_written: bool = False
 
         # ===================== Async CSV Logging =====================
@@ -312,6 +310,7 @@ class LaneDetectionNode(Node):
                 break
             timestamp, curvature, theta, b, detected, fps = item
             try:
+                os.makedirs(os.path.dirname(self.csv_path), exist_ok=True)
                 file_exists = os.path.isfile(self.csv_path)
                 with open(self.csv_path, 'a', newline='', encoding='utf-8') as f:
                     writer = csv.writer(f)

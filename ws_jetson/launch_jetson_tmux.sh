@@ -19,6 +19,21 @@
 
 SESSION_NAME="jetson_vision"
 
+# ── One run directory, shared by every logging node ───────────────────────────
+# Each logging node is a separate process, so if they each allocated their own
+# run number and timestamp a single launch would scatter output across several
+# run_NNN_* directories (and a stray runs/logs/). Allocate it once here and
+# export it; every node prefers $ROVER_RUN_DIR over computing its own.
+#
+# Deliberately NOT created here — the nodes create it on their first actual
+# write, so a launch that logs nothing leaves no empty directory behind.
+RUNS_DIR="$HOME/almondmatcha/ws_jetson/runs"
+_last=$(ls -d "$RUNS_DIR"/run_[0-9][0-9][0-9]_* 2>/dev/null \
+        | sed -n 's#.*/run_\([0-9][0-9][0-9]\)_.*#\1#p' | sort -n | tail -1)
+_next=$(( 10#${_last:-000} + 1 ))
+export ROVER_RUN_DIR="$RUNS_DIR/$(printf 'run_%03d_%s' "$_next" "$(date +%Y%m%d_%H%M%S)")"
+echo "[run] output directory for this launch: $ROVER_RUN_DIR"
+
 # Kill existing session if exists
 tmux kill-session -t $SESSION_NAME 2>/dev/null
 
@@ -46,6 +61,7 @@ tmux set-option -g pane-active-border-style fg=colour51
 # Pane 0 (left): Camera Stream - Domain 6
 tmux select-pane -t 0 -T "Camera_D6"
 tmux send-keys -t $SESSION_NAME:0.0 "source /opt/ros/humble/setup.bash && cd ~/almondmatcha/ws_jetson && source ~/almondmatcha/common_ifaces/install/setup.bash && source install/setup.bash" C-m
+tmux send-keys -t $SESSION_NAME:0.0 "export ROVER_RUN_DIR='$ROVER_RUN_DIR'" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "export ROS_DOMAIN_ID=6" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "clear && echo -e '\\e[1;36m>>> [Domain 6] CAMERA STREAM <<<\\e[0m' && sleep 1" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "ros2 run vision_navigation camera_stream_node --ros-args --params-file src/vision_navigation/config/vision_nav_headless.yaml" C-m
@@ -53,6 +69,7 @@ tmux send-keys -t $SESSION_NAME:0.0 "ros2 run vision_navigation camera_stream_no
 # Pane 1 (top-right): Lane Detection - Domain 6
 tmux select-pane -t 1 -T "Lane_Detect_D6"
 tmux send-keys -t $SESSION_NAME:0.1 "source /opt/ros/humble/setup.bash && cd ~/almondmatcha/ws_jetson && source ~/almondmatcha/common_ifaces/install/setup.bash && source install/setup.bash" C-m
+tmux send-keys -t $SESSION_NAME:0.1 "export ROVER_RUN_DIR='$ROVER_RUN_DIR'" C-m
 tmux send-keys -t $SESSION_NAME:0.1 "export ROS_DOMAIN_ID=6" C-m
 tmux send-keys -t $SESSION_NAME:0.1 "clear && echo -e '\\e[1;32m>>> [Domain 6] LANE DETECTION <<<\\e[0m'" C-m
 tmux send-keys -t $SESSION_NAME:0.1 "echo 'Waiting for camera initialization (3s)...' && sleep 3" C-m
@@ -61,6 +78,7 @@ tmux send-keys -t $SESSION_NAME:0.1 "ros2 run vision_navigation lane_detection_n
 # Pane 2 (bottom-right): Rover Kinematic Control — dual-context (D6 sub | D5 pub)
 tmux select-pane -t 2 -T "Kinematic_Ctrl_D6+D5"
 tmux send-keys -t $SESSION_NAME:0.2 "source /opt/ros/humble/setup.bash && cd ~/almondmatcha/ws_jetson && source ~/almondmatcha/common_ifaces/install/setup.bash && source install/setup.bash" C-m
+tmux send-keys -t $SESSION_NAME:0.2 "export ROVER_RUN_DIR='$ROVER_RUN_DIR'" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "clear && echo -e '\\e[1;33m>>> [D6 sub + D5 pub] ROVER KINEMATIC CONTROL <<<\\e[0m'" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "echo 'Waiting for lane detection (4s)...' && sleep 4" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "ros2 run vision_navigation rover_kinematic_control --ros-args --params-file src/vision_navigation/config/rover_kinematic_control_params.yaml" C-m
@@ -68,6 +86,7 @@ tmux send-keys -t $SESSION_NAME:0.2 "ros2 run vision_navigation rover_kinematic_
 # Pane 3 (bottom-right): Rover Local Monitoring — Domain 4 CSV logger
 tmux select-pane -t 3 -T "Local_Monitor_D4"
 tmux send-keys -t $SESSION_NAME:0.3 "source /opt/ros/humble/setup.bash && cd ~/almondmatcha/ws_jetson && source ~/almondmatcha/common_ifaces/install/setup.bash && source install/setup.bash" C-m
+tmux send-keys -t $SESSION_NAME:0.3 "export ROVER_RUN_DIR='$ROVER_RUN_DIR'" C-m
 tmux send-keys -t $SESSION_NAME:0.3 "export ROS_DOMAIN_ID=4" C-m
 tmux send-keys -t $SESSION_NAME:0.3 "clear && echo -e '\\e[1;35m>>> [Domain 4] ROVER LOCAL MONITORING (CSV) <<<\\e[0m'" C-m
 tmux send-keys -t $SESSION_NAME:0.3 "echo 'Waiting for telemetry relay (5s)...' && sleep 5" C-m
@@ -76,6 +95,7 @@ tmux send-keys -t $SESSION_NAME:0.3 "ros2 run rover_monitoring rover_local_monit
 # Pane 4 (bottom-right): Camera Recorder — Domain 6, raw video for offline debugging
 tmux select-pane -t 4 -T "Camera_Recorder_D6"
 tmux send-keys -t $SESSION_NAME:0.4 "source /opt/ros/humble/setup.bash && cd ~/almondmatcha/ws_jetson && source ~/almondmatcha/common_ifaces/install/setup.bash && source install/setup.bash" C-m
+tmux send-keys -t $SESSION_NAME:0.4 "export ROVER_RUN_DIR='$ROVER_RUN_DIR'" C-m
 tmux send-keys -t $SESSION_NAME:0.4 "export ROS_DOMAIN_ID=6" C-m
 tmux send-keys -t $SESSION_NAME:0.4 "clear && echo -e '\\e[1;96m>>> [Domain 6] CAMERA RECORDER (raw video, offline debug) <<<\\e[0m'" C-m
 tmux send-keys -t $SESSION_NAME:0.4 "echo 'Waiting for camera initialization (3s)...' && sleep 3" C-m

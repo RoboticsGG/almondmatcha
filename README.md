@@ -224,10 +224,10 @@ almondmatcha/
 │   ├── build.bash                     # Docker-based build
 │   └── workspace/sensors_node/        # Encoder + power + GNSS tasks
 │
-└── ws_*/runs/                         # Per-workspace run output (CSV, video)
-                                       #   ws_jetson/runs/logs/  vision CSVs + camera .avi
-                                       #   ws_jetson/runs/run_NNN_*/  D4 telemetry CSVs
-                                       #   ws_rpi/runs/run_NNN_*/     D5 chassis/GNSS CSVs
+└── ws_*/runs/run_NNN_<stamp>/         # One directory per run, per machine
+                                       #   ws_jetson: lane_detection.csv, kinematic_control.csv,
+                                       #              camera.avi, D4 telemetry CSVs
+                                       #   ws_rpi:    D5 chassis/GNSS/speed-PID CSVs
 ```
 
 ## Quick Start

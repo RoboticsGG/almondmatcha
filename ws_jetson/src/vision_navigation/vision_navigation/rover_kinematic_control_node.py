@@ -50,7 +50,7 @@ Speed Control Parameters:
     and adding a speed PID callback.
 
 CSV Logging:
-    Records to <ws_jetson>/runs/logs/ws_jetson_kinematic_ctrl_TIMESTAMP.csv
+    Records to <ws_jetson>/runs/run_NNN_<stamp>/kinematic_control.csv
     Writes happen on a background thread via a queue so the
     tpc_rover_nav_lane callback never blocks on file I/O.
 
@@ -78,7 +78,7 @@ from vision_navigation.control_filters import (
     clamp,
     pid_controller
 )
-from vision_navigation.helpers import resolve_workspace_log_dir
+from vision_navigation.helpers import resolve_run_dir
 
 
 # =============================================================================
@@ -257,17 +257,14 @@ class RoverKinematicControlNode(Node):
 
     def _init_logging(self) -> None:
         """Initialize CSV logging for the control loop."""
-        # Per-workspace logging: ws_jetson/runs/logs/ (not a shared top-level dir)
-        log_dir = resolve_workspace_log_dir("ws_jetson")
-        os.makedirs(log_dir, exist_ok=True)
-
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        filename = f"ws_jetson_kinematic_ctrl_{timestamp}.csv"
-        self.csv_path: str = os.path.join(log_dir, filename)
-
-        with open(self.csv_path, mode="w", newline="") as f:
-            csv.writer(f).writerow(["time_sec", "theta_ema", "b_ema", "curvature_ema", "pid_u", "e_sum",
-                                     "steer_angle", "speed_cmd", "detected"])
+        # One run = one directory: <ws_jetson>/runs/run_NNN_<stamp>/, shared with
+        # every other logging node on this machine via $ROVER_RUN_DIR.
+        self.csv_path: str = os.path.join(resolve_run_dir("ws_jetson"), "kinematic_control.csv")
+        self._csv_header: list = ["time_sec", "theta_ema", "b_ema", "curvature_ema", "pid_u",
+                                  "e_sum", "steer_angle", "speed_cmd", "detected"]
+        # The file is created by the worker on the first row, not here: a run that
+        # never receives lane data then leaves no empty CSV behind, and the file's
+        # presence is evidence the control loop actually ran.
 
         # ===================== Async CSV Logging =====================
         # File I/O runs on a background thread so the tpc_rover_nav_lane
@@ -471,8 +468,13 @@ class RoverKinematicControlNode(Node):
                 self._log_queue.task_done()
                 break
             try:
+                os.makedirs(os.path.dirname(self.csv_path), exist_ok=True)
+                new_file = not os.path.isfile(self.csv_path)
                 with open(self.csv_path, 'a', newline='') as f:
-                    csv.writer(f).writerow(item)
+                    w = csv.writer(f)
+                    if new_file:
+                        w.writerow(self._csv_header)
+                    w.writerow(item)
             except Exception as e:
                 self.get_logger().warn(f"CSV logging failed: {e}")
             finally:

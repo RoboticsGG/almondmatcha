@@ -23,7 +23,7 @@ check on the very next field run.**
 New node (`ws_jetson/src/vision_navigation/vision_navigation/camera_recorder_node.py`),
 now pane 4 in `launch_jetson_tmux.sh`. Subscribes `tpc_rover_d415_rgb`,
 writes a raw/uncompressed video to
-`<ws_jetson>/runs/logs/ws_jetson_camera_TIMESTAMP.avi` (640×360 @ 10 FPS
+`<ws_jetson>/runs/run_NNN_<stamp>/camera.avi` (640×360 @ 10 FPS
 by default — throttled/downscaled from the camera's native 1280×720/30 FPS
 specifically to fit the Jetson's 128 GB eMMC over a multi-hour run, ~25 GB/hour
 at these defaults).
@@ -47,7 +47,7 @@ produces a playable file end-to-end, but the known corruption mechanism is
 closed.
 
 **What to check after the next field run:**
-1. Does `<ws_jetson>/runs/logs/ws_jetson_camera_*.avi` exist and have a
+1. Does `<ws_jetson>/runs/run_*/camera.avi` exist and have a
    non-trivial size (roughly `25 GB × hours_recorded`, minus throttling
    from actual achieved FPS)?
 2. Does it actually open and play (VLC, `ffplay`, whatever's available)?

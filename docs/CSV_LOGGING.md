@@ -297,10 +297,29 @@ Source: `tpc_telemetry_relay` topic (5 Hz) — aggregated relay from RPi. One ro
 
 Separate from the dual-tier system above — these files are written directly by
 the vision/control nodes themselves, not by `rover_monitoring`. They land as flat
-timestamped files in `<ws_jetson>/runs/logs/`, not under a `run_NNN_.../`
-directory. Every machine keeps its run output inside its own workspace, so
-Jetson and RPi logs can never collide and wiping one machine's runs cannot
-touch another's.
+files inside the same `run_NNN_<stamp>/` directory as the Tier 2 telemetry
+CSVs — one launch produces exactly one directory per machine, containing
+everything that machine logged:
+
+```
+ws_jetson/runs/run_003_20260727_190426/
+├── lane_detection.csv        # vision_navigation
+├── kinematic_control.csv     # vision_navigation
+├── camera.avi                # vision_navigation
+├── telemetry_unified.csv     # rover_monitoring (D4)
+├── rtk_gnss.csv              # rover_monitoring (D4)
+└── ...
+```
+
+Each logging node is a separate process, so the launch scripts allocate the
+run directory once and export it as `$ROVER_RUN_DIR`; every node prefers that
+over computing its own. Without it, four processes would each pick their own
+run number and timestamp and scatter one launch across several directories.
+Starting a node by hand with `ros2 run` (no launcher, so no variable) gives it
+its own run directory, which is expected.
+
+Every machine keeps its run output inside its own workspace, so Jetson and RPi
+logs can never collide and wiping one machine's runs cannot touch another's.
 
 All three write asynchronously: the owning node enqueues a row/frame and a
 background thread drains the queue and writes it to disk, so a slow eMMC/SD
