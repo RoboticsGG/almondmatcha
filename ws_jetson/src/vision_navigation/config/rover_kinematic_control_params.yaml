@@ -25,7 +25,10 @@ rover_kinematic_control:
     # (40%), which is the hard safety ceiling; this is the target it aims for.
     # The gap between the two is the headroom the closed-loop speed controller
     # uses to push through terrain load.
-    speed_ref: 20                # Target cruise speed when the lane is detected
+    # 16 is the measured runnable cruise duty on this rover (15-16 drives fine,
+    # 11 stalls on the ramp). The closed-loop controller raises duty above this
+    # when terrain loads the drivetrain, bounded by spd_limit_cap.
+    speed_ref: 16                # Target cruise speed when the lane is detected
 
     # Output saturation
     steer_max_deg: 60.0          # Maximum steering angle (±degrees)

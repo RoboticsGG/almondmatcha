@@ -96,14 +96,14 @@ public:
 
         // --- Auto-calibration of max_ticks_per_sec ---
         this->declare_parameter<bool>("auto_calibrate_max_ticks", true);
-        this->declare_parameter<double>("autocal_min_duty_pct", 15.0);
+        this->declare_parameter<double>("autocal_min_duty_pct", 13.0);
         this->declare_parameter<int>("autocal_min_samples", 40);
         this->declare_parameter<double>("autocal_window_sec", 60.0);
         this->declare_parameter<bool>("auto_enable_closed_loop", true);
 
         // --- Stall detection ---
         this->declare_parameter<bool>("stall_detect_enabled", true);
-        this->declare_parameter<double>("stall_min_duty_pct", 15.0);
+        this->declare_parameter<double>("stall_min_duty_pct", 30.0);
         this->declare_parameter<double>("stall_min_ticks_per_sec", 10.0);
         this->declare_parameter<double>("stall_timeout_sec", 2.0);
 
@@ -254,7 +254,7 @@ private:
     // In open loop the commanded duty is known and the tick rate is measured, so
     // full-scale capability is directly observable: ticks_per_sec / (duty/100).
     bool   auto_calibrate_max_ticks_ = true;
-    double autocal_min_duty_pct_     = 15.0;  // must sit below cruise duty (20%) or nothing is sampled
+    double autocal_min_duty_pct_     = 13.0;  // below the measured 15-16% cruise duty
     int    autocal_min_samples_      = 40;    // ~10 s of steady driving at 4 Hz
     // Learning window, measured from the moment the rover first drives. The run
     // starts on (near-)flat ground, so this early stretch is the only stretch
@@ -270,7 +270,7 @@ private:
 
     // === Stall detection ===
     bool   stall_detect_enabled_    = true;
-    double stall_min_duty_pct_      = 15.0;
+    double stall_min_duty_pct_      = 30.0;  // only a genuine block, not low-duty under-power
     double stall_min_ticks_per_sec_ = 10.0;
     double stall_timeout_sec_       = 2.0;
     bool   stall_latched_           = false;

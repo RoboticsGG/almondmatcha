@@ -81,9 +81,13 @@ chassis_controller_node:
     # ratio is meaningless.
     #
     # MUST sit below the duty the rover actually cruises at, or no sample is ever
-    # taken and calibration silently never happens. Target speed is 20%, and the
-    # lane-lost caution speed is half that, so 15 samples the 20% cruise only.
-    autocal_min_duty_pct: 15.0
+    # taken and calibration silently never happens.
+    #
+    # Measured on this rover: it cruises at 15-16% duty, and below ~11% it cannot
+    # climb the ramp at all. 13 sits under the cruise band with margin and above
+    # the point where the drivetrain is barely turning and the ratio stops
+    # meaning anything.
+    autocal_min_duty_pct: 13.0
 
     # Steady samples needed before the estimate is trusted (~10 s at 4 Hz).
     # Fewer than this when the window closes and it gives up, keeping the value
@@ -113,8 +117,15 @@ chassis_controller_node:
     # Note this only claims the near-zero-motion case. Encoders cannot distinguish
     # a stall from wheel slip (slip reads as fast rotation), so slip is out of
     # scope here — that needs the RTK ground speed on tpc_gnss_ublox.
+    # Only judge a stall once the controller has already applied real power.
+    # This rover stalls on the ramp at 11% duty and drives fine at 15-16% -- that
+    # low-duty stall is simply under-power, and the correct response is the speed
+    # loop adding duty, NOT stopping. A threshold near the cruise duty would
+    # misread that ordinary case as a fault and halt a perfectly healthy rover
+    # mid-climb. At 30% the loop has already pushed well past what the terrain
+    # needs, so wheels still not turning means something is genuinely blocked.
     stall_detect_enabled: true
-    stall_min_duty_pct: 15.0        # below the 20% cruise duty, above the 10% caution speed
+    stall_min_duty_pct: 30.0
     stall_min_ticks_per_sec: 10.0   # below this counts as "not turning"
     stall_timeout_sec: 2.0          # sustained this long before stopping
 
