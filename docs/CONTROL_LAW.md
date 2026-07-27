@@ -81,6 +81,14 @@ applied independently to `θ`, `b`, and `κ`. The filter is treated as
 until then the command falls back to the lost-lane policy even if
 `detected = true`.
 
+**The filters and the PID are updated only on frames where the lane is
+actually detected.** On a lost frame their state is held, not advanced.
+Updating them unconditionally means the lane-lost placeholder value drags
+the filters away from the last real measurement while the lane is missing,
+so the instant detection returns the rover steers on fabricated error.
+Non-finite geometry (NaN) is likewise treated as "not detected" rather
+than being fed to the filters — see §4.
+
 ### 1.2 Feedback term — combined-error PID
 
 $$

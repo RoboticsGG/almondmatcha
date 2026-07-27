@@ -17,6 +17,7 @@ Author: AlmondMatcha Rover Team
 Date: February 27, 2026
 """
 
+import math
 from collections import deque
 from typing import Deque, Optional, Tuple
 import numpy as np
@@ -119,15 +120,26 @@ class ExponentialMovingAverageLPF:
 def clamp(value: float, min_val: float, max_val: float) -> float:
     """
     Saturate value to [min_val, max_val] range.
-    
+
+    NaN propagates rather than being silently saturated. The plain
+    ``max(min_val, min(value, max_val))`` form looks NaN-safe but is not:
+    ``min(NaN, hi)`` returns NaN, then ``max(lo, NaN)`` returns ``lo``, so a NaN
+    input silently became the *minimum* of the range -- a full-scale, always
+    same-signed value. With a lateral offset that meant every invalid reading
+    turned into a hard-left steering command. Returning NaN instead makes the
+    bad value visible so callers can reject it (see the finite check in
+    rover_kinematic_control_node).
+
     Args:
         value: Value to saturate
         min_val: Minimum boundary
         max_val: Maximum boundary
-        
+
     Returns:
-        Saturated value
+        Saturated value, or NaN if value is NaN
     """
+    if math.isnan(value):
+        return value
     return max(min_val, min(value, max_val))
 
 

@@ -213,7 +213,11 @@ class LaneDetectionNode(Node):
         # Handle NaN and None values
         curvature_clean = self._validate_float(curvature, 0.0)
         theta_clean = self._validate_float(theta, 0.0)
-        b_clean = self._validate_float(b, float('nan'))
+        # Fall back to 0.0 (neutral), matching curvature/theta. NaN must never go
+        # on the wire: downstream clamp(NaN, -100, 100) collapses to -100 --
+        # max(-100, min(NaN, 100)) -> max(-100, NaN) -> -100 -- so every
+        # not-detected frame silently became a full-scale LEFT lateral offset.
+        b_clean = self._validate_float(b, 0.0)
         detected_val = 1.0 if detected else 0.0
 
         # ===================== Publish Results =====================

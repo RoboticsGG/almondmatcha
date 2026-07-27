@@ -58,6 +58,7 @@ Author: AlmondMatcha Rover Team
 Date: February 27, 2026
 """
 
+import math
 import os
 import time
 import csv
@@ -306,42 +307,65 @@ class RoverKinematicControlNode(Node):
         b         = float(msg.data[2])  # Lateral pixel offset from lane center
         detected  = bool(msg.data[3])   # Raw detection flag from vision
 
-        # ===== Input saturation (prevent filter spikes) =====
-        theta = clamp(theta, -35.0, 35.0)
-        b     = clamp(b, -100.0, 100.0)
-
-        # ===== EMA low-pass filtering =====
-        theta_ema     = self.ema_theta.update(theta)
-        b_ema         = self.ema_b.update(b)
-        curvature_ema = self.ema_curvature.update(curvature)
-
-        # ===== Warm-up guard: wait for filter buffers to fill =====
-        buffer_full = (
-            self.ema_theta.is_full() and
-            self.ema_b.is_full() and
-            self.ema_curvature.is_full()
-        )
-        detected_valid = detected and buffer_full
-
-        # ===== Feedback: PID on combined heading + lateral error =====
-        error_sum = (self.k_e1 * theta_ema) + (self.k_e2 * b_ema)
+        # ===== Reject non-finite geometry =====
+        # A NaN here is not a usable measurement, and it must never reach the
+        # filters: clamp() propagates it and the EMA would then be permanently
+        # NaN. Treat it as "lane not detected" instead.
+        if not (math.isfinite(curvature) and math.isfinite(theta) and math.isfinite(b)):
+            detected = False
 
         now = time.time()
         dt  = now - self.last_time
         self.last_time = now
 
-        u_pid, self.integral, self.last_error = pid_controller(
-            error_sum,
-            self.k_p, self.k_i, self.k_d,
-            self.integral,
-            self.last_error,
-            dt,
-            integral_limit=200.0
-        )
+        if detected:
+            # ===== Input saturation (prevent filter spikes) =====
+            theta = clamp(theta, -35.0, 35.0)
+            b     = clamp(b, -100.0, 100.0)
 
-        # ===== Feedforward: anticipate the curve ahead using curvature =====
-        u_ff = self.k_ff * curvature_ema
-        u_total = u_pid + u_ff
+            # ===== EMA low-pass filtering =====
+            theta_ema     = self.ema_theta.update(theta)
+            b_ema         = self.ema_b.update(b)
+            curvature_ema = self.ema_curvature.update(curvature)
+
+            # ===== Warm-up guard: wait for filter buffers to fill =====
+            detected_valid = (
+                self.ema_theta.is_full() and
+                self.ema_b.is_full() and
+                self.ema_curvature.is_full()
+            )
+
+            # ===== Feedback: PID on combined heading + lateral error =====
+            error_sum = (self.k_e1 * theta_ema) + (self.k_e2 * b_ema)
+
+            u_pid, self.integral, self.last_error = pid_controller(
+                error_sum,
+                self.k_p, self.k_i, self.k_d,
+                self.integral,
+                self.last_error,
+                dt,
+                integral_limit=200.0
+            )
+
+            # ===== Feedforward: anticipate the curve ahead using curvature =====
+            u_ff = self.k_ff * curvature_ema
+            u_total = u_pid + u_ff
+        else:
+            # ===== Lane lost: hold filter and PID state, don't invent data =====
+            # Previously the EMA and PID were updated unconditionally, so every
+            # lost frame fed them a placeholder value and only the *output* was
+            # gated on `detected`. The filters therefore drifted to whatever the
+            # placeholder was while the lane was missing, and the instant
+            # detection returned the rover steered on that fabricated error
+            # instead of the real measurement. Holding state means recovery
+            # resumes from the last genuine reading.
+            theta_ema     = self.ema_theta.ema if self.ema_theta.ema is not None else 0.0
+            b_ema         = self.ema_b.ema if self.ema_b.ema is not None else 0.0
+            curvature_ema = self.ema_curvature.ema if self.ema_curvature.ema is not None else 0.0
+            error_sum     = (self.k_e1 * theta_ema) + (self.k_e2 * b_ema)
+            u_pid         = 0.0
+            u_ff          = 0.0
+            detected_valid = False
 
         steer_angle = u_total if detected_valid else self.steer_when_lost
         steer_angle = float(np.clip(steer_angle, -self.steer_max_deg, self.steer_max_deg))
