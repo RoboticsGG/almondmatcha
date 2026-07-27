@@ -58,6 +58,7 @@ Date: July 27, 2026
 import os
 import queue
 import shutil
+import signal
 import threading
 import time
 
@@ -243,7 +244,26 @@ class CameraRecorderNode(Node):
         super().destroy_node()
 
 
+def _raise_keyboard_interrupt(signum, frame) -> None:
+    """
+    Signal handler that routes SIGTERM/SIGHUP through the same shutdown path
+    as Ctrl-C (SIGINT).
+
+    Python only auto-converts SIGINT into a catchable KeyboardInterrupt --
+    SIGTERM (sent by `pkill -TERM`, e.g. launch_field.sh's emergency stop)
+    and SIGHUP (sent when `tmux kill-session` closes the pane's pty) both
+    default to killing the process immediately, bypassing main()'s
+    try/finally entirely. That skips destroy_node()'s writer.release(),
+    which leaves the AVI without a valid trailer/index -- corrupting the
+    whole file rather than just losing the last few frames.
+    """
+    raise KeyboardInterrupt
+
+
 def main() -> None:
+    signal.signal(signal.SIGTERM, _raise_keyboard_interrupt)
+    signal.signal(signal.SIGHUP, _raise_keyboard_interrupt)
+
     rclpy.init()
     node = None
     try:
