@@ -108,7 +108,7 @@ $$
 $$
 \delta_{\text{cmd}}[k] =
 \begin{cases}
-\text{clamp}\big(u_{\text{total}}[k],\, -\delta_{max},\, \delta_{max}\big) & \text{lane detected, filters warmed up} \\[4pt]
+\text{clamp}\big(u_{\text{total}}[k],\, -\delta_{\text{max}},\, \delta_{\text{max}}\big) & \text{lane detected, filters warmed up} \\
 \delta_{\text{lost}} & \text{otherwise}
 \end{cases}
 $$
@@ -217,7 +217,7 @@ The measured rate is then normalised into the same 0–100 % unit as the
 output, using the flat-ground calibration constant `ṅ_max`:
 
 $$
-v_{\text{meas}}[k] = 100\cdot\frac{\dot n_{\text{meas}}[k]}{\dot n_{max}}
+v_{\text{meas}}[k] = 100\cdot\frac{\dot n_{\text{meas}}[k]}{\dot n_{\text{max}}}
 \qquad
 e_v[k] = v_{\text{target}} - v_{\text{meas}}[k]
 $$
@@ -245,7 +245,7 @@ returns.
 > **Why feedforward, not pure PID:** with no feedforward the integral has to
 > supply the entire operating point on its own, which makes the anti-windup
 > clamp double as a ceiling on reachable speed. That was a real defect here:
-> at the original `k_i = 0.01, \text{limit} = 200` the integral could
+> at the original `speed_ki = 0.01` with `speed_integral_limit = 200` the integral could
 > contribute at most 2 % duty, so a commanded 50 % settled at ~18 % — about
 > a third of the intended speed, and *worse than the open-loop path it
 > replaced*. No value of `ṅ_max` fixes it; the structure has to change.
@@ -272,11 +272,14 @@ flowchart LR
     encR["encoder R"] --> delta
     delta --> nmeas["ṅ_meas (ticks/s)"]
 
-    vtarget -- "× ṅ_max / 100" --> ntarget["ṅ_target"]
-    ntarget --> errV(("Σ"))
-    nmeas --> errV
-    errV -- "e_v" --> pidV["PID\nkp·e + ki∫e + kd·de/dt"]
-    pidV --> satV["clamp 0–100"]
+    nmeas -- "× 100 / ṅ_max" --> vmeas["v_meas (%)"]
+    vtarget --> errV(("Σ"))
+    vmeas -- "−" --> errV
+    errV -- "e_v (%)" --> pidV["PID trim\nkp·e + ki∫e + kd·de/dt\nconditional anti-windup"]
+
+    vtarget -- "feedforward" --> sumFF(("+"))
+    pidV -- "trim" --> sumFF
+    sumFF --> satV["clamp 0–100"]
 
     stale{"encoder feed\nstale / disabled?"}
     vtarget -. "open-loop path" .-> stale
