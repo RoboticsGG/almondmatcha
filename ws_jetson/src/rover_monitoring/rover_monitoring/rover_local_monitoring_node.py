@@ -28,6 +28,59 @@ from pathlib import Path
 import glob
 
 
+class LazyCsv:
+    """
+    A CSV file that is created on its first row rather than at node startup.
+
+    Previously all five files were opened with 'w' and given headers in
+    __init__, so every launch left a run_NNN directory of header-only CSVs
+    behind even when no telemetry ever arrived — which made a dead run look
+    identical to a healthy one that simply had not received data yet.
+
+    Creating on first write means the set of files present is itself a
+    diagnostic: a missing CSV proves that topic never delivered anything.
+    The run directory is created lazily too, so an empty run leaves nothing
+    on disk and does not consume a run number.
+    """
+
+    def __init__(self, path: str, header: list, logger=None) -> None:
+        self._path = path
+        self._header = header
+        self._logger = logger
+        self._fh = None
+        self._writer = None
+        self._failed = False
+
+    def writerow(self, row: list) -> None:
+        if self._fh is None:
+            if self._failed:
+                return
+            try:
+                os.makedirs(os.path.dirname(self._path), exist_ok=True)
+                self._fh = open(self._path, 'w', newline='')
+                self._writer = csv.writer(self._fh)
+                self._writer.writerow(self._header)
+                if self._logger:
+                    self._logger.info(
+                        f"Logging {os.path.basename(self._path)} (first message received)"
+                    )
+            except OSError as e:
+                self._failed = True
+                if self._logger:
+                    self._logger.error(f"Failed to open {self._path}: {e}")
+                return
+        self._writer.writerow(row)
+
+    def flush(self) -> None:
+        if self._fh is not None:
+            self._fh.flush()
+
+    def close(self) -> None:
+        if self._fh is not None:
+            self._fh.close()
+            self._fh = None
+
+
 class RoverLocalMonitoringNode(Node):
     def __init__(self):
         super().__init__('rover_local_monitoring_node')
@@ -75,87 +128,97 @@ class RoverLocalMonitoringNode(Node):
         
         return max_run + 1
 
-    def init_csv_logging(self):
-        """Initialize CSV logging with run directories"""
-        # Get ws_jetson path
-        ws_jetson_path = os.getcwd()
-        
-        # Try to find ws_jetson root
-        while ws_jetson_path and 'ws_jetson' in ws_jetson_path:
-            if os.path.exists(os.path.join(ws_jetson_path, 'src')):
+    def resolve_ws_jetson_root(self) -> str:
+        """
+        Resolve the ws_jetson workspace root.
+
+        Walks up from the cwd for a directory named ws_jetson containing src/
+        (launch_jetson_tmux.sh cds into the workspace), else falls back to an
+        explicit ~/almondmatcha/ws_jetson.
+
+        The explicit fallback matters: the previous loop left the path as the
+        bare cwd when it could not find ws_jetson, scattering run_NNN
+        directories wherever the process happened to start.
+        """
+        path = os.path.abspath(os.getcwd())
+        while True:
+            if os.path.basename(path) == 'ws_jetson' and os.path.isdir(os.path.join(path, 'src')):
+                return path
+            parent = os.path.dirname(path)
+            if parent == path:
                 break
-            ws_jetson_path = os.path.dirname(ws_jetson_path)
-        
-        # Create runs directory
-        runs_dir = os.path.join(ws_jetson_path, 'runs')
-        os.makedirs(runs_dir, exist_ok=True)
-        
-        # Get run number and timestamp
+            path = parent
+
+        fallback = os.path.expanduser('~/almondmatcha/ws_jetson')
+        self.get_logger().warn(
+            f'Not running from inside ws_jetson (cwd={os.getcwd()}) — logging to {fallback}'
+        )
+        return fallback
+
+    def init_csv_logging(self):
+        """
+        Prepare CSV logging. Nothing is written to disk here — the run
+        directory and each file are created on first use (see LazyCsv).
+        """
+        runs_dir = os.path.join(self.resolve_ws_jetson_root(), 'runs')
+
         run_number = self.get_next_run_number(runs_dir)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-        # Create run subdirectory: run_NNN_YYYYMMDD_HHMMSS/
         self.log_dir = os.path.join(runs_dir, f"run_{run_number:03d}_{timestamp}")
-        os.makedirs(self.log_dir, exist_ok=True)
-        
-        # Open CSV files
-        self.csv_unified = open(os.path.join(self.log_dir, 'telemetry_unified.csv'), 'w', newline='')
-        self.csv_rtk_gnss = open(os.path.join(self.log_dir, 'rtk_gnss.csv'), 'w', newline='')
-        self.csv_spresense_gnss = open(os.path.join(self.log_dir, 'spresense_gnss.csv'), 'w', newline='')
-        self.csv_chassis_data = open(os.path.join(self.log_dir, 'chassis_data.csv'), 'w', newline='')
-        self.csv_mission_state = open(os.path.join(self.log_dir, 'mission_state.csv'), 'w', newline='')
-        
-        # Create CSV writers
-        self.writer_unified = csv.writer(self.csv_unified)
-        self.writer_rtk_gnss = csv.writer(self.csv_rtk_gnss)
-        self.writer_spresense_gnss = csv.writer(self.csv_spresense_gnss)
-        self.writer_chassis_data = csv.writer(self.csv_chassis_data)
-        self.writer_mission_state = csv.writer(self.csv_mission_state)
-        
-        # Write headers
-        self.writer_unified.writerow([
-            'Timestamp', 'Mission_Active', 'Distance_Remaining_km',
-            'Spresense_Valid', 'Spresense_Lat', 'Spresense_Lon', 'Spresense_Alt', 'Spresense_Sats',
-            'Ublox_Valid', 'Ublox_Lat', 'Ublox_Lon', 'Ublox_Alt', 'Ublox_Fix', 'Ublox_Err_cm', 'Ublox_Sats',
-            'Chassis_Cmd_Valid', 'Cmd_Left_Speed', 'Cmd_Right_Speed', 'Cmd_Steer_Dir', 'Cmd_Drive_Dir',
-            'Chassis_Sensors_Valid', 'Encoder_Left', 'Encoder_Right', 'Voltage_V', 'Current_A', 'Power_W',
-            'Chassis_IMU_Valid', 'Accel_X', 'Accel_Y', 'Accel_Z', 'Gyro_X', 'Gyro_Y', 'Gyro_Z',
-            'Steering_Valid', 'Steering_Cmd',
-            'Lane_Valid', 'Lane_Theta', 'Lane_B', 'Lane_Detected',
-            'Dest_Valid', 'Dest_Lat', 'Dest_Lon'
-        ])
-        
-        self.writer_rtk_gnss.writerow([
-            'Timestamp', 'Valid', 'Latitude', 'Longitude', 'Altitude',
-            'Fix_Quality', 'Centimeter_Error', 'Satellites'
-        ])
-        
-        self.writer_spresense_gnss.writerow([
-            'Timestamp', 'Valid', 'Latitude', 'Longitude', 'Altitude', 'Satellites'
-        ])
-        
-        self.writer_chassis_data.writerow([
-            'Timestamp',
-            'Sensors_Valid', 'Encoder_Left', 'Encoder_Right', 'Voltage_V', 'Current_A', 'Power_W',
-            'IMU_Valid', 'Accel_X', 'Accel_Y', 'Accel_Z', 'Gyro_X', 'Gyro_Y', 'Gyro_Z',
-            'Cmd_Valid', 'Cmd_Left_Speed', 'Cmd_Right_Speed', 'Cmd_Steer_Dir', 'Cmd_Drive_Dir'
-        ])
-        
-        self.writer_mission_state.writerow([
-            'Timestamp', 'Mission_Active', 'Distance_Remaining_km',
-            'Dest_Valid', 'Dest_Latitude', 'Dest_Longitude',
-            'Steering_Valid', 'Steering_Command',
-            'Lane_Valid', 'Lane_Theta', 'Lane_B', 'Lane_Detected'
-        ])
-        
-        self.get_logger().info(f'CSV logging initialized: Run #{run_number}')
+
+        log = self.get_logger()
+
+        self.csv_unified = LazyCsv(
+            os.path.join(self.log_dir, 'telemetry_unified.csv'), [
+                'Timestamp', 'Mission_Active', 'Distance_Remaining_km',
+                'Spresense_Valid', 'Spresense_Lat', 'Spresense_Lon', 'Spresense_Alt', 'Spresense_Sats',
+                'Ublox_Valid', 'Ublox_Lat', 'Ublox_Lon', 'Ublox_Alt', 'Ublox_Fix', 'Ublox_Err_cm', 'Ublox_Sats',
+                'Chassis_Cmd_Valid', 'Cmd_Left_Speed', 'Cmd_Right_Speed', 'Cmd_Steer_Dir', 'Cmd_Drive_Dir',
+                'Chassis_Sensors_Valid', 'Encoder_Left', 'Encoder_Right', 'Voltage_V', 'Current_A', 'Power_W',
+                'Chassis_IMU_Valid', 'Accel_X', 'Accel_Y', 'Accel_Z', 'Gyro_X', 'Gyro_Y', 'Gyro_Z',
+                'Steering_Valid', 'Steering_Cmd',
+                'Lane_Valid', 'Lane_Theta', 'Lane_B', 'Lane_Detected',
+                'Dest_Valid', 'Dest_Lat', 'Dest_Lon'
+            ], log)
+
+        self.csv_rtk_gnss = LazyCsv(
+            os.path.join(self.log_dir, 'rtk_gnss.csv'), [
+                'Timestamp', 'Valid', 'Latitude', 'Longitude', 'Altitude',
+                'Fix_Quality', 'Centimeter_Error', 'Satellites'
+            ], log)
+
+        self.csv_spresense_gnss = LazyCsv(
+            os.path.join(self.log_dir, 'spresense_gnss.csv'), [
+                'Timestamp', 'Valid', 'Latitude', 'Longitude', 'Altitude', 'Satellites'
+            ], log)
+
+        self.csv_chassis_data = LazyCsv(
+            os.path.join(self.log_dir, 'chassis_data.csv'), [
+                'Timestamp',
+                'Sensors_Valid', 'Encoder_Left', 'Encoder_Right', 'Voltage_V', 'Current_A', 'Power_W',
+                'IMU_Valid', 'Accel_X', 'Accel_Y', 'Accel_Z', 'Gyro_X', 'Gyro_Y', 'Gyro_Z',
+                'Cmd_Valid', 'Cmd_Left_Speed', 'Cmd_Right_Speed', 'Cmd_Steer_Dir', 'Cmd_Drive_Dir'
+            ], log)
+
+        self.csv_mission_state = LazyCsv(
+            os.path.join(self.log_dir, 'mission_state.csv'), [
+                'Timestamp', 'Mission_Active', 'Distance_Remaining_km',
+                'Dest_Valid', 'Dest_Latitude', 'Dest_Longitude',
+                'Steering_Valid', 'Steering_Command',
+                'Lane_Valid', 'Lane_Theta', 'Lane_B', 'Lane_Detected'
+            ], log)
+
+        log.info(
+            f'CSV logging armed: Run #{run_number} — files are created on first '
+            f'message, at {self.log_dir}'
+        )
 
     def telemetry_relay_callback(self, msg):
         """Process telemetry relay message and write to all CSV files"""
         timestamp = datetime.now().isoformat()
         
         # Write to unified CSV (all data in one file)
-        self.writer_unified.writerow([
+        self.csv_unified.writerow([
             timestamp, msg.mission_active, msg.distance_remaining_km,
             msg.spresense_valid, msg.spresense_latitude, msg.spresense_longitude, 
             msg.spresense_altitude, msg.spresense_satellites,
@@ -175,7 +238,7 @@ class RoverLocalMonitoringNode(Node):
         
         # Write to RTK GNSS CSV (if valid)
         if msg.ublox_valid:
-            self.writer_rtk_gnss.writerow([
+            self.csv_rtk_gnss.writerow([
                 timestamp, msg.ublox_valid, msg.ublox_latitude, msg.ublox_longitude,
                 msg.ublox_altitude, msg.ublox_fix_quality, msg.ublox_centimeter_error, msg.ublox_satellites
             ])
@@ -183,14 +246,14 @@ class RoverLocalMonitoringNode(Node):
         
         # Write to Spresense GNSS CSV (if valid)
         if msg.spresense_valid:
-            self.writer_spresense_gnss.writerow([
+            self.csv_spresense_gnss.writerow([
                 timestamp, msg.spresense_valid, msg.spresense_latitude, msg.spresense_longitude,
                 msg.spresense_altitude, msg.spresense_satellites
             ])
             self.csv_spresense_gnss.flush()
         
         # Write to chassis data CSV
-        self.writer_chassis_data.writerow([
+        self.csv_chassis_data.writerow([
             timestamp,
             msg.chassis_sensors_valid, msg.encoder_left, msg.encoder_right, 
             msg.voltage, msg.current, msg.power_watts,
@@ -202,7 +265,7 @@ class RoverLocalMonitoringNode(Node):
         self.csv_chassis_data.flush()
         
         # Write to mission state CSV
-        self.writer_mission_state.writerow([
+        self.csv_mission_state.writerow([
             timestamp, msg.mission_active, msg.distance_remaining_km,
             msg.destination_valid, msg.destination_latitude, msg.destination_longitude,
             msg.steering_valid, msg.steering_command,

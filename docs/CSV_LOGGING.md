@@ -32,6 +32,11 @@ this was split apart — don't reintroduce CSV writing in
 - Subscribes to Domain 5 topics directly (STM32 sensors/commands, Jetson steering command, RPi speed-PID debug) — deliberately not lane data, which stays Domain-6-only and is logged on the Jetson side
 - Logs each topic at native rate (event-driven)
 - 7 separate CSV files for different data categories
+- **Files are created on the first message of their topic, not at startup.**
+  A run that receives nothing leaves no directory behind and does not consume
+  a run number, and a missing CSV is positive evidence that topic never
+  delivered data — previously every file existed with headers regardless, so a
+  dead run was indistinguishable from a healthy one that had no data yet.
 - Full-resolution data capture (4-50 Hz depending on sensor)
 - Minimal overhead (direct subscription → CSV write)
 
@@ -72,6 +77,7 @@ ws_rpi/runs/
 - Subscribes to `/tpc_telemetry_relay` on Domain 4 (aggregated message)
 - Logs at 5 Hz (telemetry relay rate)
 - Single subscription (lower overhead than 10+ subscriptions)
+- Files created on first message, same as Tier 1 (see above)
 - High-capacity Jetson storage (vs limited RPi SD card)
 - Python-based for easy database migration
 

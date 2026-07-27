@@ -40,6 +40,7 @@
 #include <ctime>
 #include <iomanip>
 #include <filesystem>
+#include <cstdlib>
 #include <glob.h>
 
 class RoverMonitoringNode : public rclcpp::Node {
@@ -119,7 +120,7 @@ public:
 
         RCLCPP_INFO(this->get_logger(), "=== CSV Data Logger Node Initialized ===");
         RCLCPP_INFO(this->get_logger(), "Event-driven CSV logging to: %s", log_dir_.c_str());
-        RCLCPP_INFO(this->get_logger(), "Per-topic CSVs at full rate:");
+        RCLCPP_INFO(this->get_logger(), "Per-topic CSVs, each created on its first message:");
         RCLCPP_INFO(this->get_logger(), "  - rtk_gnss.csv (~10 Hz)");
         RCLCPP_INFO(this->get_logger(), "  - spresense_gnss.csv (~10 Hz)");
         RCLCPP_INFO(this->get_logger(), "  - chassis_imu.csv (~10 Hz)");
@@ -203,6 +204,9 @@ private:
     std::ofstream csv_mission_state_;
     std::ofstream csv_chassis_speed_pid_;
     std::string log_dir_;
+    bool run_dir_created_  = false;  // run dir is created on first write, not at startup
+    bool dir_error_logged_ = false;  // log directory failures once, not per message
+    bool file_error_logged_ = false;
 
     // Subscriptions
     rclcpp::Subscription<msgs_ifaces::msg::ChassisSensors>::SharedPtr sub_chassis_sensors_;
@@ -240,115 +244,115 @@ private:
         return max_run + 1;
     }
 
-    void init_csv_logging() {
-        // Get the absolute path to ws_rpi directory
-        std::string ws_rpi_path = std::filesystem::current_path().string();
-        
-        // Navigate up to find ws_rpi root if we're in a subdirectory
-        while (!ws_rpi_path.empty() && 
-               ws_rpi_path.find("ws_rpi") != std::string::npos &&
-               !std::filesystem::exists(ws_rpi_path + "/src")) {
-            ws_rpi_path = std::filesystem::path(ws_rpi_path).parent_path().string();
-        }
-        
-        // If we couldn't find ws_rpi, use relative path
-        if (ws_rpi_path.find("ws_rpi") == std::string::npos) {
-            // Try to find ws_rpi in the path
-            auto path = std::filesystem::current_path();
-            while (path.has_parent_path()) {
-                if (path.filename() == "ws_rpi") {
-                    ws_rpi_path = path.string();
-                    break;
-                }
-                path = path.parent_path();
+    /**
+     * @brief Resolve the ws_rpi workspace root.
+     *
+     * Walks up from the current working directory looking for a directory named
+     * ws_rpi that contains src/ (launch_rover_tmux.sh cds into the workspace, so
+     * this is the normal path), and otherwise falls back to an explicit
+     * $HOME/almondmatcha/ws_rpi.
+     *
+     * The explicit fallback is the point: the previous version left the path as
+     * the bare cwd when it couldn't find ws_rpi, so starting the node from an
+     * unexpected directory silently scattered run_NNN_ directories wherever the
+     * process happened to launch from. This can only ever return a ws_rpi root.
+     */
+    std::string resolve_ws_rpi_root() {
+        auto path = std::filesystem::current_path();
+        while (true) {
+            if (path.filename() == "ws_rpi" && std::filesystem::exists(path / "src")) {
+                return path.string();
             }
-        }
-        
-        // Create runs directory relative to ws_rpi
-        std::string runs_dir = ws_rpi_path + "/runs";
-        
-        if (!std::filesystem::exists(runs_dir)) {
-            try {
-                std::filesystem::create_directories(runs_dir);
-                RCLCPP_INFO(this->get_logger(), "Created runs directory: %s", runs_dir.c_str());
-            } catch (const std::exception &e) {
-                RCLCPP_ERROR(this->get_logger(), "Failed to create runs directory: %s", e.what());
-                runs_dir = "/tmp";  // Fallback to /tmp
+            if (!path.has_parent_path() || path.parent_path() == path) {
+                break;
             }
+            path = path.parent_path();
         }
 
-        // Get run number and timestamp
+        const char* home = std::getenv("HOME");
+        std::string fallback = std::string(home ? home : "/root") + "/almondmatcha/ws_rpi";
+        RCLCPP_WARN(this->get_logger(),
+                    "Not running from inside ws_rpi (cwd=%s) — logging to %s",
+                    std::filesystem::current_path().string().c_str(), fallback.c_str());
+        return fallback;
+    }
+
+    /**
+     * @brief Compute (but do not create) this run's log directory.
+     *
+     * Nothing is written to disk here. The run directory and each CSV are
+     * created on first use instead, so a launch that never receives data leaves
+     * no empty run_NNN_ directory full of header-only files behind — and does
+     * not consume a run number either.
+     */
+    void init_csv_logging() {
+        std::string runs_dir = resolve_ws_rpi_root() + "/runs";
+
         int run_number = get_next_run_number(runs_dir);
         auto now = std::chrono::system_clock::now();
         std::time_t now_c = std::chrono::system_clock::to_time_t(now);
         std::tm *timeinfo = std::localtime(&now_c);
         char buffer[50];
         std::strftime(buffer, sizeof(buffer), "%Y%m%d_%H%M%S", timeinfo);
-        
-        // Create run subdirectory: run_NNN_YYYYMMDD_HHMMSS/
+
         std::ostringstream run_dir_ss;
-        run_dir_ss << runs_dir << "/run_" << std::setfill('0') << std::setw(3) << run_number 
+        run_dir_ss << runs_dir << "/run_" << std::setfill('0') << std::setw(3) << run_number
                    << "_" << buffer;
         log_dir_ = run_dir_ss.str();
-        
+
+        RCLCPP_INFO(this->get_logger(),
+                    "Event-driven CSV logging armed: Run #%d — files are created on "
+                    "first message per topic, at %s",
+                    run_number, log_dir_.c_str());
+    }
+
+    /**
+     * @brief Create the run directory on first actual write.
+     */
+    bool ensure_run_dir() {
+        if (run_dir_created_) {
+            return true;
+        }
         try {
             std::filesystem::create_directories(log_dir_);
+            run_dir_created_ = true;
+            RCLCPP_INFO(this->get_logger(), "Created run directory: %s", log_dir_.c_str());
         } catch (const std::exception &e) {
-            RCLCPP_ERROR(this->get_logger(), "Failed to create run directory: %s", e.what());
-            return;
+            if (!dir_error_logged_) {
+                dir_error_logged_ = true;
+                RCLCPP_ERROR(this->get_logger(),
+                             "Failed to create run directory %s: %s — logging disabled",
+                             log_dir_.c_str(), e.what());
+            }
+            return false;
         }
+        return true;
+    }
 
-        // Open all CSV files with headers
-        
-        // 1. RTK GNSS (u-blox)
-        csv_rtk_gnss_.open(log_dir_ + "/rtk_gnss.csv", std::ios::out);
-        if (csv_rtk_gnss_.is_open()) {
-            csv_rtk_gnss_ << "Timestamp_us,Date,Time,Latitude,Longitude,Altitude,"
-                         << "Fix_Quality,Centimeter_Error,Satellites,SNR,Speed_ms\n";
+    /**
+     * @brief Open a CSV and write its header on first use; no-op afterwards.
+     *
+     * @return true if the stream is ready to be written to.
+     */
+    bool ensure_csv(std::ofstream& out, const char* filename, const char* header) {
+        if (out.is_open()) {
+            return true;
         }
-        
-        // 2. Spresense GNSS
-        csv_spresense_gnss_.open(log_dir_ + "/spresense_gnss.csv", std::ios::out);
-        if (csv_spresense_gnss_.is_open()) {
-            csv_spresense_gnss_ << "Timestamp_us,Date,Time,Num_Satellites,Fix,"
-                                << "Latitude,Longitude,Altitude\n";
+        if (!ensure_run_dir()) {
+            return false;
         }
-        
-        // 3. Chassis IMU
-        csv_chassis_imu_.open(log_dir_ + "/chassis_imu.csv", std::ios::out);
-        if (csv_chassis_imu_.is_open()) {
-            csv_chassis_imu_ << "Timestamp_us,Accel_X,Accel_Y,Accel_Z,"
-                            << "Gyro_X,Gyro_Y,Gyro_Z\n";
+        out.open(log_dir_ + "/" + filename, std::ios::out);
+        if (!out.is_open()) {
+            if (!file_error_logged_) {
+                file_error_logged_ = true;
+                RCLCPP_ERROR(this->get_logger(), "Failed to open %s in %s",
+                             filename, log_dir_.c_str());
+            }
+            return false;
         }
-        
-        // 4. Chassis Sensors
-        csv_chassis_sensors_.open(log_dir_ + "/chassis_sensors.csv", std::ios::out);
-        if (csv_chassis_sensors_.is_open()) {
-            csv_chassis_sensors_ << "Timestamp_us,Motor_Left_Encoder,Motor_Right_Encoder,"
-                                << "System_Current_A,System_Voltage_V,Power_W\n";
-        }
-
-        // 5. Chassis Commands
-        csv_chassis_cmd_.open(log_dir_ + "/chassis_cmd.csv", std::ios::out);
-        if (csv_chassis_cmd_.is_open()) {
-            csv_chassis_cmd_ << "Timestamp_us,FDR_Msg,RO_Ctrl_Deg,SPD_Msg,BDR_Msg\n";
-        }
-
-        // 6. Mission State
-        csv_mission_state_.open(log_dir_ + "/mission_state.csv", std::ios::out);
-        if (csv_mission_state_.is_open()) {
-            csv_mission_state_ << "Timestamp_us,Mission_Active,Distance_Remaining_m,"
-                              << "Dest_Latitude,Dest_Longitude,Steering_Cmd\n";
-        }
-
-        // 7. Chassis Speed PID (closed-loop speed controller internals)
-        csv_chassis_speed_pid_.open(log_dir_ + "/chassis_speed_pid.csv", std::ios::out);
-        if (csv_chassis_speed_pid_.is_open()) {
-            csv_chassis_speed_pid_ << "Timestamp_us,Measured_Left_TPS,Measured_Right_TPS,"
-                                   << "Measured_Avg_TPS,Target_TPS,Error,PID_Output_Pct\n";
-        }
-
-        RCLCPP_INFO(this->get_logger(), "Event-driven CSV logging initialized: Run #%d", run_number);
+        out << header;
+        RCLCPP_INFO(this->get_logger(), "Logging %s (first message received)", filename);
+        return true;
     }
 
     void chassis_sensors_callback(const msgs_ifaces::msg::ChassisSensors::SharedPtr msg) {
@@ -359,7 +363,7 @@ private:
         system_power_watts_ = system_voltage_ * system_current_;
 
         // Write to CSV immediately (event-driven, ~4 Hz)
-        if (csv_chassis_sensors_.is_open()) {
+        if (ensure_csv(csv_chassis_sensors_, "chassis_sensors.csv", "Timestamp_us,Motor_Left_Encoder,Motor_Right_Encoder,System_Current_A,System_Voltage_V,Power_W\n")) {
             auto timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::system_clock::now().time_since_epoch()
             ).count();
@@ -383,7 +387,7 @@ private:
         gyro_z_ = msg->gyro_z;
         
         // Write to CSV immediately (event-driven, ~10 Hz)
-        if (csv_chassis_imu_.is_open()) {
+        if (ensure_csv(csv_chassis_imu_, "chassis_imu.csv", "Timestamp_us,Accel_X,Accel_Y,Accel_Z,Gyro_X,Gyro_Y,Gyro_Z\n")) {
             auto timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::system_clock::now().time_since_epoch()
             ).count();
@@ -423,7 +427,7 @@ private:
         current_long_ = msg->longitude;
         
         // Write to CSV immediately (event-driven, ~10 Hz)
-        if (csv_spresense_gnss_.is_open()) {
+        if (ensure_csv(csv_spresense_gnss_, "spresense_gnss.csv", "Timestamp_us,Date,Time,Num_Satellites,Fix,Latitude,Longitude,Altitude\n")) {
             auto timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::system_clock::now().time_since_epoch()
             ).count();
@@ -453,7 +457,7 @@ private:
         rtk_speed_ = msg->speed;
         
         // Write to CSV immediately (event-driven, ~10 Hz)
-        if (csv_rtk_gnss_.is_open()) {
+        if (ensure_csv(csv_rtk_gnss_, "rtk_gnss.csv", "Timestamp_us,Date,Time,Latitude,Longitude,Altitude,Fix_Quality,Centimeter_Error,Satellites,SNR,Speed_ms\n")) {
             auto timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::system_clock::now().time_since_epoch()
             ).count();
@@ -486,7 +490,7 @@ private:
         // Steering_Cmd rides along with whatever its latest value is — it
         // doesn't force a row on its own (the Jetson-side kinematic_ctrl CSV
         // already covers that at full control-loop rate).
-        if (csv_mission_state_.is_open()) {
+        if (ensure_csv(csv_mission_state_, "mission_state.csv", "Timestamp_us,Mission_Active,Distance_Remaining_m,Dest_Latitude,Dest_Longitude,Steering_Cmd\n")) {
             auto timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::system_clock::now().time_since_epoch()
             ).count();
@@ -517,7 +521,7 @@ private:
         }
 
         // Write to CSV immediately (event-driven, ~4 Hz — paced by the encoder feed)
-        if (csv_chassis_speed_pid_.is_open()) {
+        if (ensure_csv(csv_chassis_speed_pid_, "chassis_speed_pid.csv", "Timestamp_us,Measured_Left_TPS,Measured_Right_TPS,Measured_Avg_TPS,Target_TPS,Error_Pct,PID_Output_Pct\n")) {
             auto timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::system_clock::now().time_since_epoch()
             ).count();
@@ -536,7 +540,7 @@ private:
         bdr_msg_ = msg->bdr_msg;
         
         // Write to chassis command CSV immediately (event-driven, ~50 Hz)
-        if (csv_chassis_cmd_.is_open()) {
+        if (ensure_csv(csv_chassis_cmd_, "chassis_cmd.csv", "Timestamp_us,FDR_Msg,RO_Ctrl_Deg,SPD_Msg,BDR_Msg\n")) {
             auto timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::system_clock::now().time_since_epoch()
             ).count();
