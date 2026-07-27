@@ -9,7 +9,7 @@ traffic from the control network.
 | Domain | Purpose | Scope | Participants |
 |--------|---------|-------|-------------|
 | **4** | Telemetry relay | Base + Jetson | `mission_monitoring_node_pc` (Base), `rover_local_monitoring_node` (Jetson) — subscribe `/tpc_telemetry_relay` @ 5 Hz; invisible to STM32 |
-| **5** | Control network | All systems via Ethernet | RPi (7 nodes), Base (`mission_command_node`), Jetson (`rover_kinematic_control`), STM32 (2 nodes) = **11 total** |
+| **5** | Control network | All systems via Ethernet | RPi (8 nodes), Base (`mission_command_node`), Jetson (`rover_kinematic_control`), STM32 (2 nodes) = **12 total** |
 | **6** | Vision processing | Jetson localhost only | `camera_stream_node`, `lane_detection_node` — 30 FPS, never on network |
 
 ## Architecture
@@ -26,7 +26,8 @@ flowchart TB
         STM32C["chassis_controller (STM32)"]
         STM32S["sensors_node (STM32)"]
         GNSS["GNSS nodes (RPi)"]
-        MON["mission_monitoring_node_rpi (RPi)\nD5 sub → CSV + D4 relay"]
+        MON["mission_monitoring_node_rpi (RPi)\nD5 sub → D4 relay only, no CSV"]
+        RMON["rover_monitoring_node (RPi)\nD5 sub → full CSV logger"]
         CMD["mission_command_node (Base)"]
     end
 
@@ -35,13 +36,18 @@ flowchart TB
         JLOG["rover_local_monitoring_node (Jetson)"]
     end
 
-    LANE -->|tpc_rover_nav_lane| CTRL
+    LANE -->|tpc_rover_nav_lane, D6 only| CTRL
     CTRL --> CC --> STM32C
     STM32S -->|tpc_chassis_sensors ~4Hz| CC
     GNSS --> MON
+    GNSS --> RMON
     STM32C --> MON
+    STM32C --> RMON
     STM32S --> MON
+    STM32S --> RMON
     CTRL --> MON
+    CTRL --> RMON
+    CC -->|tpc_chassis_speed_debug| RMON
     MON -->|tpc_telemetry_relay 5 Hz| PC
     MON -->|tpc_telemetry_relay 5 Hz| JLOG
 ```
@@ -52,9 +58,11 @@ flowchart TB
 slots per participant. Moving camera and lane-detection to D6 localhost frees ~2 proxy entries and
 eliminates high-frequency SPDP churn from Jetson vision nodes. Result: ~60% free RAM on STM32.
 
-**D4 relay (D5 count: 11, stable):** Base telemetry display and Jetson CSV logger are monitoring-only.
-Moving them to D4 means zero STM32 RAM cost. `mission_monitoring_node_rpi` aggregates all D5 topics
-and publishes a single `/tpc_telemetry_relay` message to D4 at 5 Hz (one participant serves all consumers).
+**D4 relay (D5 count: 12, stable):** Base telemetry display and Jetson CSV logger are monitoring-only.
+Moving them to D4 means zero STM32 RAM cost. `mission_monitoring_node_rpi` aggregates most D5 topics
+(not `tpc_chassis_speed_debug`, which is logger-only, and not `tpc_rover_nav_lane`, which never
+reaches D5 at all — see below) and publishes a single `/tpc_telemetry_relay` message to D4 at 5 Hz
+(one participant serves all consumers).
 
 **Cross-domain links (no bridge process needed):**
 - Vision → control: `rover_kinematic_control` runs a single process with two rclcpp contexts (D6 subscriber + D5 publisher)

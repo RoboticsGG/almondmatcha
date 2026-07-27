@@ -58,7 +58,7 @@ flowchart TB
 ```
 
 **Domain 4**: Telemetry — `mission_monitoring_node_pc` (Base, display) + `rover_local_monitoring_node` (Jetson, CSV)  
-**Domain 5**: Rover control — all 11 nodes: RPi, Jetson, STM32, Base command  
+**Domain 5**: Rover control — all 12 nodes: RPi, Jetson, STM32, Base command  
 **Domain 6**: Vision — Jetson localhost, camera and lane detection (30 FPS, not visible on network)
 
 ## ROS2 Node-Domain Graph
@@ -83,6 +83,7 @@ graph LR
             RTK["gnss_ublox_node"]
             NAV["gnss_mission_monitor_node"]
             MON["mission_monitoring_node_rpi<br/>D5 sub / D4 pub"]
+            RMON["rover_monitoring_node<br/>full CSV logger (D5 sub)"]
         end
         subgraph STM32["STM32"]
             CHD["chassis_controller<br/>STM32 Chassis"]
@@ -97,29 +98,41 @@ graph LR
     end
 
     %% Cross-domain relay (D6 → D5) via dual-context in rover_kinematic_control
+    %% Note: tpc_rover_nav_lane itself (raw lane data) stays D6-only, logged only
+    %% on the Jetson side -- never crosses to D5/D4, by design.
     STR -- "tpc_rover_ctrl_cmd" --> CC
     STR -- "tpc_rover_ctrl_cmd" --> MON
+    STR -- "tpc_rover_ctrl_cmd" --> RMON
 
     %% STM32 sensor data
     CHD -- "tpc_chassis_imu" --> IMU_N
     CHD -- "tpc_chassis_imu" --> MON
+    CHD -- "tpc_chassis_imu" --> RMON
     SND -- "tpc_chassis_sensors" --> SENS_N
     SND -- "tpc_chassis_sensors" --> MON
+    SND -- "tpc_chassis_sensors" --> RMON
 
     %% RPi chassis control flow
     CC -- "tpc_chassis_cmd" --> CHD
     CC -- "tpc_chassis_cmd" --> MON
+    CC -- "tpc_chassis_cmd" --> RMON
+    CC -- "tpc_chassis_speed_debug" --> RMON
 
     %% GNSS data flow
     SPRES -- "tpc_gnss_spresense" --> NAV
     SPRES -- "tpc_gnss_spresense" --> MON
+    SPRES -- "tpc_gnss_spresense" --> RMON
     RTK -- "tpc_gnss_ublox" --> MON
+    RTK -- "tpc_gnss_ublox" --> RMON
 
     %% Mission monitor outputs
     NAV -- "tpc_gnss_mission_active" --> CC
     NAV -- "tpc_gnss_mission_active" --> MON
+    NAV -- "tpc_gnss_mission_active" --> RMON
     NAV -- "tpc_gnss_mission_remain_dist" --> MON
+    NAV -- "tpc_gnss_mission_remain_dist" --> RMON
     NAV -- "tpc_rover_dest_coordinate" --> MON
+    NAV -- "tpc_rover_dest_coordinate" --> RMON
 
     %% Base station → rover (action + service)
     BCMD == "DesData action" ==> NAV
@@ -144,7 +157,7 @@ graph LR
 | Domain | Purpose | Network Scope | Participants | Key Characteristics |
 |--------|---------|---------------|--------------|---------------------|
 | **4** | Telemetry | Base + Jetson | **2 nodes:**<br>• mission_monitoring_node_pc (Base)<br>• rover_local_monitoring_node (Jetson) | • Read-only telemetry from /tpc_telemetry_relay<br>• No D5 participation (no STM32 memory cost)<br>• Jetson logs CSV at 5 Hz for future DB migration |
-| **5** | Control Network | All rover systems + base command | **11 nodes:**<br>• RPi: 7 nodes<br>• Base: 1 node (mission_command_node)<br>• Jetson: 1 node (rover_kinematic_control)<br>• STM32: 2 nodes | • Bidirectional command/control<br>• Action/service communication<br>• Real-time control loops (50 Hz)<br>• STM32 memory optimized (~60% free RAM) |
+| **5** | Control Network | All rover systems + base command | **12 nodes:**<br>• RPi: 8 nodes<br>• Base: 1 node (mission_command_node)<br>• Jetson: 1 node (rover_kinematic_control)<br>• STM32: 2 nodes | • Bidirectional command/control<br>• Action/service communication<br>• Real-time control loops (50 Hz)<br>• STM32 memory optimized (~60% free RAM) |
 | **6** | Vision Processing | Jetson localhost | **2 nodes:**<br>• camera_stream_node<br>• lane_detection_node | • RGB/Depth streams (30 FPS, 1280×720)<br>• Network isolated (not visible from network)<br>• Lane params relayed to D5 via rover_kinematic_control |
 
 **Base station dual-domain:**
@@ -152,11 +165,11 @@ graph LR
 - `mission_monitoring_node_pc` (D4): subscribes to `/tpc_telemetry_relay`, displays telemetry
 
 **Cross-domain relay:**
-- Vision to control: `rover_kinematic_control` (Jetson) bridges D6 `/tpc_rover_nav_lane` → D5 `/tpc_rover_ctrl_cmd`
-- Telemetry relay: `mission_monitoring_node_rpi` (RPi) aggregates 10 D5 topics → D4 `/tpc_telemetry_relay` at 5 Hz
+- Vision to control: `rover_kinematic_control` (Jetson) bridges D6 `/tpc_rover_nav_lane` → D5 `/tpc_rover_ctrl_cmd`. This is the *only* D6→D5 bridge — raw lane data (`tpc_rover_nav_lane` itself) stays Domain-6-only by design and is never forwarded to D5 or D4; only the derived steering/speed command crosses over.
+- Telemetry relay: `mission_monitoring_node_rpi` (RPi) aggregates 9 D5 topics → D4 `/tpc_telemetry_relay` at 5 Hz. Its `lane_*` fields are always `false`/`0` for the reason above.
 
 **CSV logging (dual-tier):**
-- RPi (`mission_monitoring_node_rpi`): 6 per-topic CSV files at native rates (4–50 Hz), stored in `ws_rpi/runs/`
+- RPi (`rover_monitoring_node`): 7 per-topic CSV files at native rates (4–50 Hz), stored in `ws_rpi/runs/`. `mission_monitoring_node_rpi` (same package) does the D5→D4 relay above and intentionally does no local CSV logging — kept lean as the planned home for a future low-bitrate LPWAN telemetry link.
 - Jetson (`rover_local_monitoring_node`): unified CSV from D4 relay at 5 Hz, stored in `ws_jetson/runs/`
 
 See [docs/DOMAINS.md](docs/DOMAINS.md) and [docs/CSV_LOGGING.md](docs/CSV_LOGGING.md) for full details.
@@ -185,7 +198,7 @@ almondmatcha/
 │       ├── chassis_control/       # Motor coordination, cruise control
 │       ├── chassis_sensors/       # Sensor data logging (IMU, encoders)
 │       ├── gnss_navigation/       # GPS waypoint navigation
-│       ├── rover_monitoring/      # Telemetry relay publisher, CSV logger
+│       ├── rover_monitoring/      # rover_monitoring_node (full CSV logger) + mission_monitoring_node_rpi (D4 relay)
 │       └── rover_bringup/       # ROS2 launch files
 │
 ├── ws_jetson/                         # Jetson Orin Nano workspace
@@ -307,12 +320,12 @@ See [docs/LAUNCH_INSTRUCTIONS.md](docs/LAUNCH_INSTRUCTIONS.md) for timing detail
 # Set domain for control network
 export ROS_DOMAIN_ID=5
 
-# Check all Domain 5 nodes visible (11 nodes expected)
+# Check all Domain 5 nodes visible (12 nodes expected)
 ros2 node list
-# Expected: RPi (7), Base (1), Jetson (1), STM32 (2) = 11 total
+# Expected: RPi (8), Base (1), Jetson (1), STM32 (2) = 12 total
 # RPi: chassis_controller_node, chassis_imu_node, chassis_sensors_node,
 #      gnss_spresense_node, gnss_ublox_node, gnss_mission_monitor_node,
-#      mission_monitoring_node_rpi
+#      mission_monitoring_node_rpi, rover_monitoring_node
 # Base: mission_command_node
 # Jetson: rover_kinematic_control
 # STM32: chassis_controller, sensors_node
@@ -361,7 +374,7 @@ To gracefully stop all running nodes and close the tmux session:
 | `tpc_chassis_sensors` | 4 Hz | STM32 (sensors_node) | Encoders, voltage, current |
 | `tpc_gnss_spresense` | 10 Hz | RPi (gnss_spresense_node) | Standard GPS position |
 | `tpc_gnss_ublox` | 10 Hz | RPi (gnss_ublox_node) | RTK GNSS with cm-level accuracy |
-| `tpc_rover_nav_lane` | 30 Hz | Jetson (lane_detection_node) | Lane parameters [theta, b, detected] |
+| `tpc_rover_nav_lane` | 30 Hz | Jetson (lane_detection_node) | Lane parameters [curvature, theta, b, detected]. Domain 6 only — never forwarded to D5/D4; logged on the Jetson side only |
 | `tpc_rover_dest_coordinate` | Event | RPi (gnss_mission_monitor_node) | Mission destination waypoint |
 
 **Domain 4 (Base Telemetry) - Base Station Only:**
@@ -370,7 +383,7 @@ To gracefully stop all running nodes and close the tmux session:
 |-------|------|-----------|-------------|
 | `tpc_telemetry_relay` | 5 Hz | RPi (mission_monitoring_node_rpi) | Aggregated rover telemetry (TelemetryRelay.msg) |
 
-**Data logging:** `mission_monitoring_node_rpi` (RPi) logs 6 per-topic CSV files at native rates (4–50 Hz) in `ws_rpi/runs/`. `rover_local_monitoring_node` (Jetson, D4) logs aggregated telemetry at 5 Hz in `ws_jetson/runs/`. See [docs/CSV_LOGGING.md](docs/CSV_LOGGING.md).
+**Data logging:** `rover_monitoring_node` (RPi) logs 7 per-topic CSV files at native rates (4–50 Hz) in `ws_rpi/runs/`. `rover_local_monitoring_node` (Jetson, D4) logs aggregated telemetry at 5 Hz in `ws_jetson/runs/`. See [docs/CSV_LOGGING.md](docs/CSV_LOGGING.md).
 
 **Domain 6 (Vision Processing) - Jetson Localhost Only:**
 
@@ -498,5 +511,5 @@ See workspace README files for detailed troubleshooting.
 
 ---
 
-**Last Updated:** February 26, 2026  
-**Version:** 4.1 (Tri-domain, dual CSV logging, rover_monitoring on Jetson)
+**Last Updated:** July 27, 2026
+**Version:** 4.1 (Tri-domain, dual CSV logging, rover_monitoring on Jetson; RPi-side rover_monitoring_node/mission_monitoring_node_rpi split into logger/relay roles)

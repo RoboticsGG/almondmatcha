@@ -22,7 +22,7 @@ graph LR
 
     subgraph RPi ["Raspberry Pi · 192.168.1.1"]
         R1["D5 · 8 nodes\nGNSS, chassis, mission, monitoring"]
-        R2["D4 · mission_monitoring_node_rpi\ntelemetry relay + CSV"]
+        R2["D4 · mission_monitoring_node_rpi\ntelemetry relay only (no CSV)"]
     end
 
     subgraph JET ["Jetson Orin · 192.168.1.5"]
@@ -102,7 +102,7 @@ graph LR
 
 **Dual-context nodes:** `rover_kinematic_control` subscribes D6 + publishes D5 in one process (no bridge); `mission_monitoring_node_rpi` subscribes D5 + publishes D4 in one process (no bridge).
 
-**Rationale:** Domain isolation reduces STM32 discovery overhead (11 vs 14+ participants), enables scalable vision/AI expansion without STM32 firmware changes, and completely isolates monitoring/logging traffic from the control network.
+**Rationale:** Domain isolation reduces STM32 discovery overhead (12 vs 14+ participants), enables scalable vision/AI expansion without STM32 firmware changes, and completely isolates monitoring/logging traffic from the control network.
 
 ### Node Distribution
 
@@ -114,11 +114,15 @@ graph LR
 ├── gnss_spresense_node         - Standard GPS position processing (D5 pub)
 ├── gnss_ublox_node             - RTK GNSS centimeter-level processing (D5 pub)
 ├── gnss_mission_monitor_node   - Waypoint navigation state machine (D5)
-├── mission_monitoring_node_rpi - Telemetry bridge:
-│                                   Sub: D5 (all sensor/command topics)
+├── mission_monitoring_node_rpi - Telemetry bridge (no local CSV logging):
+│                                   Sub: D5 (9 sensor/command topics)
 │                                   Pub: D4 /tpc_telemetry_relay (5 Hz)
-│                                   CSV: 6 per-topic files, native rates (4–50 Hz)
-└── rover_monitoring_node       - CSV logger (D5 sub, all topics)
+│                                   Kept lean — future home for a low-bitrate LPWAN link
+└── rover_monitoring_node       - Full-fidelity CSV logger:
+                                    Sub: D5 (10 topics, incl. tpc_chassis_speed_debug)
+                                    CSV: 7 per-topic files, native rates (4–50 Hz)
+                                    Does NOT subscribe tpc_rover_nav_lane (D6-only,
+                                    logged on Jetson instead — D5/D6 logs kept separate)
 ```
 
 **Jetson Orin Nano (192.168.1.5 — Multi-Domain):**
@@ -211,13 +215,14 @@ flowchart LR
 
 ### Data Logging
 
-**Primary — RPi** (`mission_monitoring_node_rpi`, ws_rpi/runs/run_NNN_YYYYMMDD_HHMMSS/):
+**Primary — RPi** (`rover_monitoring_node`, ws_rpi/runs/run_NNN_YYYYMMDD_HHMMSS/):
 - `rtk_gnss.csv` — RTK position, ~10 Hz
 - `spresense_gnss.csv` — Spresense GPS, ~10 Hz
 - `chassis_imu.csv` — Accel/gyro, ~10 Hz
-- `chassis_sensors.csv` — Encoders, voltage, current, ~4 Hz
+- `chassis_sensors.csv` — Encoders, voltage, current, power, ~4 Hz
 - `chassis_cmd.csv` — Motor commands, ~50 Hz
-- `mission_state.csv` — Event-driven mission status
+- `mission_state.csv` — Event-driven mission status + steering command
+- `chassis_speed_pid.csv` — Closed-loop speed PID internals, ~4 Hz
 
 **Secondary — Jetson** (`rover_local_monitoring_node`, ws_jetson/runs/run_NNN_YYYYMMDD_HHMMSS/):
 - `telemetry_unified.csv` — All fields, 5 Hz

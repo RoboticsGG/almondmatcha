@@ -15,7 +15,16 @@
  *
  * Subscribed Topics (Domain 5):
  *   /tpc_gnss_spresense, /tpc_gnss_ublox, /tpc_chassis_cmd,
- *   /tpc_chassis_imu, /tpc_chassis_sensors, /tpc_rover_ctrl_cmd, /tpc_rover_nav_lane
+ *   /tpc_chassis_imu, /tpc_chassis_sensors, /tpc_rover_ctrl_cmd
+ *
+ * Deliberately does NOT subscribe to /tpc_rover_nav_lane — that topic only
+ * exists on Domain 6 (lane_detection_node publishes it there, invisible from
+ * D5 by design) and this node runs entirely under Domain 5, so it could never
+ * receive it. Raw lane data is logged on the Jetson side instead
+ * (ws_jetson_lane_detection_*.csv) — D5 and D6 logging/relay are kept
+ * separate by design, not bridged. TelemetryRelay.msg's lane_* fields stay in
+ * the schema (other consumers depend on it existing) but are always sent as
+ * false/0 from here — see publish_telemetry().
  *
  * Published Topics:
  *   /tpc_telemetry_relay (msgs_ifaces/TelemetryRelay) - Domain 4, 5 Hz
@@ -120,20 +129,6 @@ public:
             std::bind(&MissionMonitoringNodeRpi::steering_callback, this, std::placeholders::_1)
         );
 
-        // Lane detection (from Jetson D6->D5 bridge)
-        // Format: Float32MultiArray [curvature, theta_deg, b_offset, detected_flag]
-        // NOTE: was previously subscribed as Float64MultiArray, a type mismatch against
-        // lane_detection_node.py's actual Float32MultiArray publisher — ROS2 topic types
-        // must match exactly to connect, so this subscription never received any message
-        // and lane_theta/lane_b/lane_detected below (and the relay's copy of them) were
-        // always stuck at their zero/false defaults. Also had an off-by-one: it read
-        // data[0..2] as [theta, b, detected], but the array is 4 elements with curvature
-        // first — data[1..3] are [theta, b, detected]. Both fixed here.
-        sub_lane_detection_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
-            "tpc_rover_nav_lane", qos_stm32,
-            std::bind(&MissionMonitoringNodeRpi::lane_detection_callback, this, std::placeholders::_1)
-        );
-
         // ===== Create Domain 4 publisher node for cross-domain relay =====
 
         // Create a separate node in Domain 4 for publishing telemetry
@@ -213,12 +208,6 @@ private:
     bool steering_valid_ = false;
     float steering_command_ = 0.0f;
 
-    // Lane detection
-    bool lane_valid_ = false;
-    float lane_theta_ = 0.0f;
-    float lane_b_ = 0.0f;
-    bool lane_detected_ = false;
-
     // Destination
     bool destination_valid_ = false;
     float destination_latitude_ = 0.0f;
@@ -238,7 +227,6 @@ private:
     rclcpp::Subscription<msgs_ifaces::msg::UbloxGNSS>::SharedPtr sub_ublox_gnss_;
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr sub_destination_;
     rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr sub_steering_;
-    rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr sub_lane_detection_;
 
     // ===== Callbacks for all topics =====
 
@@ -314,16 +302,6 @@ private:
         steering_command_ = msg->data[0];  // Steering angle in degrees
     }
 
-    void lane_detection_callback(const std_msgs::msg::Float32MultiArray::SharedPtr msg) {
-        // tpc_rover_nav_lane format: [curvature, theta_deg, b_offset, detected_flag]
-        if (msg->data.size() >= 4) {
-            lane_valid_ = true;
-            lane_theta_ = msg->data[1];
-            lane_b_ = msg->data[2];
-            lane_detected_ = static_cast<bool>(msg->data[3]);
-        }
-    }
-
     void publish_telemetry() {
         auto telemetry = msgs_ifaces::msg::TelemetryRelay();
 
@@ -379,11 +357,12 @@ private:
         telemetry.steering_valid = steering_valid_;
         telemetry.steering_command = steering_command_;
 
-        // Lane detection
-        telemetry.lane_valid = lane_valid_;
-        telemetry.lane_theta = lane_theta_;
-        telemetry.lane_b = lane_b_;
-        telemetry.lane_detected = lane_detected_;
+        // Lane detection — always false/0 here by design: raw lane data lives on
+        // Domain 6 only (see class doc comment), this node never receives it.
+        telemetry.lane_valid = false;
+        telemetry.lane_theta = 0.0f;
+        telemetry.lane_b = 0.0f;
+        telemetry.lane_detected = false;
 
         // Destination
         telemetry.destination_valid = destination_valid_;

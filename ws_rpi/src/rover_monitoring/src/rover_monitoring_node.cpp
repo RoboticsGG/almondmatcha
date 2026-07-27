@@ -12,7 +12,14 @@
  * Subscribed Topics (Domain 5):
  *   /tpc_gnss_spresense, /tpc_gnss_ublox, /tpc_chassis_cmd,
  *   /tpc_chassis_imu, /tpc_chassis_sensors, /tpc_rover_ctrl_cmd,
- *   /tpc_rover_nav_lane, /tpc_chassis_speed_debug
+ *   /tpc_chassis_speed_debug
+ *
+ * Deliberately does NOT subscribe to /tpc_rover_nav_lane — that topic only
+ * exists on Domain 6 (lane_detection_node publishes it there, invisible from
+ * D5 by design) and this node runs entirely under Domain 5, so it could never
+ * receive it anyway. Raw lane data is logged on the Jetson side instead
+ * (ws_jetson_lane_detection_*.csv) — D5 and D6 logging are kept separate by
+ * design, not bridged.
  *
  * Author: AlmondMatcha Rover Team
  * Date:   February 27, 2026
@@ -102,13 +109,6 @@ public:
             std::bind(&RoverMonitoringNode::steering_callback, this, std::placeholders::_1)
         );
 
-        // Lane detection (from Jetson D6->D5 bridge)
-        // Format: Float32MultiArray [curvature, theta_deg, b_offset, detected_flag]
-        sub_lane_detection_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
-            "tpc_rover_nav_lane", qos_stm32,
-            std::bind(&RoverMonitoringNode::lane_detection_callback, this, std::placeholders::_1)
-        );
-
         // Closed-loop speed PID debug signals (from chassis_controller_node)
         // Format: Float32MultiArray [measured_left_tps, measured_right_tps, measured_avg_tps,
         //                            target_tps, error, pid_output_pct]
@@ -180,11 +180,6 @@ private:
     // Steering control (from Jetson)
     float steering_command_ = 0.0f;
 
-    // Lane detection (from Jetson)
-    float lane_theta_ = 0.0f;
-    float lane_b_ = 0.0f;
-    bool lane_detected_ = false;
-
     // Chassis IMU data
     int32_t accel_x_ = 0;
     int32_t accel_y_ = 0;
@@ -219,7 +214,6 @@ private:
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr sub_pub_despose_;
     rclcpp::Subscription<msgs_ifaces::msg::ChassisCtrl>::SharedPtr sub_pub_rovercontrol_d2_;
     rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr sub_steering_;
-    rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr sub_lane_detection_;
     rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr sub_speed_debug_;
 
     int get_next_run_number(const std::string& runs_dir) {
@@ -344,7 +338,7 @@ private:
         csv_mission_state_.open(log_dir_ + "/mission_state.csv", std::ios::out);
         if (csv_mission_state_.is_open()) {
             csv_mission_state_ << "Timestamp_us,Mission_Active,Distance_Remaining_m,"
-                              << "Dest_Latitude,Dest_Longitude,Steering_Cmd,Lane_Theta,Lane_B,Lane_Detected\n";
+                              << "Dest_Latitude,Dest_Longitude,Steering_Cmd\n";
         }
 
         // 7. Chassis Speed PID (closed-loop speed controller internals)
@@ -489,9 +483,9 @@ private:
     
     void write_mission_state() {
         // Write mission state whenever any mission-related topic updates.
-        // Steering_Cmd/Lane_* ride along with whatever their latest value is —
-        // they don't each force a row on their own (Jetson-side and
-        // chassis_speed_pid.csv already cover those at full control-loop rate).
+        // Steering_Cmd rides along with whatever its latest value is — it
+        // doesn't force a row on its own (the Jetson-side kinematic_ctrl CSV
+        // already covers that at full control-loop rate).
         if (csv_mission_state_.is_open()) {
             auto timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::system_clock::now().time_since_epoch()
@@ -502,10 +496,7 @@ private:
                              << dis_remain_ << ","
                              << des_lat_ << ","
                              << des_long_ << ","
-                             << steering_command_ << ","
-                             << lane_theta_ << ","
-                             << lane_b_ << ","
-                             << (lane_detected_ ? "true" : "false") << "\n";
+                             << steering_command_ << "\n";
             csv_mission_state_.flush();
         }
     }
@@ -516,16 +507,6 @@ private:
             return;
         }
         steering_command_ = msg->data[0];
-    }
-
-    void lane_detection_callback(const std_msgs::msg::Float32MultiArray::SharedPtr msg) {
-        // tpc_rover_nav_lane format: [curvature, theta_deg, b_offset, detected_flag]
-        if (msg->data.size() < 4) {
-            return;
-        }
-        lane_theta_ = msg->data[1];
-        lane_b_ = msg->data[2];
-        lane_detected_ = static_cast<bool>(msg->data[3]);
     }
 
     void speed_debug_callback(const std_msgs::msg::Float32MultiArray::SharedPtr msg) {

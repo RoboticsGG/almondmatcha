@@ -45,31 +45,40 @@ Depth image from RealSense D415 (`16UC1`, mm units). Not currently subscribed.
 
 **Type:** `std_msgs/msg/Float32MultiArray`  
 **Publisher:** `lane_detection_node` (Domain 6)  
-**Subscribers:** `rover_kinematic_control` (Domain 5)  
+**Subscribers:** `rover_kinematic_control`'s D6 context (`RoverKinematicControlNode`)  
 **Rate:** 25-30 FPS  
-**QoS:** Reliable, Depth 10  
-**Domain:** 5 (published to control network)  
+**QoS:** Best Effort, Depth 10  
+**Domain:** 6 only — **never crosses to Domain 5 or 4**
 
-Lane detection parameters for steering control. Cross-domain topic published from Domain 6 to Domain 5.
+This topic is **Domain 6 only**, published and subscribed entirely within the Jetson's
+vision domain. It is *not* a cross-domain topic and is never forwarded to D5 — the only
+D6→D5 bridge in the system is `rover_kinematic_control`'s dual-context publish of its
+*derived* `tpc_rover_ctrl_cmd` output (see below), not this raw lane data. RPi-side D5
+nodes (`mission_monitoring_node_rpi`, `rover_monitoring_node`) deliberately do not
+subscribe to this topic — they couldn't anyway, since DDS domain IDs are a hard
+discovery partition (a D5 subscriber can't see a D6-only publisher regardless of
+matching topic name/type). Raw lane data is logged only on the Jetson side, in
+`ws_jetson_lane_detection_*.csv` (see [CSV_LOGGING.md](CSV_LOGGING.md)).
 
 **Fields:**
 ```yaml
 layout:
   dim: []
   data_offset: 0
-data: [theta, b, detected]
+data: [curvature, theta, b, detected]
 ```
 
 **Data Array:**
-- `data[0]` - **theta (degrees):** Heading error angle
+- `data[0]` - **curvature:** Parabola coefficient A (`x = A*y² + B*y + C`), rover-centered frame
+- `data[1]` - **theta (degrees):** Heading error angle
   - Positive: lane on right (need to turn right)
   - Negative: lane on left (need to turn left)
   - Range: typically -30° to +30°
-- `data[1]` - **b (pixels):** Lateral offset from center
+- `data[2]` - **b (pixels):** Lateral offset from center
   - Positive: camera right of lane center
   - Negative: camera left of lane center
   - Range: -640 to +640 (half of image width)
-- `data[2]` - **detected (0 or 1):** Lane detection confidence
+- `data[3]` - **detected (0 or 1):** Lane detection confidence
   - 1.0: Lane detected successfully
   - 0.0: No lane detected
 
@@ -170,7 +179,7 @@ int32 gyro_z           # Angular rate Z-axis
 
 **Type:** `msgs_ifaces/msg/ChassisSensors`  
 **Publisher:** `sensors_node` (STM32)  
-**Subscribers:** `chassis_sensors_node`, `chassis_controller_node` (closed-loop speed PID), `node_ekf_fusion` (future)  
+**Subscribers:** `chassis_sensors_node`, `chassis_controller_node` (closed-loop speed PID), `rover_monitoring_node` (CSV logging), `mission_monitoring_node_rpi` (D4 relay), `node_ekf_fusion` (future)  
 **Rate:** 4 Hz (aggregated from 3 tasks)  
 **QoS:** Best Effort, Volatile, Depth 10 (sensor_data profile — matches STM32 mbed default)  
 **Domain:** 5  
@@ -178,7 +187,9 @@ int32 gyro_z           # Angular rate Z-axis
 Encoder, power, and GNSS data from sensors board. `chassis_controller_node` computes
 ticks/sec from consecutive `mt_lf_encode_msg`/`mt_rt_encode_msg` deltas to drive a
 speed PID, falling back to open-loop passthrough if this feed goes stale (see
-[ws_rpi/docs/rover_bringup.md](../ws_rpi/docs/rover_bringup.md)).
+[ws_rpi/docs/rover_bringup.md](../ws_rpi/docs/rover_bringup.md)). The raw counts here
+are cumulative, not a rate — see `tpc_chassis_speed_debug` below for the actual
+measured wheel speed the PID computes from them.
 
 **Message Definition:**
 ```
@@ -195,6 +206,35 @@ mt_rt_encode_msg: 12340    # Right motor encoder count
 sys_volt_msg: 12.5         # 12.5V battery
 sys_current_msg: 2.3       # 2.3A draw
 ```
+
+---
+
+### `tpc_chassis_speed_debug`
+
+**Type:** `std_msgs/msg/Float32MultiArray`  
+**Publisher:** `chassis_controller_node`  
+**Subscribers:** `rover_monitoring_node` (CSV logging only)  
+**Rate:** ~4 Hz (paced by `tpc_chassis_sensors`, not independently timed)  
+**QoS:** Best Effort, Volatile, Depth 10 (sensor_data profile, matches `tpc_chassis_sensors`)  
+**Domain:** 5  
+
+Closed-loop speed PID internals from `chassisSensorsCallback()` — otherwise computed
+and discarded with no external trace. Added specifically so the speed PID
+(`speed_kp`/`speed_ki`/`speed_kd` in `chassis_speed_control_params.yaml`) is tunable
+from logs. See `chassis_speed_pid.csv` in [CSV_LOGGING.md](CSV_LOGGING.md).
+
+**Fields:**
+```yaml
+data: [measured_left_tps, measured_right_tps, measured_avg_tps, target_tps, error, pid_output_pct]
+```
+
+**Data Array:**
+- `data[0]` - **measured_left_tps:** Left wheel speed (ticks/sec), from encoder delta since the previous message
+- `data[1]` - **measured_right_tps:** Right wheel speed (ticks/sec), same basis
+- `data[2]` - **measured_avg_tps:** Average of left/right — the actual PID process variable
+- `data[3]` - **target_tps:** Setpoint, `(target_speed_pct / 100) × max_ticks_per_sec`
+- `data[4]` - **error:** `target_tps - measured_avg_tps`
+- `data[5]` - **pid_output_pct:** PID output (0–100% duty) *before* the operator safety cap
 
 ---
 
@@ -237,7 +277,7 @@ num_satellites: 8
 
 **Type:** `msgs_ifaces/msg/UbloxGNSS`  
 **Publisher:** `gnss_ublox_node`  
-**Subscribers:** `mission_monitoring_node_rpi`  
+**Subscribers:** `mission_monitoring_node_rpi`, `rover_monitoring_node`  
 **Rate:** 10 Hz  
 **QoS:** Reliable, Depth 10  
 **Domain:** 5  
@@ -411,7 +451,7 @@ Commands from base station are sent directly via actions/services on Domain 5:
 **QoS:** Reliable, Depth 10  
 **Domain:** 4 (not visible from D5 or D6)
 
-Aggregated rover state published from RPi to Domain 4. The RPi node subscribes to 10 Domain 5 topics and republishes aggregated data at 5 Hz to isolate monitoring traffic from the control network.
+Aggregated rover state published from RPi to Domain 4. The RPi node subscribes to 9 Domain 5 topics and republishes aggregated data at 5 Hz to isolate monitoring traffic from the control network.
 
 **Key Fields:**
 - Mission: `mission_active`, `distance_remaining_km`
@@ -420,7 +460,7 @@ Aggregated rover state published from RPi to Domain 4. The RPi node subscribes t
 - Chassis: `encoder_left/right`, `voltage`, `current`, `power_watts`
 - IMU: `accel_x/y/z`, `gyro_x/y/z`
 - Commands: `chassis_cmd_left/right_speed/direction`
-- Navigation: `steering_command`, `lane_theta`, `lane_b`, `lane_detected`
+- Navigation: `steering_command`; `lane_theta`/`lane_b`/`lane_detected` are always `0`/`false` — raw lane data is Domain-6-only and never reaches this node (see `tpc_rover_nav_lane` above), fields stay in the schema for other consumers but are never populated here
 - Destination: `destination_latitude`, `destination_longitude`
 
 **Size:** ~280 bytes/message
@@ -446,13 +486,17 @@ flowchart LR
     STM32 -->|tpc_chassis_imu| CC
 ```
 
-**Sensor Data Flow (Domain 5 → D4 relay):**
+**Sensor Data Flow (Domain 5 → D4 relay + D5 CSV logging):**
 ```mermaid
 flowchart LR
-    SNS["sensors_node (STM32)"] -->|tpc_chassis_sensors| MON["mission_monitoring_node_rpi\n(RPi)"]
+    SNS["sensors_node (STM32)"] -->|tpc_chassis_sensors| MON["mission_monitoring_node_rpi\n(RPi, relay only)"]
+    SNS -->|tpc_chassis_sensors| RMON["rover_monitoring_node\n(RPi, CSV logger)"]
     SNS -->|tpc_chassis_sensors ~4Hz| CC["chassis_controller_node\n(RPi, speed PID)"]
+    CC -->|tpc_chassis_speed_debug| RMON
     SPRES["gnss_spresense_node (RPi)"] -->|tpc_gnss_spresense| MON
+    SPRES -->|tpc_gnss_spresense| RMON
     UBLOX["gnss_ublox_node (RPi)"] -->|tpc_gnss_ublox| MON
+    UBLOX -->|tpc_gnss_ublox| RMON
     MON -->|tpc_telemetry_relay 5Hz D4| PC["mission_monitoring_node_pc\n(Base, D4)"]
     MON -->|tpc_telemetry_relay 5Hz D4| JL["rover_local_monitoring_node\n(Jetson, D4)"]
 ```
@@ -465,11 +509,12 @@ flowchart LR
 |-------|-------------|-----------|---------|-------|
 | `tpc_rover_d415_rgb` | Best Effort | Volatile | Keep Last | 1 |
 | `tpc_rover_d415_depth` | Best Effort | Volatile | Keep Last | 1 |
-| `tpc_rover_nav_lane` | Reliable | Volatile | Keep Last | 10 |
+| `tpc_rover_nav_lane` | Best Effort | Volatile | Keep Last | 10 |
 | `tpc_rover_ctrl_cmd` | Best Effort | Volatile | Keep Last | 10 |
 | `tpc_chassis_cmd` | Reliable | Volatile | Keep Last | 10 |
 | `tpc_chassis_imu` | Reliable | Volatile | Keep Last | 10 |
 | `tpc_chassis_sensors` | Best Effort | Volatile | Keep Last | 10 |
+| `tpc_chassis_speed_debug` | Best Effort | Volatile | Keep Last | 10 |
 | `tpc_gnss_*` | Reliable | Volatile | Keep Last | 10 |
 
 **Rationale:**

@@ -29,7 +29,7 @@ this was split apart — don't reintroduce CSV writing in
 `mission_monitoring_node_rpi`.
 
 **Characteristics**:
-- Subscribes to Domain 5 topics directly (STM32 sensors/commands, Jetson steering + lane + speed-PID debug)
+- Subscribes to Domain 5 topics directly (STM32 sensors/commands, Jetson steering command, RPi speed-PID debug) — deliberately not lane data, which stays Domain-6-only and is logged on the Jetson side
 - Logs each topic at native rate (event-driven)
 - 7 separate CSV files for different data categories
 - Full-resolution data capture (4-50 Hz depending on sensor)
@@ -103,7 +103,7 @@ ws_jetson/runs/
 |--------|-------------|----------------|
 | **Data Rate** | 4-50 Hz (per-topic) | 5 Hz (aggregated) |
 | **Resolution** | Full-fidelity | Down-sampled |
-| **Subscriptions** | 11 topics (D5) | 1 topic (D4) |
+| **Subscriptions** | 10 topics (D5) | 1 topic (D4) |
 | **CSV Files** | 7 per-topic files | 5 files (1 unified + 4 categorical) |
 | **Storage** | Limited (SD card) | High-capacity (SSD/eMMC) |
 | **Language** | C++ | Python |
@@ -209,15 +209,17 @@ Source: multiple D5 topics (event-driven on any topic change)
 | `Dest_Latitude` | float | °  | Current target waypoint latitude (from base station action) |
 | `Dest_Longitude` | float | °  | Current target waypoint longitude |
 | `Steering_Cmd` | float32 | ° | Kinematic control output from Jetson (`tpc_rover_ctrl_cmd[0]`). Continuous steering angle command fed to chassis_controller_node. |
-| `Lane_Theta` | float32 | ° | Heading error angle from `tpc_rover_nav_lane[1]`. Output of the lane detection model on Jetson. |
-| `Lane_B` | float32 | px | Lateral pixel offset from lane center, from `tpc_rover_nav_lane[2]`. Used by the steering PID. |
-| `Lane_Detected` | bool | 0/1 | `1` = lane markers found in current frame; `0` = no lane (from `tpc_rover_nav_lane[3]`) |
+
+No `Lane_*` columns here by design: raw lane detection (`tpc_rover_nav_lane`)
+only exists on Domain 6 (Jetson localhost), and this node runs entirely on
+Domain 5, so it can never receive it — D5 and D6 logging are kept
+deliberately separate, not bridged. Lane data is logged on the Jetson side
+instead, see `ws_jetson_lane_detection_*.csv` below.
 
 Rides along at whatever rate `Mission_Active`/destination/distance change —
-`Steering_Cmd`/`Lane_*` are the latest value at that moment, not a forced row
-per steering/lane update (that's `chassis_speed_pid.csv` and the Jetson-side
-`ws_jetson_kinematic_ctrl_*.csv`/`ws_jetson_lane_detection_*.csv`, both at full
-control-loop rate).
+`Steering_Cmd` is the latest value at that moment, not a forced row per
+steering update (that's the Jetson-side `ws_jetson_kinematic_ctrl_*.csv`,
+at full control-loop rate).
 
 ---
 
