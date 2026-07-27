@@ -10,8 +10,8 @@
 | Item | Value |
 |------|-------|
 | Total SRAM | 512 KB (DTCM 128 KB + SRAM1 368 KB + SRAM2 16 KB) |
-| D5 domain participant count | ~11–14 (11 app nodes + daemons + margin) |
-| SPDP_MAX (discovery slots) | 30 (14 slots of headroom) |
+| D5 domain participant count | ~19–23 (12 app nodes + daemons + margin) |
+| SPDP_MAX (discovery slots) | 30 (7–11 slots of headroom vs. peak observed) |
 | MAX_NUM_PARTICIPANTS | 1 (local pool only) |
 | THREAD_POOL_READER_STACKSIZE | 8192 bytes (CRITICAL — 4096 crashes) |
 | OVERALL_HEAP_SIZE | ~28.7 KB (thread stacks) |
@@ -21,28 +21,42 @@
 
 ## Domain 5 Participant Inventory
 
+> Reconciled 2026-07-27 against the actual node set — the previous version of
+> this table used placeholder names (`gnss_node`, `chassis_cmd_node`,
+> `mission_executive_node`, `imu_processor_node`, `odometry_node`,
+> `safety_monitor_node`, `state_machine_node`) that predated the real
+> implementation and undercounted by one (missing `rover_monitoring_node`,
+> which has been a real running D5 participant all along — this table was
+> just never updated to include it). See [ARCHITECTURE.md](ARCHITECTURE.md),
+> [DOMAINS.md](DOMAINS.md), [TOPICS.md](TOPICS.md) for the current node/topic
+> reference.
+
 | Node | Process | Host |
 |------|---------|------|
 | `chassis_controller` | STM32 | 192.168.1.2 |
 | `sensors_node` | STM32 | 192.168.1.6 |
-| `gnss_node` | ws_rpi | 192.168.1.1 |
-| `chassis_cmd_node` | ws_rpi | 192.168.1.1 |
-| `mission_executive_node` | ws_rpi | 192.168.1.1 |
-| `imu_processor_node` | ws_rpi | 192.168.1.1 |
-| `odometry_node` | ws_rpi | 192.168.1.1 |
-| `safety_monitor_node` | ws_rpi | 192.168.1.1 |
-| `state_machine_node` | ws_rpi | 192.168.1.1 |
+| `gnss_spresense_node` | ws_rpi | 192.168.1.1 |
+| `gnss_ublox_node` | ws_rpi | 192.168.1.1 |
+| `gnss_mission_monitor_node` | ws_rpi | 192.168.1.1 |
+| `chassis_controller_node` | ws_rpi | 192.168.1.1 |
+| `chassis_imu_node` | ws_rpi | 192.168.1.1 |
+| `chassis_sensors_node` | ws_rpi | 192.168.1.1 |
+| `mission_monitoring_node_rpi` | ws_rpi | 192.168.1.1 |
+| `rover_monitoring_node` | ws_rpi | 192.168.1.1 |
 | `mission_command_node` | ws_base | 192.168.1.10 |
 | `rover_kinematic_control` | ws_jetson | 192.168.1.5 |
 
-Total: **11 application participants** in D5.
+Total: **12 application participants** in D5.
 
 Plus per-SBC overhead at runtime:
 - DDS daemon router: ~1 per SBC (3 SBCs → 3)
 - rmw_dds_common SystemPublisher: ~1 per process
 - Ephemeral `ros2` CLI tool participants (variable)
 
-→ Peak observed: ~18–22 participants. SPDP_MAX=30 provides 8–12 spare slots.
+→ Peak observed: ~19–23 participants (this empirical range was measured
+against the real running system, which already included all 12 nodes above —
+only the static table was out of date, not the measurement). SPDP_MAX=30
+provides 7–11 spare slots.
 
 ---
 
@@ -152,7 +166,7 @@ BSS_check = (NUM_WRITER_PROXIES_PER_READER × NUM_STATEFUL_READERS
 Should be < 40 KB to stay well within 512 KB SRAM.
 ```
 
-Current (11 nodes, SPDP_MAX=30):
+Current (12 nodes, SPDP_MAX=30):
 ```
 BSS_check = (30×3 + 30×3) × 80 = 14 400 bytes  ✓
 ```
