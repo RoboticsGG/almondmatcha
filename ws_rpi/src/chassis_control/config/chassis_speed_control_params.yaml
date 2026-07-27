@@ -79,7 +79,11 @@ chassis_controller_node:
 
     # Ignore duty below this: near the deadband the wheels barely turn and the
     # ratio is meaningless.
-    autocal_min_duty_pct: 25.0
+    #
+    # MUST sit below the duty the rover actually cruises at, or no sample is ever
+    # taken and calibration silently never happens. Target speed is 20%, and the
+    # lane-lost caution speed is half that, so 15 samples the 20% cruise only.
+    autocal_min_duty_pct: 15.0
 
     # Steady samples needed before the estimate is trusted (~10 s at 4 Hz).
     # Fewer than this when the window closes and it gives up, keeping the value
@@ -92,11 +96,12 @@ chassis_controller_node:
     # that makes the loop judder.
     autocal_window_sec: 60.0
 
-    # Switch to closed-loop automatically once calibration succeeds.
-    # Default false on purpose — changing control mode mid-drive without the
-    # operator asking is not something to do silently. The learned value is
-    # logged either way; flip this on once you trust it.
-    auto_enable_closed_loop: false
+    # Switch to closed-loop automatically once calibration succeeds, mid-run.
+    # Safe to do here because the transition is bumpless (the loop's feedforward
+    # term is the commanded duty, so at zero error its output equals what
+    # open-loop was already sending) and because spd_limit_cap bounds the result
+    # at 40% duty no matter what the controller asks for.
+    auto_enable_closed_loop: true
 
     # --- Stall detection ------------------------------------------------------
     # Distinct from the load case the speed loop exists to handle: on a ramp the
@@ -109,7 +114,7 @@ chassis_controller_node:
     # a stall from wheel slip (slip reads as fast rotation), so slip is out of
     # scope here — that needs the RTK ground speed on tpc_gnss_ublox.
     stall_detect_enabled: true
-    stall_min_duty_pct: 20.0        # only judge when genuinely being asked to drive
+    stall_min_duty_pct: 15.0        # below the 20% cruise duty, above the 10% caution speed
     stall_min_ticks_per_sec: 10.0   # below this counts as "not turning"
     stall_timeout_sec: 2.0          # sustained this long before stopping
 

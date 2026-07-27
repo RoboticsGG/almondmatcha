@@ -96,14 +96,14 @@ public:
 
         // --- Auto-calibration of max_ticks_per_sec ---
         this->declare_parameter<bool>("auto_calibrate_max_ticks", true);
-        this->declare_parameter<double>("autocal_min_duty_pct", 25.0);
+        this->declare_parameter<double>("autocal_min_duty_pct", 15.0);
         this->declare_parameter<int>("autocal_min_samples", 40);
         this->declare_parameter<double>("autocal_window_sec", 60.0);
-        this->declare_parameter<bool>("auto_enable_closed_loop", false);
+        this->declare_parameter<bool>("auto_enable_closed_loop", true);
 
         // --- Stall detection ---
         this->declare_parameter<bool>("stall_detect_enabled", true);
-        this->declare_parameter<double>("stall_min_duty_pct", 20.0);
+        this->declare_parameter<double>("stall_min_duty_pct", 15.0);
         this->declare_parameter<double>("stall_min_ticks_per_sec", 10.0);
         this->declare_parameter<double>("stall_timeout_sec", 2.0);
 
@@ -225,9 +225,13 @@ private:
     // Unit: 0–100 (STM32 motor_control.cpp divides by 100.0 to get PWM duty cycle).
     // Values above 100 are meaningless and will exceed 100% duty on the STM32.
     //
-    // Default: 50 (50% duty) — conservative safe startup speed.
-    // Raise via srv_spd_limit once the operator confirms safe operating conditions.
-    uint8_t  spd_limit_cap_   = 50;
+    // Default: 40 (40% duty) — the operational safety ceiling for this rover.
+    // The Jetson's target speed is 20%, so this leaves the closed-loop speed
+    // controller 20 points of headroom to push through terrain load while still
+    // never exceeding a duty the chassis is safe at. Do not raise it to the
+    // target speed: the cap clamps the loop's *output*, so cap == target leaves
+    // the controller no authority to correct for a ramp at all.
+    uint8_t  spd_limit_cap_   = 40;
 
     // === Closed-loop speed control (encoder feedback from tpc_chassis_sensors) ===
     // Kill-switch — set false (ros2 param set, no rebuild) to force legacy open-loop passthrough.
@@ -250,14 +254,14 @@ private:
     // In open loop the commanded duty is known and the tick rate is measured, so
     // full-scale capability is directly observable: ticks_per_sec / (duty/100).
     bool   auto_calibrate_max_ticks_ = true;
-    double autocal_min_duty_pct_     = 25.0;  // ignore low duty: deadband/stiction skew the ratio
+    double autocal_min_duty_pct_     = 15.0;  // must sit below cruise duty (20%) or nothing is sampled
     int    autocal_min_samples_      = 40;    // ~10 s of steady driving at 4 Hz
     // Learning window, measured from the moment the rover first drives. The run
     // starts on (near-)flat ground, so this early stretch is the only stretch
     // where ticks-per-duty reflects the drivetrain rather than the terrain. Once
     // it closes the estimate is frozen, so later ramps can never drag it down.
     double autocal_window_sec_       = 60.0;
-    bool   auto_enable_closed_loop_  = false; // opt-in: don't switch control mode mid-drive by default
+    bool   auto_enable_closed_loop_  = true;  // bumpless transition + 40% cap make this safe
     std::vector<double> autocal_samples_;     // observed full-scale estimates
     bool   autocal_done_             = false;
     bool   autocal_window_open_      = false;
@@ -266,7 +270,7 @@ private:
 
     // === Stall detection ===
     bool   stall_detect_enabled_    = true;
-    double stall_min_duty_pct_      = 20.0;
+    double stall_min_duty_pct_      = 15.0;
     double stall_min_ticks_per_sec_ = 10.0;
     double stall_timeout_sec_       = 2.0;
     bool   stall_latched_           = false;
@@ -688,7 +692,15 @@ private:
     void resetSpeedPid() {
         speed_integral_       = 0.0;
         speed_last_error_     = 0.0;
-        speed_pid_output_pct_ = 0.0f;
+        // Seed the output with the feedforward term, not zero. The closed loop
+        // consumes this value at 50 Hz but only refreshes it at the ~4 Hz encoder
+        // rate, so leaving a zero here means that on any transition into closed
+        // loop (auto-enable mid-run, or the encoder feed recovering) the motors
+        // are commanded to a dead stop for up to one encoder period. Starting at
+        // the commanded duty makes those transitions bumpless: with zero error the
+        // loop's output *is* the feedforward term, so this is the value it would
+        // have computed anyway.
+        speed_pid_output_pct_ = static_cast<float>(target_speed_pct_);
     }
 
     /**

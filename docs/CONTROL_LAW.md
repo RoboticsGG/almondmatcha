@@ -264,13 +264,21 @@ $$
 \text{duty}[k] = \min\Big(\text{clamp}\big(u_v[k],\,0,\,100\big),\; v_{\text{cap}}\Big)
 $$
 
-> **`use_closed_loop_speed` defaults to `false`.** With an uncalibrated
-> `ṅ_max` the loop limit-cycles: measured speed reads above full scale, duty
-> is driven to 0, the wheels stop, measured falls to 0, duty is driven back
-> up — a ~2 Hz stop-and-spin judder at the encoder rate. The slew limit
-> reduces that from a 0↔100 % square wave to a shallow surge, and the node
-> warns when measured speed exceeds 150 % of full scale, but neither is a
-> substitute for calibrating `ṅ_max`. Enable the loop only after that.
+> **The loop starts open and enables itself once calibrated.** An uncalibrated
+> `ṅ_max` makes it limit-cycle — measured speed reads above full scale, duty is
+> driven to 0, the wheels stop, measured falls to 0, duty is driven back up: a
+> ~2 Hz stop-and-spin judder at the encoder rate. So the run begins in open
+> loop, `ṅ_max` is learned from the flat opening stretch (§2.5), and the
+> controller switches itself on when that succeeds. The switch is bumpless
+> because the feedforward term is the commanded duty: at zero error the loop
+> outputs exactly what open-loop was already sending.
+>
+> **Cap and target must differ.** `spd_limit_cap` clamps the loop's *output*,
+> not just the incoming request, so setting the cap equal to the target speed
+> leaves the controller no authority to correct for load at all. The rover runs
+> a 20 % target under a 40 % cap — the 20-point gap is the headroom the loop
+> uses to climb. Simulated on a ramp that costs 45 % of tractive effort, duty
+> rises 20 % → 36 % and holds the commanded speed, staying inside the cap.
 
 **Fallback:** if `tpc_chassis_sensors` goes stale (`> sensor_timeout_sec`)
 or `use_closed_loop_speed = false`, the loop drops to open-loop passthrough

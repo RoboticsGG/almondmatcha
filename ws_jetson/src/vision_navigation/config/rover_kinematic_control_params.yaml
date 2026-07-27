@@ -21,6 +21,12 @@ rover_kinematic_control:
     # Filtering
     ema_alpha: 0.05              # Exponential moving average smoothing (0-1)
     
+    # Speed (0-100% PWM duty). The RPi caps the final duty at spd_limit_cap
+    # (40%), which is the hard safety ceiling; this is the target it aims for.
+    # The gap between the two is the headroom the closed-loop speed controller
+    # uses to push through terrain load.
+    speed_ref: 20                # Target cruise speed when the lane is detected
+
     # Output saturation
     steer_max_deg: 60.0          # Maximum steering angle (±degrees)
     steer_when_lost: 0.0         # Steering when lane not detected
