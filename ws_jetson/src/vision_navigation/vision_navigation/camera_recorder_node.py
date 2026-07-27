@@ -268,7 +268,16 @@ def main() -> None:
     node = None
     try:
         node = CameraRecorderNode()
-        rclpy.spin(node)
+        # Deliberately NOT rclpy.spin(): that blocks in rcl_wait with the GIL
+        # released, so a pending Python signal handler never gets to run.
+        # rclpy installs its own SIGINT/SIGTERM handlers that wake the wait
+        # set, so those two work either way -- but SIGHUP has no such handler,
+        # and under plain spin() the process would hang instead of shutting
+        # down (worse than the pre-handler default, which at least exited).
+        # A bounded timeout returns to the interpreter regularly so *any*
+        # signal is serviced within timeout_sec.
+        while rclpy.ok():
+            rclpy.spin_once(node, timeout_sec=0.5)
     except KeyboardInterrupt:
         print("Shutting down...")
     except Exception as e:
