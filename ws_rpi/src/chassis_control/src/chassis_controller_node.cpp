@@ -27,7 +27,9 @@
  *   /tpc_chassis_cmd (msgs_ifaces/ChassisCtrl) - motor command to STM32
  *   /tpc_chassis_speed_debug (std_msgs/Float32MultiArray) - closed-loop speed
  *       PID internals, ~4 Hz (paced by encoder feed): [measured_left_tps,
- *       measured_right_tps, measured_avg_tps, target_tps, error, pid_output_pct]
+ *       measured_right_tps, measured_avg_tps, target_tps, error_pct, pid_output_pct]
+ *       NOTE: error_pct is percent-of-full-scale (the unit the PID operates on),
+ *       not ticks/sec — the first four fields remain ticks/sec.
  *
  * Services:
  *   /srv_spd_limit (services_ifaces/SpdLimit) - set speed cap ceiling (0–100% PWM)
@@ -83,10 +85,10 @@ public:
         // --- Closed-loop speed control parameters ---
         // See config/chassis_speed_control_params.yaml for tuned values.
         this->declare_parameter<bool>("use_closed_loop_speed", true);
-        this->declare_parameter<double>("speed_kp", 0.05);
-        this->declare_parameter<double>("speed_ki", 0.01);
+        this->declare_parameter<double>("speed_kp", 0.3);
+        this->declare_parameter<double>("speed_ki", 0.5);
         this->declare_parameter<double>("speed_kd", 0.0);
-        this->declare_parameter<double>("speed_integral_limit", 200.0);
+        this->declare_parameter<double>("speed_integral_limit", 100.0);
         this->declare_parameter<double>("max_ticks_per_sec", 1000.0);
         this->declare_parameter<double>("sensor_timeout_sec", 1.0);
 
@@ -203,10 +205,14 @@ private:
     // === Closed-loop speed control (encoder feedback from tpc_chassis_sensors) ===
     // Kill-switch — set false (ros2 param set, no rebuild) to force legacy open-loop passthrough.
     bool   use_closed_loop_speed_ = true;
-    double speed_kp_              = 0.05;
-    double speed_ki_              = 0.01;
+    // Gains are dimensionless / per-second: the loop error is percent-of-full-scale,
+    // so these stay valid when max_ticks_per_sec is re-calibrated.
+    double speed_kp_              = 0.3;
+    double speed_ki_              = 0.5;
     double speed_kd_              = 0.0;
-    double speed_integral_limit_  = 200.0;  // Anti-windup clamp on the integral term
+    // Anti-windup clamp, in %·s. The integral's duty authority is ki * this limit
+    // (0.5 * 100 = ±50% duty of trim on top of the feedforward term).
+    double speed_integral_limit_  = 100.0;
     double max_ticks_per_sec_     = 1000.0; // Encoder ticks/sec at 100% duty on flat ground — field-calibrate
     double sensor_timeout_sec_    = 1.0;    // Encoder feed considered stale after this long with no message
 
@@ -340,27 +346,81 @@ private:
         const double measured_ticks_per_sec = ((delta_left + delta_right) / 2.0) / dt;
         const double target_ticks_per_sec =
             (static_cast<double>(target_speed_pct_) / 100.0) * max_ticks_per_sec_;
-        const double error = target_ticks_per_sec - measured_ticks_per_sec;
 
-        // --- PID with anti-windup (integral clamp) ---
-        speed_integral_ += error * dt;
-        speed_integral_ = std::clamp(speed_integral_, -speed_integral_limit_, speed_integral_limit_);
+        if (target_speed_pct_ == 0) {
+            // Commanded stop: nothing to regulate, and letting the integral run
+            // negative here would have to be unwound before the next start-up.
+            resetSpeedPid();
+            publishSpeedDebug(measured_left_tps, measured_right_tps,
+                              measured_ticks_per_sec, target_ticks_per_sec, 0.0, 0.0f);
+            return;
+        }
 
-        const double derivative = (error - speed_last_error_) / dt;
-        speed_last_error_ = error;
+        // --- Error in percent-of-full-scale rather than raw ticks/sec ---
+        // Running the loop in the same 0–100% unit as its output keeps the gains
+        // valid when max_ticks_per_sec is re-calibrated. With a ticks/sec error the
+        // gains are scaled by the calibration constant and would silently need
+        // rescaling every time it changes.
+        const double measured_pct = (max_ticks_per_sec_ > 1e-6)
+            ? (measured_ticks_per_sec / max_ticks_per_sec_) * 100.0
+            : 0.0;
+        const double error_pct = static_cast<double>(target_speed_pct_) - measured_pct;
 
-        const double u = speed_kp_ * error + speed_ki_ * speed_integral_ + speed_kd_ * derivative;
+        // --- Feedforward + PID trim ---
+        // The commanded duty is the feedforward term, so at zero error the output is
+        // exactly what open-loop would have sent and the PID only trims for load.
+        // Previously the PID had to supply the entire operating point from its
+        // integral alone, which speed_integral_limit made arithmetically impossible
+        // (ki * limit capped the integral's authority far below the needed duty), so
+        // the loop always settled well short of the commanded speed.
+        const double derivative = (error_pct - speed_last_error_) / dt;
+
+        const double integral_candidate = std::clamp(
+            speed_integral_ + error_pct * dt,
+            -speed_integral_limit_, speed_integral_limit_);
+        const double u_candidate = static_cast<double>(target_speed_pct_)
+                                 + speed_kp_ * error_pct
+                                 + speed_ki_ * integral_candidate
+                                 + speed_kd_ * derivative;
+
+        // Conditional integration: stop accumulating once the output is saturated
+        // and the error would only drive it further out of range (anti-windup on
+        // top of the magnitude clamp — matters when a setpoint is unreachable,
+        // e.g. climbing at full throttle).
+        if (!((u_candidate > 100.0 && error_pct > 0.0) ||
+              (u_candidate < 0.0   && error_pct < 0.0))) {
+            speed_integral_ = integral_candidate;
+        }
+        speed_last_error_ = error_pct;
+
+        const double u = static_cast<double>(target_speed_pct_)
+                       + speed_kp_ * error_pct
+                       + speed_ki_ * speed_integral_
+                       + speed_kd_ * derivative;
         speed_pid_output_pct_ = static_cast<float>(std::clamp(u, 0.0, 100.0));
 
-        // --- Publish debug signals so the PID is tunable from logs instead of opaque ---
+        publishSpeedDebug(measured_left_tps, measured_right_tps, measured_ticks_per_sec,
+                          target_ticks_per_sec, error_pct, speed_pid_output_pct_);
+    }
+
+    /**
+     * @brief Publish the speed loop's internal signals so it is tunable from logs.
+     *
+     * Field 4 (error) is in percent-of-full-scale, matching the unit the PID
+     * actually operates on — not ticks/sec. Fields 0–3 stay in ticks/sec so the
+     * raw encoder measurement is still visible alongside it.
+     */
+    void publishSpeedDebug(double measured_left_tps, double measured_right_tps,
+                           double measured_ticks_per_sec, double target_ticks_per_sec,
+                           double error_pct, float output_pct) {
         auto debug_msg = std_msgs::msg::Float32MultiArray();
         debug_msg.data = {
             static_cast<float>(measured_left_tps),
             static_cast<float>(measured_right_tps),
             static_cast<float>(measured_ticks_per_sec),
             static_cast<float>(target_ticks_per_sec),
-            static_cast<float>(error),
-            speed_pid_output_pct_
+            static_cast<float>(error_pct),
+            output_pct
         };
         pub_speed_debug_->publish(debug_msg);
     }

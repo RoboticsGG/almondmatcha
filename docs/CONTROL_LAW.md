@@ -213,20 +213,42 @@ $$
 > useful for detecting a slipping or stuck wheel — would be a separate
 > addition; it isn't implemented today.)
 
-converted against a target tick rate using the flat-ground calibration
-constant `ṅ_max`:
+The measured rate is then normalised into the same 0–100 % unit as the
+output, using the flat-ground calibration constant `ṅ_max`:
 
 $$
-\dot n_{\text{target}} = \frac{v_{\text{target}}}{100}\cdot \dot n_{max}
+v_{\text{meas}}[k] = 100\cdot\frac{\dot n_{\text{meas}}[k]}{\dot n_{max}}
 \qquad
-e_v[k] = \dot n_{\text{target}} - \dot n_{\text{meas}}[k]
+e_v[k] = v_{\text{target}} - v_{\text{meas}}[k]
 $$
 
-PID on that error (anti-windup clamp `±speed_integral_limit`):
+Working in percent rather than raw ticks/s is deliberate: the gains are then
+independent of `ṅ_max`, so re-calibrating it doesn't silently rescale the
+loop.
+
+**Feedforward + PID trim.** The commanded duty is itself the feedforward
+term; the PID only corrects for load:
 
 $$
-u_v[k] = k_p^{v}\,e_v[k] \;+\; k_i^{v}\sum_{j\le k} e_v[j]\,\Delta t_j \;+\; k_d^{v}\,\frac{e_v[k]-e_v[k-1]}{\Delta t_k}
+u_v[k] = \underbrace{v_{\text{target}}}_{\text{feedforward}} \;+\; \underbrace{k_p^{v}\,e_v[k] \;+\; k_i^{v}\sum_{j\le k} e_v[j]\,\Delta t_j \;+\; k_d^{v}\,\frac{e_v[k]-e_v[k-1]}{\Delta t_k}}_{\text{PID trim}}
 $$
+
+At zero error this emits exactly what open-loop would have sent, so a
+healthy loop degrades gracefully toward open-loop behaviour rather than
+away from it. The integral is bounded by `±speed_integral_limit`, giving it
+`k_i × limit` of duty authority (currently ±50 %), and uses conditional
+integration — accumulation stops once the output is saturated and the error
+would only push it further out of range, so an unreachable setpoint (e.g.
+climbing at full throttle) doesn't wind up a lurch for when traction
+returns.
+
+> **Why feedforward, not pure PID:** with no feedforward the integral has to
+> supply the entire operating point on its own, which makes the anti-windup
+> clamp double as a ceiling on reachable speed. That was a real defect here:
+> at the original `k_i = 0.01, \text{limit} = 200` the integral could
+> contribute at most 2 % duty, so a commanded 50 % settled at ~18 % — about
+> a third of the intended speed, and *worse than the open-loop path it
+> replaced*. No value of `ṅ_max` fixes it; the structure has to change.
 
 Final outgoing duty, safety cap applied last regardless of PID overshoot:
 
@@ -263,16 +285,22 @@ flowchart LR
     capV --> duty["duty → tpc_chassis_cmd.spd_msg"]
 ```
 
-### 2.4 Current gains (as configured — placeholders, not field-tuned)
+### 2.4 Current gains (simulation-derived starting values, not yet field-tuned)
 
 | Param | Value | Role |
 |---|---|---|
-| `speed_kp` | 0.05 | proportional |
-| `speed_ki` | 0.01 | integral |
-| `speed_kd` | 0.0 | derivative |
-| `speed_integral_limit` | 200.0 | anti-windup clamp |
+| `speed_kp` | 0.3 | proportional (dimensionless — % duty per % speed error) |
+| `speed_ki` | 0.5 | integral (per second) |
+| `speed_kd` | 0.0 | derivative — left off; the ~4 Hz encoder feed is too coarse to differentiate cleanly |
+| `speed_integral_limit` | 100.0 | anti-windup clamp (%·s) → `k_i × limit` = ±50 % duty of trim authority |
 | `max_ticks_per_sec` | 1000.0 | **placeholder** — needs flat-ground 100%-duty calibration from encoder logs |
 | `sensor_timeout_sec` | 1.0 s | stale-feed fallback threshold |
+
+Gains were chosen by simulating the loop at the 4 Hz encoder rate across
+no-load / light / moderate / heavy load and a range of drivetrain lags:
+every physically reachable setpoint converges to the commanded speed with
+<10 % overshoot, and unreachable ones saturate cleanly. They are a safe
+starting point, not a substitute for field tuning.
 
 ---
 
@@ -293,9 +321,15 @@ bottleneck, not the control loop.
 
 ## 4. Known limitations
 
-- `max_ticks_per_sec` and `speed_kp/ki/kd` in
-  `chassis_speed_control_params.yaml` are untuned starting values, not
-  field-calibrated.
+- `max_ticks_per_sec` is still a placeholder and **must** be calibrated from
+  a flat-ground 100 %-duty run before the closed loop is trusted. It defines
+  what "100 % speed" means to the loop, so calibrating it from a no-load
+  bench run (wheels off the ground, which spin faster than under load) makes
+  the whole speed scale no-load-referenced and the loop will push extra duty
+  on the ground chasing a target it can't reach. A bench run is still the
+  right way to verify encoder wiring, left/right symmetry, duty→speed
+  linearity, and the motor deadband — just not to set this constant.
+- `speed_kp/ki/kd` are simulation-derived starting values, not field-tuned.
 - The speed loop's setpoint/error live entirely in the 0–100 % duty
   abstraction (via `max_ticks_per_sec`), not physical units (m/s) — there is
   no independent ground-truth speed sensor.

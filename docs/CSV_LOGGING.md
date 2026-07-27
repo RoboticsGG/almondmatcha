@@ -233,14 +233,18 @@ otherwise computes and discards these values internally with no external trace.
 | `Timestamp_us` | int64 | µs | System clock (µs since Unix epoch) |
 | `Measured_Left_TPS` | float32 | ticks/s | Left wheel speed, from the encoder delta since the previous message |
 | `Measured_Right_TPS` | float32 | ticks/s | Right wheel speed, same basis |
-| `Measured_Avg_TPS` | float32 | ticks/s | Average of left/right — the actual PID process variable |
+| `Measured_Avg_TPS` | float32 | ticks/s | Average of left/right — the raw process variable |
 | `Target_TPS` | float32 | ticks/s | Setpoint: `(target_speed_pct / 100) × max_ticks_per_sec` |
-| `Error` | float32 | ticks/s | `Target_TPS - Measured_Avg_TPS` |
-| `PID_Output_Pct` | float32 | % duty | PID output before the operator safety cap (compare against `chassis_cmd.csv`'s `SPD_Msg`, which is this value *after* the cap) |
+| `Error_Pct` | float32 | % of full scale | `target_speed_pct - (Measured_Avg_TPS / max_ticks_per_sec × 100)` — the error the PID actually operates on. **Not** ticks/s: the loop runs in the same 0–100% unit as its output so the gains survive re-calibrating `max_ticks_per_sec` |
+| `PID_Output_Pct` | float32 | % duty | Final output (feedforward + PID trim) before the operator safety cap — compare against `chassis_cmd.csv`'s `SPD_Msg`, which is this value *after* the cap |
 
 Use this to tune `speed_kp`/`speed_ki`/`speed_kd` and `max_ticks_per_sec` in
 `ws_rpi/src/chassis_control/config/chassis_speed_control_params.yaml` — plot
-`Target_TPS` vs `Measured_Avg_TPS` vs `Error` over time.
+`Target_TPS` vs `Measured_Avg_TPS` and `Error_Pct` over time.
+
+`PID_Output_Pct - target_speed_pct` is the trim the loop is applying: near zero
+means the feedforward alone is right, persistently large means the terrain load
+(or a stale `max_ticks_per_sec` calibration) is doing real work.
 
 ---
 

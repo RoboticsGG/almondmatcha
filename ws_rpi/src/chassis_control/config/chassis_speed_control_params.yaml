@@ -1,11 +1,17 @@
 # Closed-Loop Speed Control Parameters
 # chassis_control / chassis_controller_node — Domain 5 (ws_rpi)
-# Date: July 24, 2026
+# Date: July 27, 2026
 #
 # The speed loop is driven by /tpc_chassis_sensors (wheel encoders on the
-# sensors STM32, ~4 Hz). PID setpoint/output are in the same 0-100% duty-cycle
-# abstraction as spd_msg/spd_limit_cap_ — not physical units (m/s) — converted
-# to encoder ticks/sec internally via max_ticks_per_sec.
+# sensors STM32, ~4 Hz). Structure is feedforward + PID trim:
+#
+#     duty = target_pct + kp*e + ki*∫e dt + kd*de/dt      e in % of full scale
+#
+# target_pct (the commanded speed) is the feedforward term, so at zero error the
+# output equals what open-loop would have sent and the PID only corrects for
+# terrain/load. The error is expressed in percent-of-full-scale rather than raw
+# encoder ticks/sec, which means these gains stay valid when max_ticks_per_sec
+# is re-calibrated — with a ticks/sec error they would silently need rescaling.
 
 chassis_controller_node:
   ros__parameters:
@@ -13,21 +19,45 @@ chassis_controller_node:
     # (e.g. `ros2 param set /chassis_controller_node use_closed_loop_speed false`).
     use_closed_loop_speed: true
 
-    # PID gains (control law: u = kp*e + ki*∫e*dt + kd*de/dt, e in ticks/sec, u in %).
-    # Conservative starting values — tune from the field like k_p/k_ff on the
-    # vision side. Start with kp only (ki=kd=0), then add ki once proportional
-    # response looks stable, then kd if oscillation needs damping.
-    speed_kp: 0.05
-    speed_ki: 0.01
+    # --- PID gains (error and output both in % duty) ---------------------------
+    # Starting values chosen by simulating the loop at the ~4 Hz encoder rate
+    # across no-load / light / moderate load and a range of drivetrain lags.
+    # Conservative on purpose: every reachable setpoint converges with <10%
+    # overshoot, and unreachable ones saturate cleanly instead of winding up.
+    #
+    # Tuning order in the field:
+    #   1. kp only (ki=0, kd=0). Raise until the speed responds briskly; back off
+    #      if it hunts around the setpoint. Expect steady-state error at this stage
+    #      under load — that is the integral's job, not kp's.
+    #   2. Add ki to remove that residual error. Raise until it closes in a few
+    #      seconds; too high shows up as slow oscillation.
+    #   3. Leave kd at 0 unless there is real oscillation to damp — the encoder
+    #      feed is only ~4 Hz and differentiating it amplifies quantisation noise.
+    speed_kp: 0.3
+    speed_ki: 0.5
     speed_kd: 0.0
 
-    # Anti-windup clamp on the integral accumulator (ticks/sec * sec).
-    speed_integral_limit: 200.0
+    # Anti-windup clamp on the integral accumulator, in %·s.
+    # The integral's duty authority is ki * this limit — here 0.5 * 100 = ±50%
+    # duty of trim on top of the feedforward term. Keep that product in the
+    # 40–60 range: too small and the loop cannot correct for load (the original
+    # bug: ki*limit was 2% duty, so it never reached setpoint), too large and a
+    # stalled wheel winds up a large lurch when it frees.
+    speed_integral_limit: 100.0
 
-    # Encoder ticks/sec measured at 100% duty on flat ground.
-    # Field-calibrate: drive open-loop at 100% duty, log a run, then compute
-    # ticks/sec from consecutive Encoder_Left/Encoder_Right rows in the
-    # existing chassis_sensors.csv (~10 Hz per docs/CSV_LOGGING.md).
+    # Encoder ticks/sec at 100% duty. This constant DEFINES what "100% speed"
+    # means to the loop, so calibrate it on the surface the rover actually drives.
+    #
+    # Calibrate: drive open-loop (use_closed_loop_speed: false) at 100% duty on
+    # flat ground, log a run, then compute ticks/sec from consecutive
+    # Encoder_Left/Encoder_Right rows in chassis_sensors.csv and average the two.
+    #
+    # A no-load bench run (wheels off the ground) reads HIGHER than on-ground and
+    # is not a substitute — using it here makes the whole speed scale no-load
+    # referenced, so on ground the loop pushes extra duty to chase a target it
+    # can't reach. Use the bench run to verify encoder wiring/symmetry/linearity,
+    # then set this from a ground run.
+    #
     # PLACEHOLDER — replace before relying on closed-loop speed in the field.
     max_ticks_per_sec: 1000.0
 
