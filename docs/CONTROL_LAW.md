@@ -199,6 +199,20 @@ $$
 \dot n_{\text{meas}}[k] = \frac{(\Delta N_L + \Delta N_R)/2}{\Delta t}
 $$
 
+> **Why averaging is correct even mid-turn:** both encoders sit on the rear
+> axle, and steering is applied only at the front wheels (Ackermann). The
+> instantaneous center of rotation therefore always lies on the line through
+> the rear axle, so the two rear wheel speeds are exactly `v_center ∓ Δ`,
+> symmetric around the true centerline speed, at any steering angle — no
+> small-angle approximation needed. Left/right tick-rate divergence while
+> turning is expected geometry, not sensor error, and it cancels out exactly
+> in `ṅ_meas`. `measured_left_tps`/`measured_right_tps` are published to
+> `tpc_chassis_speed_debug` for logging only; the PID never needs to look at
+> the split, and no extra tolerance is required for it to regulate forward
+> speed correctly through curves. (A per-wheel expected-divergence check —
+> useful for detecting a slipping or stuck wheel — would be a separate
+> addition; it isn't implemented today.)
+
 converted against a target tick rate using the flat-ground calibration
 constant `ṅ_max`:
 
