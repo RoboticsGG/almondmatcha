@@ -30,9 +30,23 @@ import os
 #                          rover_kinematic_control, rover_local_monitoring_node
 #   STM32 (D5 mROS2):   chassis_controller (chassis), sensors_node (sensors)
 
+# ROS log directory: keep it inside ws_rpi like every other run output, so a
+# machine's logs stay in its own workspace.
+#
+# Previously hardcoded to /home/curry/almondmatcha/runs/ros_logs/ — both the
+# username and the top-level (non-workspace) location were wrong: it broke for
+# any other user, and it recreated the shared top-level runs/ directory that
+# the per-workspace layout exists to avoid.
+_WS_RPI_ROOT = os.path.expanduser(
+    os.environ.get('WS_RPI_ROOT', '~/almondmatcha/ws_rpi')
+)
+
 set_custom_log_dir = SetEnvironmentVariable(
     name='ROS_LOG_DIR',
-    value=f'/home/curry/almondmatcha/runs/ros_logs/{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}'
+    value=os.path.join(
+        _WS_RPI_ROOT, 'runs', 'ros_logs',
+        datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    )
 )
 
 def generate_launch_description():
