@@ -10,7 +10,7 @@ traffic from the control network.
 |--------|---------|-------|-------------|
 | **4** | Telemetry relay | Base + Jetson | `mission_monitoring_node_pc` (Base), `rover_local_monitoring_node` (Jetson) — subscribe `/tpc_telemetry_relay` @ 5 Hz; invisible to STM32 |
 | **5** | Control network | All systems via Ethernet | RPi (8 nodes), Base (`mission_command_node`), Jetson (`rover_kinematic_control`), STM32 (2 nodes) = **12 total** |
-| **6** | Vision processing | Jetson localhost only | `camera_stream_node`, `lane_detection_node` — 30 FPS, never on network |
+| **6** | Vision processing | Jetson localhost only | `camera_stream_node`, `lane_detection_node` — 30 FPS, never on network; plus `camera_recorder_node` (field-run video log, not part of the control path) |
 
 ## Architecture
 

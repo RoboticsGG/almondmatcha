@@ -8,7 +8,7 @@ Complete guide to launching the Almondmatcha rover system across all platforms.
 
 1. **STM32 boards:** power on and wait for network readiness
 2. **Raspberry Pi (ws_rpi):** `./launch_rover_tmux.sh` → 8 active panes + 1 spare
-3. **Jetson (ws_jetson):** `./launch_jetson_tmux.sh` → 4 panes (D6 camera, D6 lane, D6->D5 control, D4 monitor)
+3. **Jetson (ws_jetson):** `./launch_jetson_tmux.sh` → 5 panes (D6 camera, D6 lane, D6->D5 control, D4 monitor, D6 camera recorder)
 4. **Base Station (ws_base):** `./launch_base_tmux.sh` (optional)
 
 **Alternative background scripts:**
@@ -40,6 +40,7 @@ Total: 12 nodes
 
 - camera_stream_node
 - lane_detection_node
+- camera_recorder_node (field-run video logging only, not part of the control path)
 
 Domain 6 nodes are invisible to STM32 boards and other systems.
 
@@ -132,11 +133,12 @@ source install/setup.bash
 ./launch_jetson_tmux.sh
 ```
 
-This creates a 4-pane tmux session (`jetson_vision`):
+This creates a 5-pane tmux session (`jetson_vision`):
 - Pane 0: `camera_stream_node` — D415 RGB/depth streaming (Domain 6)
 - Pane 1: `lane_detection_node` — Lane feature extraction (Domain 6)
 - Pane 2: `rover_kinematic_control` — bicycle-model PID (D6 sub / D5 pub)
 - Pane 3: `rover_local_monitoring_node` — telemetry CSV logger (Domain 4)
+- Pane 4: `camera_recorder_node` — raw video of the RGB stream for offline debugging (Domain 6, throttled to 10 FPS @ 640×360 by default)
 
 **Tmux controls:** `Ctrl+b` + arrows to navigate · `z` to zoom · `d` to detach
 
@@ -196,7 +198,7 @@ This enables mission planning on Domain 5 and telemetry monitoring on Domain 4 f
 ```bash
 export ROS_DOMAIN_ID=6
 ros2 node list
-# Expected: /camera_stream_node, /lane_detection_node
+# Expected: /camera_stream_node, /lane_detection_node, /camera_recorder_node
 
 ros2 topic list
 # Expected: /tpc_rover_d415_rgb, /tpc_rover_d415_depth, /tpc_rover_nav_lane

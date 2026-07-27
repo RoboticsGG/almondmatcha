@@ -3,11 +3,12 @@
 # Domain 6: Vision processing (camera_stream, lane_detection)
 # Domain 5: Control output — no separate bridge process
 #
-# This script launches all ws_jetson nodes in a tmux session with 4 panes:
+# This script launches all ws_jetson nodes in a tmux session with 5 panes:
 #   [0] Camera Stream (Domain 6)
 #   [1] Lane Detection (Domain 6)
 #   [2] Rover Kinematic Control — dual-context (D6 sub tpc_rover_nav_lane | D5 pub tpc_rover_ctrl_cmd)
 #   [3] Rover Local Monitoring — Domain 4 CSV logger (subscribes tpc_telemetry_relay)
+#   [4] Camera Recorder (Domain 6) — raw video of tpc_rover_d415_rgb for offline debugging
 #
 # Architecture:
 #   Domain 6: camera_stream → lane_detection → tpc_rover_nav_lane
@@ -24,12 +25,14 @@ tmux kill-session -t $SESSION_NAME 2>/dev/null
 # Create new tmux session
 tmux new-session -d -s $SESSION_NAME
 
-# Create layout: 1 left pane (camera), 3 right panes stacked (detection, control, monitoring)
+# Create layout: 1 left pane (camera), 4 right panes stacked (detection, control, monitoring, recorder)
 tmux split-window -h  # Split into left and right
 tmux select-pane -t 1
 tmux split-window -v  # Split right into top and bottom
 tmux select-pane -t 2
 tmux split-window -v  # Split right-bottom into middle and bottom
+tmux select-pane -t 3
+tmux split-window -v  # Split bottom-right again for the recorder
 
 # Wait for panes to be created
 sleep 0.5
@@ -69,6 +72,14 @@ tmux send-keys -t $SESSION_NAME:0.3 "export ROS_DOMAIN_ID=4" C-m
 tmux send-keys -t $SESSION_NAME:0.3 "clear && echo -e '\\e[1;35m>>> [Domain 4] ROVER LOCAL MONITORING (CSV) <<<\\e[0m'" C-m
 tmux send-keys -t $SESSION_NAME:0.3 "echo 'Waiting for telemetry relay (5s)...' && sleep 5" C-m
 tmux send-keys -t $SESSION_NAME:0.3 "ros2 run rover_monitoring rover_local_monitoring_node" C-m
+
+# Pane 4 (bottom-right): Camera Recorder — Domain 6, raw video for offline debugging
+tmux select-pane -t 4 -T "Camera_Recorder_D6"
+tmux send-keys -t $SESSION_NAME:0.4 "source /opt/ros/humble/setup.bash && cd ~/almondmatcha/ws_jetson && source ~/almondmatcha/common_ifaces/install/setup.bash && source install/setup.bash" C-m
+tmux send-keys -t $SESSION_NAME:0.4 "export ROS_DOMAIN_ID=6" C-m
+tmux send-keys -t $SESSION_NAME:0.4 "clear && echo -e '\\e[1;96m>>> [Domain 6] CAMERA RECORDER (raw video, offline debug) <<<\\e[0m'" C-m
+tmux send-keys -t $SESSION_NAME:0.4 "echo 'Waiting for camera initialization (3s)...' && sleep 3" C-m
+tmux send-keys -t $SESSION_NAME:0.4 "ros2 run vision_navigation camera_recorder_node" C-m
 
 # Focus on camera pane and attach
 tmux select-pane -t 0

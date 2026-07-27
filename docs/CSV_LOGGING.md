@@ -285,14 +285,14 @@ Source: `tpc_telemetry_relay` topic (5 Hz) — aggregated relay from RPi. One ro
 
 ## Vision Navigation Logs (ws_jetson, `vision_navigation` package)
 
-Separate from the dual-tier system above — these two files are written directly by
+Separate from the dual-tier system above — these files are written directly by
 the vision/control nodes themselves, not by `rover_monitoring`. They land as flat
 timestamped files in `~/almondmatcha/runs/logs/`, not under a `run_NNN_.../`
 directory.
 
-Both write asynchronously: the owning node enqueues a row and a background
-thread drains the queue and appends it to disk, so a slow eMMC/SD card never
-blocks the image-processing or control callback.
+All three write asynchronously: the owning node enqueues a row/frame and a
+background thread drains the queue and writes it to disk, so a slow eMMC/SD
+card never blocks the image-processing or control callback.
 
 ### Jetson: ws_jetson_lane_detection_TIMESTAMP.csv
 Source: `lane_detection_node` — one row per processed camera frame.
@@ -320,6 +320,34 @@ Source: `rover_kinematic_control` — one row per `tpc_rover_nav_lane` message r
 | `steer_angle` | float | ° | Final commanded steering angle (PID + feedforward, clamped) |
 | `speed_cmd` | int | 0–100 | Chassis speed command (% PWM duty cycle) |
 | `detected` | int | 0/1 | Detection validity used for this control update (post warm-up/timeout logic) |
+
+### Jetson: ws_jetson_camera_TIMESTAMP.avi
+Source: `camera_recorder_node` — raw (uncompressed) video of `tpc_rover_d415_rgb`, for
+offline debugging (e.g. "what did the camera actually see when detection dropped out
+at 14:32?"). Same timestamp convention as the two CSVs above, so the three files from
+one run are found by matching timestamps in the filename — there's no shared run
+number the way the RPi-side `run_NNN_.../` directories have one.
+
+Deliberately a separate node from `camera_stream_node` (upstream of the whole control
+loop — a recording bug must not be able to affect frame capture) and from
+`lane_detection_node` (video encoding is CPU-bound work, unlike the tiny CSV row
+writes that node already backgrounds safely — doing it in-process risks contending
+with the actual detection loop for CPU time).
+
+**Defaults:** 640×360 @ 10 FPS, throttled down from the camera's native
+1280×720/30 FPS feed and written with no compression (no encode step, to keep CPU
+low). At these defaults: **~25 GB/hour**. The Jetson's eMMC is 128 GB total, shared
+with the OS and everything else — raw at the *camera's* native 1280×720/30 FPS would
+fill the entire disk in about 26 minutes, which is why this is throttled/downscaled
+rather than recorded at full fidelity. Tunable via ROS parameters (`record_fps`,
+`record_width`, `record_height`, `enabled`) without a rebuild — recompute the
+MB/hour math before raising them. Logs a one-time warning if free disk space drops
+below `low_space_warn_mb` (default 2048 MB), but does not auto-stop recording.
+
+> **Note:** the exact FOURCC used for "uncompressed" AVI output depends on the
+> OpenCV/FFmpeg build actually installed on the Jetson and could not be verified on
+> dev hardware (no camera attached, no way to test video write/playback here) —
+> confirm the file plays back correctly the first time this runs in the field.
 
 ---
 

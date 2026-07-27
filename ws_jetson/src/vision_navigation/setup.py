@@ -29,6 +29,7 @@ setup(
             'camera_stream_node = vision_navigation.camera_stream_node:main',
             'lane_detection_node = vision_navigation.lane_detection_node:main',
             'rover_kinematic_control = vision_navigation.rover_kinematic_control_node:main',
+            'camera_recorder_node = vision_navigation.camera_recorder_node:main',
             'demo_lane = vision_navigation.demo_lane:main',
         ],
     },

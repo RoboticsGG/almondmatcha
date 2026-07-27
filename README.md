@@ -158,7 +158,7 @@ graph LR
 |--------|---------|---------------|--------------|---------------------|
 | **4** | Telemetry | Base + Jetson | **2 nodes:**<br>• mission_monitoring_node_pc (Base)<br>• rover_local_monitoring_node (Jetson) | • Read-only telemetry from /tpc_telemetry_relay<br>• No D5 participation (no STM32 memory cost)<br>• Jetson logs CSV at 5 Hz for future DB migration |
 | **5** | Control Network | All rover systems + base command | **12 nodes:**<br>• RPi: 8 nodes<br>• Base: 1 node (mission_command_node)<br>• Jetson: 1 node (rover_kinematic_control)<br>• STM32: 2 nodes | • Bidirectional command/control<br>• Action/service communication<br>• Real-time control loops (50 Hz)<br>• STM32 memory optimized (~60% free RAM) |
-| **6** | Vision Processing | Jetson localhost | **2 nodes:**<br>• camera_stream_node<br>• lane_detection_node | • RGB/Depth streams (30 FPS, 1280×720)<br>• Network isolated (not visible from network)<br>• Lane params relayed to D5 via rover_kinematic_control |
+| **6** | Vision Processing | Jetson localhost | **3 nodes:**<br>• camera_stream_node<br>• lane_detection_node<br>• camera_recorder_node (field-run video log, not part of the control path) | • RGB/Depth streams (30 FPS, 1280×720)<br>• Network isolated (not visible from network)<br>• Lane params relayed to D5 via rover_kinematic_control |
 
 **Base station dual-domain:**
 - `mission_command_node` (D5): sends mission goals, calls RPi action/service servers

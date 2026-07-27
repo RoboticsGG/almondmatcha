@@ -19,12 +19,12 @@ Complete topic reference for Almondmatcha rover system.
 
 **Type:** `sensor_msgs/msg/Image`  
 **Publisher:** `camera_stream_node`  
-**Subscribers:** `lane_detection_node`  
+**Subscribers:** `lane_detection_node`, `camera_recorder_node` (field-run video logging, throttled/downscaled)  
 **Rate:** 30 FPS  
 **QoS:** Best Effort, Depth 1  
 **Domain:** 6 (Jetson localhost only)  
 
-RGB image stream from Intel RealSense D415 camera (`rgb8`, 1280×720).
+RGB image stream from Intel RealSense D415 camera (`bgr8`, 1280×720).
 
 ---
 

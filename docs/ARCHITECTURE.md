@@ -26,7 +26,7 @@ graph LR
     end
 
     subgraph JET ["Jetson Orin · 192.168.1.5"]
-        J1["D6 · camera_stream_node + lane_detection_node\nlocalhost only · 30 FPS"]
+        J1["D6 · camera_stream_node + lane_detection_node + camera_recorder_node\nlocalhost only · 30 FPS"]
         J2["D5 · rover_kinematic_control\ndual-context: D6 sub / D5 pub"]
         J3["D4 · rover_local_monitoring_node\nCSV + future DB"]
     end
@@ -95,8 +95,9 @@ graph LR
 - `mission_monitoring_node_pc` (Base): displays aggregated telemetry relay, no D5 participation
 - `rover_local_monitoring_node` (Jetson): logs TelemetryRelay CSV at 5 Hz, future DB backend
 
-**Domain 6 (Vision Processing):** Jetson localhost only, 2 participants
-- camera_stream_node, lane_detection_node nodes
+**Domain 6 (Vision Processing):** Jetson localhost only, 3 participants
+- camera_stream_node, lane_detection_node — control-path nodes
+- camera_recorder_node — field-run video logging only, not part of the control path
 - High-bandwidth RGB/Depth streams (30 FPS, 1280×720) isolated from network
 - Invisible to STM32 boards
 
@@ -129,7 +130,13 @@ graph LR
 ```
 Domain 6 (Vision Processing — localhost):
 ├── camera_stream_node       - D415 RGB/depth streaming @ 30 FPS
-└── lane_detection_node      - Lane feature extraction @ 30 FPS
+├── lane_detection_node      - Lane feature extraction @ 30 FPS
+└── camera_recorder_node     - Raw video of tpc_rover_d415_rgb for offline
+                               debugging, 640x360 @ 10 FPS by default (throttled/
+                               downscaled, ~25 GB/hour). Separate process from the
+                               two above deliberately -- video encoding is CPU-bound
+                               work, unlike the tiny CSV writes those two already
+                               background safely.
 
 Domain 5 (Control Network):
 └── rover_kinematic_control - Bicycle-model PID: steering + speed @ 50 Hz
