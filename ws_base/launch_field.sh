@@ -94,23 +94,23 @@ cleanup() {
 
     # ── Base PC ───────────────────────────────────────────────────────────────
     tmux kill-session -t base_station 2>/dev/null || true
-    pkill -TERM -f "ros2 run"         2>/dev/null || true
-    pkill -TERM -f "ros2 launch"      2>/dev/null || true
+    pkill -TERM -f "[r]os2 run"         2>/dev/null || true
+    pkill -TERM -f "[r]os2 launch"      2>/dev/null || true
 
     # ── RPi ───────────────────────────────────────────────────────────────────
     log "  Stopping RPi nodes ($RPI_HOST)..."
     ssh $SSH_OPTS "$RPI_HOST" "
         tmux kill-session -t rover 2>/dev/null || true
-        pkill -TERM -f 'ros2 run'    2>/dev/null || true
-        pkill -TERM -f 'ros2 launch' 2>/dev/null || true
+        pkill -TERM -f '[r]os2 run'    2>/dev/null || true
+        pkill -TERM -f '[r]os2 launch' 2>/dev/null || true
     " 2>/dev/null || warn "  RPi stop had errors (non-fatal)"
 
     # ── Jetson ────────────────────────────────────────────────────────────────
     log "  Stopping Jetson nodes ($JETSON_HOST)..."
     ssh $SSH_OPTS "$JETSON_HOST" "
         tmux kill-session -t jetson_vision 2>/dev/null || true
-        pkill -TERM -f 'ros2 run'          2>/dev/null || true
-        pkill -TERM -f 'ros2 launch'       2>/dev/null || true
+        pkill -TERM -f '[r]os2 run'          2>/dev/null || true
+        pkill -TERM -f '[r]os2 launch'       2>/dev/null || true
     " 2>/dev/null || warn "  Jetson stop had errors (non-fatal)"
 
     # ── Explicit motor stop to the STM32 ──────────────────────────────────────
@@ -217,22 +217,22 @@ clean_stale_participants() {
     log "Step 0 — Cleaning stale DDS participants..."
 
     # Base PC
-    pkill -f "ros2 run"    2>/dev/null || true
-    pkill -f "ros2 launch" 2>/dev/null || true
     tmux kill-session -t base_station 2>/dev/null || true
+    pkill -f "[r]os2 run"    2>/dev/null || true
+    pkill -f "[r]os2 launch" 2>/dev/null || true
 
     # RPi
     ssh $SSH_OPTS "$RPI_HOST" "
-        pkill -f 'ros2 run'    2>/dev/null || true
-        pkill -f 'ros2 launch' 2>/dev/null || true
         tmux kill-session -t rover 2>/dev/null || true
+        pkill -f '[r]os2 run'    2>/dev/null || true
+        pkill -f '[r]os2 launch' 2>/dev/null || true
     " 2>/dev/null || warn "  RPi cleanup had errors (non-fatal)"
 
     # Jetson
     ssh $SSH_OPTS "$JETSON_HOST" "
-        pkill -f 'ros2 run'    2>/dev/null || true
-        pkill -f 'ros2 launch' 2>/dev/null || true
         tmux kill-session -t jetson_vision 2>/dev/null || true
+        pkill -f '[r]os2 run'    2>/dev/null || true
+        pkill -f '[r]os2 launch' 2>/dev/null || true
     " 2>/dev/null || warn "  Jetson cleanup had errors (non-fatal)"
 
     sleep 3
