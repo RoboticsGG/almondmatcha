@@ -79,26 +79,69 @@ class LaneDetectionConfig:
     WHITE_THRESHOLD = 180
     
     # ===== Contour Filtering =====
-    MIN_CONTOUR_AREA = 100  # Pixels, remove smaller contours
-    
+    # Unused: preprocess_frame now removes speckle with a 3x3 morphological
+    # opening instead of a per-contour area test. Kept only as a record of the
+    # old threshold. Safe for this track: a 5 cm painted line images ~12 px
+    # wide even at the far edge of the ROI (3 m), so the opening cannot erode it.
+    MIN_CONTOUR_AREA = 100  # Pixels, remove smaller contours (legacy, unused)
+
     # ===== Lane Finding Parameters =====
     MIN_LANE_PIXELS = 50    # Minimum pixels for valid detection
     SLIDING_WINDOWS = 9     # Number of vertical search windows
-    WINDOW_MARGIN = 100     # Horizontal search margin (±pixels)
     MIN_WINDOW_PIXELS = 50  # Minimum pixels to recenter window
-    
+
+    # Search window half-width. MUST stay below half the spacing between
+    # adjacent painted lines, or a window captures two lines at once and
+    # `current_x = mean(x)` lands in the empty gap between them.
+    # Running track: 1.22 m lane -> 0.61 m between lines -> 122 px at
+    # BEV_PX_PER_M -> hard ceiling 61. 40 leaves margin.
+    WINDOW_MARGIN = 40      # Horizontal search margin (±pixels)
+
+    # Half-width of the band (around the expected lane position) that the
+    # start-of-search histogram is allowed to look in. This is what stops the
+    # detector locking onto the wrong painted line: with three parallel lines
+    # in view, an unrestricted argmax picks whichever happens to carry the most
+    # pixels, and that choice flips between frames. Must also stay below half
+    # the line spacing (61 px). Doubles as the per-frame jump limiter: the
+    # tracked line can move at most this far between frames.
+    SEARCH_BAND_PX = 45
+
     # ===== Perspective Transform =====
-    # ROI (Region of Interest) points for bird eye view (1280x720 base)
+    # ROI (Region of Interest) points for bird eye view (1280x720 base).
+    #
+    # Derived from the physical camera mount rather than hand-authored, so the
+    # warp is a true ground-plane rectification:
+    #     D415 colour stream, 50 cm above the ground, tilted 20 deg down,
+    #     mounted front-centre, 7 cm behind the front axle.
+    # These four points are the image projection of the ground rectangle
+    #     X = -0.90 .. +0.90 m (lateral),  Z = 1.30 .. 3.00 m (forward, from
+    #     the camera) = 1.23 .. 2.93 m ahead of the front axle.
+    # Regenerate these if the camera height, tilt, or lens changes.
     ROI_BASE_POINTS = [
-        [0, 500],        # Bottom-left
-        [1280, 500],     # Bottom-right
-        [900, 200],      # Top-right
-        [400, 200]       # Top-left
+        [43, 377],       # Bottom-left   (X=-0.90 m, Z=1.30 m)
+        [1237, 377],     # Bottom-right  (X=+0.90 m, Z=1.30 m)
+        [918, 188],      # Top-right     (X=+0.90 m, Z=3.00 m)
+        [362, 188]       # Top-left      (X=-0.90 m, Z=3.00 m)
     ]
     ROI_BASE_WIDTH = 1280.0   # Reference resolution ROI_BASE_POINTS were authored against
     ROI_BASE_HEIGHT = 720.0
     CROP_MARGIN_PX = 20.0     # Margin around the ROI bounding box before cropping
                               # (in ROI_BASE_WIDTH/HEIGHT units, scaled to actual frame size)
+                              # -- trims the unwanted surroundings before the
+                              # per-pixel preprocessing runs.
+
+    # ===== Bird's-eye canvas (metric) =====
+    # The warp output is a FIXED canvas, not the crop size, so the bird's-eye
+    # view has the same scale in both axes. That is what makes the reported
+    # values physical: theta is a real heading angle in degrees, b is a real
+    # cross-track offset, and curvature is a real 1/m arc.
+    # ROI_BASE_POINTS spans 1.80 m laterally and maps to the middle 50% of the
+    # canvas (see PERSPECTIVE_LEFT/RIGHT_MARGIN), so:
+    #     BEV_WIDTH_PX  = 1.80 m * 2 * BEV_PX_PER_M
+    #     BEV_HEIGHT_PX = 1.70 m * BEV_PX_PER_M
+    BEV_PX_PER_M = 200.0
+    BEV_WIDTH_PX = 720
+    BEV_HEIGHT_PX = 340
 
     # Destination margins for warped image
     PERSPECTIVE_LEFT_MARGIN = 0.25   # 25% from left
@@ -130,7 +173,12 @@ class ControlConfig:
     # ===== Feedforward Gain =====
     # u_ff = K_FF * curvature_ema -- anticipates curves ahead instead of
     # reacting only after heading/offset error (PID feedback) builds up.
-    K_FF = 1000.0      # Feedforward gain on filtered curvature
+    # With a metric bird's-eye view this is derivable, not a guess:
+    #     A = 1/(2*R*S)  and  delta = atan(L/R)  =>  K_FF = 2*S*L*(180/pi)
+    # L = 0.50 m wheelbase, S = LaneDetectionConfig.BEV_PX_PER_M = 200 -> 11459.
+    # Shipped at 0.0: on this track the correct feedforward is <1 deg, below
+    # the curvature fit's noise floor. See rover_kinematic_control_params.yaml.
+    K_FF = 0.0         # Feedforward gain on filtered curvature (derived: 11459.0)
 
     # ===== Error Weights =====
     # Combined error: e_total = k_e1*theta + k_e2*b

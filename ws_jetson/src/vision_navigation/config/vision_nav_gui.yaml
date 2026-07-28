@@ -23,11 +23,42 @@ lane_detection:
 
     # Keep in sync with vision_nav_headless.yaml so GUI debugging reflects
     # production ROI/crop behavior.
-    roi_base_points: [0.0, 500.0, 1280.0, 500.0, 900.0, 200.0, 400.0, 200.0]
+    # ROI trapezoid corners [x0,y0, x1,y1, x2,y2, x3,y3], authored at
+    # roi_base_width x roi_base_height (bottom-left, bottom-right, top-right,
+    # top-left). Scaled to the actual camera_stream resolution at runtime.
+    #
+    # Derived from the physical camera mount, NOT hand-authored: D415 colour
+    # stream 50 cm above the ground, tilted 20 deg down, front-centre, 7 cm
+    # behind the front axle. These are the image projection of the ground
+    # rectangle X = -0.90..+0.90 m, Z = 1.30..3.00 m from the camera
+    # (= 1.23..2.93 m ahead of the front axle). Regenerate if the mount changes.
+    roi_base_points: [43.0, 377.0, 1237.0, 377.0, 918.0, 188.0, 362.0, 188.0]
     roi_base_width: 1280.0
     roi_base_height: 720.0
+
+    # Margin added around the ROI bounding box before cropping (in
+    # roi_base_width/height units, scaled to actual frame size) -- trims the
+    # unwanted surroundings before the per-pixel preprocessing runs.
     crop_margin_px: 20.0
+
+    # Bird's-eye output canvas, fixed (not the crop size) so both axes carry
+    # the same metres-per-pixel. 200 px/m: the ROI spans 1.80 m laterally and
+    # maps to the middle 50% of the canvas, and 1.70 m longitudinally.
+    # This is what makes theta a real heading angle in degrees, b a real
+    # cross-track offset (100 px = 50 cm) and curvature a real 1/m arc.
+    bev_width_px: 720
+    bev_height_px: 340
+
+    # Sliding-window lane search.
+    # Running track: 1.22 m lane -> 0.61 m between adjacent painted lines
+    # -> 122 px at 200 px/m. window_margin MUST stay below half that (61) or a
+    # window straddles two lines and recenters into the gap between them.
+    # search_band_px bounds where the search may start, relative to where the
+    # lane was last frame -- without it an unrestricted argmax picks whichever
+    # of the three parallel lines carries the most pixels, and flips between
+    # them as lighting/wear/drift change the balance.
     sliding_windows: 9
-    window_margin: 100
+    window_margin: 40
     min_window_pixels: 50
     min_lane_pixels: 50
+    search_band_px: 45.0

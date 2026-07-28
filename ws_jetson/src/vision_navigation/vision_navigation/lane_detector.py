@@ -170,7 +170,8 @@ def crop_to_roi(
 def perspective_transform(
     binary: np.ndarray,
     frame_size: Tuple[int, int],
-    roi_points: np.ndarray
+    roi_points: np.ndarray,
+    bev_size: Tuple[int, int] = None
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Apply perspective transformation to bird eye view.
@@ -178,12 +179,22 @@ def perspective_transform(
     Transforms the image from camera view to top-down view for easier
     lane detection in the transformed coordinate system.
 
+    The output canvas is `bev_size`, independent of the input crop size. This
+    matters: sizing the canvas from the crop made the bird's-eye view
+    anisotropic (the crop is much wider than it is tall), which inflated the
+    reported heading angle by the canvas aspect ratio and left `theta` as a
+    canvas-dependent number rather than an angle. With a fixed canvas chosen so
+    that both axes carry the same metres-per-pixel, `theta` is a real heading
+    angle, `b` is a real cross-track offset and `curvature` is a real 1/m arc.
+
     Args:
         binary: Binary input image
         frame_size: Tuple of (width, height) of `binary`
         roi_points: np.float32 array, shape (4, 2) -- source ROI quadrilateral
             corners [bottom-left, bottom-right, top-right, top-left], already
             scaled (and, if cropped upstream, shifted) to match `binary`
+        bev_size: Tuple of (width, height) for the warped output canvas.
+            Defaults to `frame_size`, preserving the previous behaviour.
 
     Returns:
         Tuple of (warped, M, M_inv):
@@ -191,7 +202,7 @@ def perspective_transform(
             - M: Perspective transformation matrix
             - M_inv: Inverse transformation matrix
     """
-    w, h = frame_size
+    w, h = frame_size if bev_size is None else bev_size
 
     dst = np.float32([
         [w * 0.25, h * 1.0],
@@ -215,22 +226,62 @@ def find_center_line(
     binary_warped: np.ndarray,
     num_windows: int = 9,
     window_margin: int = 100,
-    min_pixels: int = 50
+    min_pixels: int = 50,
+    search_center: float = None,
+    search_band: float = None
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Find lane center line pixels using sliding window technique.
-    
+
+    The search starts from the strongest column of the bottom-half histogram,
+    but only within `search_band` pixels of `search_center`. On a track with
+    several parallel painted lines in view (e.g. two lane edges plus a centre
+    line) an unrestricted argmax has no way to tell them apart -- it picks
+    whichever line happens to carry the most pixels that frame, and that choice
+    flips as lighting, wear or the rover's own drift changes the balance. Each
+    flip is a step change in the reported offset of roughly one line spacing,
+    which no downstream filter can absorb because it is a genuine step, not
+    noise. Bounding the search keeps the detector on the line it was already
+    following, and bounds how far that line can appear to move per frame.
+
     Args:
         binary_warped: Binary bird eye view image
         num_windows: Number of horizontal windows
-        window_margin: Width of search window (plus-minus margin)
+        window_margin: Width of search window (plus-minus margin). Keep below
+            half the spacing between adjacent painted lines, otherwise one
+            window straddles two lines and recenters into the gap between them.
         min_pixels: Minimum pixels to recenter window
-        
+        search_center: Column the lane is expected at (typically the previous
+            frame's result). Defaults to the canvas centre.
+        search_band: Half-width of the band around `search_center` the initial
+            histogram may search. None or <= 0 searches the full width (the
+            previous, unbounded behaviour).
+
     Returns:
         Tuple of (x_coords, y_coords) of detected lane pixels
     """
-    histogram = np.sum(binary_warped[binary_warped.shape[0] // 2:, :], axis=0)
-    base_x = int(np.argmax(histogram))
+    height, width = binary_warped.shape[:2]
+
+    if search_center is None or not np.isfinite(search_center):
+        search_center = width / 2.0
+    search_center = float(np.clip(search_center, 0, width - 1))
+
+    if search_band is None or search_band <= 0:
+        band_low, band_high = 0, width
+    else:
+        band_low = int(max(0, np.floor(search_center - search_band)))
+        band_high = int(min(width, np.ceil(search_center + search_band) + 1))
+        if band_high <= band_low:            # degenerate band -- fall back
+            band_low, band_high = 0, width
+
+    histogram = np.sum(binary_warped[height // 2:, band_low:band_high], axis=0)
+    if histogram.size == 0 or histogram.max() == 0:
+        # Nothing in the band. Hold the expected position; the windows will
+        # come back empty and min_lane_pixels will report "not detected",
+        # rather than seeding the search from an arbitrary column.
+        base_x = int(round(search_center))
+    else:
+        base_x = int(np.argmax(histogram)) + band_low
 
     window_height = binary_warped.shape[0] // num_windows
     nonzero = binary_warped.nonzero()
@@ -270,18 +321,28 @@ def compute_lane_params(
     window_margin: int = LaneDetectionConfig.WINDOW_MARGIN,
     min_window_pixels: int = LaneDetectionConfig.MIN_WINDOW_PIXELS,
     min_lane_pixels: int = LaneDetectionConfig.MIN_LANE_PIXELS,
+    search_center: float = None,
+    search_band: float = LaneDetectionConfig.SEARCH_BAND_PX,
 ) -> dict:
     """
     Compute lane parameters (curvature, steering angle, lateral offset) from binary image.
 
-    Detected pixels are translated into a rover-centered frame before
-    fitting: y is measured from the bottom row of the image (the rover's
-    position, y=0) and x is measured from the image's horizontal center
-    (x=0). Fitting the parabola x = A*y^2 + B*y + C directly in this frame
-    means the fit coefficients themselves ARE the quantities the controller
-    needs at the rover's position -- B is the heading slope and C is the
-    lateral offset -- with no separate "evaluate the polynomial at y=height"
-    step (and its extra floating-point error) afterward.
+    Detected pixels are translated into a lookahead-centered frame before
+    fitting: y is measured from the bottom row of the canvas (y=0) and x from
+    the canvas's horizontal center (x=0). Fitting the parabola
+    x = A*y^2 + B*y + C directly in this frame means the fit coefficients
+    themselves ARE the quantities the controller needs at that point -- B is
+    the heading slope and C is the lateral offset -- with no separate
+    "evaluate the polynomial at y=height" step (and its extra floating-point
+    error) afterward.
+
+    NOTE: y=0 is the NEAR EDGE OF THE ROI, not the rover. With the shipped
+    camera geometry that is 1.30 m ahead of the camera, i.e. 1.23 m ahead of
+    the front axle and 1.73 m ahead of the rear axle. So `b` is a lookahead
+    cross-track error, not the error at the rover: on a curve it is non-zero
+    even when the rover is perfectly on the line. That is a usable
+    (pure-pursuit-like) signal, but it overlaps with `curvature`, so k_e2 and
+    k_ff act on partly the same information when tuning.
 
     sliding_windows/window_margin/min_window_pixels/min_lane_pixels are
     exposed as arguments (not hardcoded) because their correct values are
@@ -295,12 +356,15 @@ def compute_lane_params(
         window_margin: Search window half-width in pixels (see find_center_line)
         min_window_pixels: Minimum pixels to recenter a window (see find_center_line)
         min_lane_pixels: Minimum total detected pixels required for a valid fit
+        search_center: Column the lane is expected at, in the warped canvas
+            (see find_center_line). Defaults to the canvas centre.
+        search_band: Half-width of the search band around `search_center`
 
     Returns:
         Dictionary with keys:
             - curvature: Parabola coefficient A (x = A*y^2 + B*y + C), NaN if not detected
-            - theta: Steering angle (degrees) at the rover's position, NaN if not detected
-            - b: Lateral offset from center (pixels) at the rover's position, NaN if not detected
+            - theta: Steering angle (degrees) at the fit origin, NaN if not detected
+            - b: Lateral offset from center (pixels) at the fit origin, NaN if not detected
             - detected: Boolean flag indicating valid detection
     """
     x_coords, y_coords = find_center_line(
@@ -308,6 +372,8 @@ def compute_lane_params(
         num_windows=sliding_windows,
         window_margin=window_margin,
         min_pixels=min_window_pixels,
+        search_center=search_center,
+        search_band=search_band,
     )
     height, width = binary_warped.shape[:2]
 
@@ -349,6 +415,10 @@ def process_frame(
     window_margin: int = LaneDetectionConfig.WINDOW_MARGIN,
     min_window_pixels: int = LaneDetectionConfig.MIN_WINDOW_PIXELS,
     min_lane_pixels: int = LaneDetectionConfig.MIN_LANE_PIXELS,
+    bev_width: int = LaneDetectionConfig.BEV_WIDTH_PX,
+    bev_height: int = LaneDetectionConfig.BEV_HEIGHT_PX,
+    search_center: float = None,
+    search_band: float = LaneDetectionConfig.SEARCH_BAND_PX,
 ) -> Tuple[float, float, float, bool]:
     """
     Complete lane detection pipeline: crop -> preprocess -> transform -> detect -> compute params.
@@ -371,6 +441,14 @@ def process_frame(
         window_margin: Search window half-width in pixels
         min_window_pixels: Minimum pixels to recenter a search window
         min_lane_pixels: Minimum total detected pixels required for a valid fit
+        bev_width: Warped output canvas width (pixels)
+        bev_height: Warped output canvas height (pixels). Together with
+            bev_width this fixes the bird's-eye scale, so the reported values
+            are physical rather than crop-size-dependent.
+        search_center: Column the lane is expected at in the warped canvas,
+            normally `bev_width/2 + b` from the previous detected frame.
+            Defaults to the canvas centre.
+        search_band: Half-width of the search band around `search_center`
 
     Returns:
         Tuple of (curvature, theta, b, detected):
@@ -400,13 +478,17 @@ def process_frame(
     roi_points_cropped = roi_points_full - np.float32([x_offset, y_offset])
 
     binary = preprocess_frame(cropped_frame)
-    warped, M, M_inv = perspective_transform(binary, (crop_width, crop_height), roi_points_cropped)
+    warped, M, M_inv = perspective_transform(
+        binary, (crop_width, crop_height), roi_points_cropped, bev_size=(bev_width, bev_height)
+    )
     params = compute_lane_params(
         warped,
         sliding_windows=sliding_windows,
         window_margin=window_margin,
         min_window_pixels=min_window_pixels,
         min_lane_pixels=min_lane_pixels,
+        search_center=search_center,
+        search_band=search_band,
     )
     plot_lane_lines(cropped_frame, warped, M_inv, params["theta"], params["b"], params["detected"])
 

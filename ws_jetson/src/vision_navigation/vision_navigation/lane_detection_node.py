@@ -125,6 +125,9 @@ class LaneDetectionNode(Node):
         self.declare_parameter('window_margin', LaneDetectionConfig.WINDOW_MARGIN)
         self.declare_parameter('min_window_pixels', LaneDetectionConfig.MIN_WINDOW_PIXELS)
         self.declare_parameter('min_lane_pixels', LaneDetectionConfig.MIN_LANE_PIXELS)
+        self.declare_parameter('bev_width_px', LaneDetectionConfig.BEV_WIDTH_PX)
+        self.declare_parameter('bev_height_px', LaneDetectionConfig.BEV_HEIGHT_PX)
+        self.declare_parameter('search_band_px', LaneDetectionConfig.SEARCH_BAND_PX)
 
         roi_flat = [float(v) for v in self.get_parameter('roi_base_points').value]
         if len(roi_flat) != 8:
@@ -141,6 +144,17 @@ class LaneDetectionNode(Node):
         self.window_margin: int = int(self.get_parameter('window_margin').value)
         self.min_window_pixels: int = int(self.get_parameter('min_window_pixels').value)
         self.min_lane_pixels: int = int(self.get_parameter('min_lane_pixels').value)
+        self.bev_width_px: int = int(self.get_parameter('bev_width_px').value)
+        self.bev_height_px: int = int(self.get_parameter('bev_height_px').value)
+        self.search_band_px: float = float(self.get_parameter('search_band_px').value)
+
+        # ===== Tracked lane position (wrong-line protection) =====
+        # Column the lane was found at last frame, in warped-canvas pixels.
+        # Passed back into the detector so the search stays on the line already
+        # being followed instead of re-picking the strongest of several
+        # parallel painted lines every frame. None = search the canvas centre,
+        # which is where the rover starts (straddling the centre line).
+        self._search_center: Optional[float] = None
 
         # ===================== Visualization =====================
         self.window_name = "lane_detection"
@@ -205,7 +219,23 @@ class LaneDetectionNode(Node):
             window_margin=self.window_margin,
             min_window_pixels=self.min_window_pixels,
             min_lane_pixels=self.min_lane_pixels,
+            bev_width=self.bev_width_px,
+            bev_height=self.bev_height_px,
+            search_center=self._search_center,
+            search_band=self.search_band_px,
         )
+
+        # ===================== Track the lane across frames =====================
+        # `b` is the fitted offset from the canvas centre at the canvas bottom
+        # row, which is exactly where the next frame's first search window
+        # starts -- so it is the correct seed, with no re-derivation needed.
+        # On a lost frame the seed is dropped rather than held: a stale seed
+        # after a long gap is more likely to be wrong than the centre, and the
+        # rover runs centred on the middle line.
+        if detected and b is not None and math.isfinite(b):
+            self._search_center = (self.bev_width_px / 2.0) + b
+        else:
+            self._search_center = None
 
         # ===================== Value Validation =====================
         # Handle NaN and None values

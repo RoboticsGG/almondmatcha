@@ -14,9 +14,23 @@ rover_kinematic_control:
     k_d: 0.01                     # Derivative gain
 
     # Feedforward gain (u_ff = k_ff * curvature_ema; u_total = u_pid + u_ff)
-    # Starting order of magnitude -- curvature is ~1e-4 to 1e-3 for
-    # gentle/moderate curves in the warped pixel frame. Tune from the field.
-    k_ff: 1000.0                 # Feedforward gain on filtered curvature
+    #
+    # Now derivable rather than guessed. The bird's-eye view is metric
+    # (200 px/m, isotropic), so the fitted coefficient A is a real arc:
+    # A = 1/(2*R*S), and Ackermann needs delta = atan(L/R) for radius R.
+    # With wheelbase L = 0.50 m and S = 200 px/m:
+    #     k_ff = 2 * S * L * (180/pi) = 11459
+    # Verified against exact Ackermann: R=10 m -> 2.86 deg (exact 2.86),
+    # R=20 m -> 1.43 (exact 1.43), R=36.5 m -> 0.78 (exact 0.78).
+    #
+    # Held at 0.0 for the first run on the corrected geometry. On a 400 m
+    # track (bend radius ~36.5 m) the correct feedforward is only 0.78 deg,
+    # which is at or below the noise floor of the curvature fit over a 1.7 m
+    # lookahead -- so it buys almost nothing, while a momentarily bad fit
+    # multiplied by 11459 would inject a large steering kick. Feedback alone
+    # covers this track. Raise toward 11459 only after the logs show
+    # curvature_ema is clean and stable through the bends.
+    k_ff: 0.0                    # Feedforward gain on filtered curvature (derived value: 11459.0)
 
     # Filtering
     ema_alpha: 0.05              # Exponential moving average smoothing (0-1)
