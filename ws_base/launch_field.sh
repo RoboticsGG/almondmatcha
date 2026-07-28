@@ -321,6 +321,86 @@ launch_base() {
 # Step 4 — Wait (Ctrl-C = emergency stop)
 # ============================================================================
 
+
+# ============================================================================
+# Post-launch system status
+# ============================================================================
+# Reports whether the rover is actually able to move, and if not, why.
+#
+# Motion is gated by tpc_gnss_mission_active: chassis_controller_node starts
+# with its emergency-stop flag SET and zeroes fdr/steer/spd/bdr until that
+# topic carries true. The flag is published by gnss_mission_monitor_node only
+# once a DesData goal has been accepted -- it does NOT require a GNSS fix, it
+# publishes true while still waiting for one -- and mission_command_node's
+# watchdog republishes false if feedback stops for action_watchdog_timeout_sec.
+#
+# Every one of those states looks identical from the outside: nodes healthy,
+# CSVs filling, topics flowing, wheels stationary. Print the discriminating
+# fields so that condition is visible at launch instead of after an hour of
+# tracing.
+system_status() {
+    log "Checking system status (this does not affect the launch)..."
+
+    source /opt/ros/humble/setup.bash          2>/dev/null || true
+    source "$WORKSPACE/ws_base/install/setup.bash" 2>/dev/null || true
+
+    _pubs()  { timeout 6 ros2 topic info "$1" 2>/dev/null | awk '/Publisher count/{print $3}'; }
+    _field() { timeout "${3:-8}" ros2 topic echo --once "$1" 2>/dev/null \
+                 | grep -m1 -E "$2" | awk -F': *' '{print $2}' | tr -d '\r'; }
+
+    echo ""
+    echo -e "${BOLD}  ── System status ──────────────────────────────────${NC}"
+
+    # --- Motion gate -------------------------------------------------------
+    local mp ma
+    mp=$(_pubs /tpc_gnss_mission_active)
+    ma=$(_field /tpc_gnss_mission_active '^data' 10)
+    if [[ -z "${mp:-}" || "${mp:-0}" == "0" ]]; then
+        echo -e "  ${RED}MOTION: HALTED${NC}  — nothing publishes tpc_gnss_mission_active"
+        echo    "      gnss_mission_monitor_node is not running on the RPi."
+    elif [[ "$ma" == "true" ]]; then
+        echo -e "  ${GREEN}MOTION: ENABLED${NC} — tpc_gnss_mission_active=true"
+    elif [[ "$ma" == "false" ]]; then
+        echo -e "  ${RED}MOTION: HALTED${NC}  — tpc_gnss_mission_active=false"
+        echo    "      No DesData goal is active. Either mission_command_node did not"
+        echo    "      send one, or its watchdog cancelled it (feedback stopped for"
+        echo    "      action_watchdog_timeout_sec). Check the base_station pane."
+        echo    "      To drive without a GNSS mission, from the RPi:"
+        echo    "        ros2 topic pub -r 2 --qos-reliability reliable \\"
+        echo    "          --qos-durability transient_local /tpc_gnss_mission_active \\"
+        echo    "          std_msgs/msg/Bool '{data: true}'"
+    else
+        echo -e "  ${YELLOW}MOTION: UNKNOWN${NC} — tpc_gnss_mission_active has a publisher but no value read"
+    fi
+
+    # --- GNSS fix ----------------------------------------------------------
+    local lat lon
+    lat=$(_field /tpc_gnss_spresense '^latitude' 10)
+    lon=$(_field /tpc_gnss_spresense '^longitude' 10)
+    if [[ -z "${lat:-}" ]]; then
+        echo -e "  ${YELLOW}GNSS  : no data${NC} on tpc_gnss_spresense (node down, or no messages yet)"
+    elif [[ "$lat" == "0.0" && "$lon" == "0.0" ]]; then
+        echo -e "  ${YELLOW}GNSS  : NO FIX${NC} (lat/lon are 0,0 — still acquiring)"
+        echo    "      Not itself a blocker: the mission publishes active while waiting."
+    else
+        echo -e "  ${GREEN}GNSS  : fix${NC} lat=$lat lon=$lon"
+    fi
+
+    # --- What the chassis is actually emitting ------------------------------
+    local spd bdr
+    spd=$(_field /tpc_chassis_cmd '^spd_msg' 10)
+    bdr=$(_field /tpc_chassis_cmd '^bdr_msg' 10)
+    if [[ -z "${spd:-}" ]]; then
+        echo -e "  ${YELLOW}CHASSIS: no tpc_chassis_cmd seen${NC} (chassis_controller_node down?)"
+    elif [[ "${bdr:-0}" == "0" ]]; then
+        echo -e "  ${RED}CHASSIS: spd=$spd bdr=$bdr${NC} — emergency-stop branch (bdr is always 1 when running)"
+    else
+        echo -e "  ${GREEN}CHASSIS: spd=$spd bdr=$bdr${NC} — normal branch"
+    fi
+    echo -e "${BOLD}  ───────────────────────────────────────────────────${NC}"
+    echo ""
+}
+
 wait_loop() {
     echo ""
     echo -e "${BOLD}=====================================================================${NC}"
@@ -384,6 +464,7 @@ main() {
     launch_rpi
     launch_jetson
     launch_base
+    system_status
     wait_loop
 }
 

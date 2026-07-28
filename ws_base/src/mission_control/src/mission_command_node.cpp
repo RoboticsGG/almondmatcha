@@ -48,7 +48,20 @@ public:
         
         init_parameters();
         init_clients();
-        send_commands();
+
+        // Do NOT send the mission from the constructor. send_commands() ran once
+        // and, if the action server was not up within its 15 s wait, logged
+        // "giving up" and never tried again -- leaving chassis_controller_node
+        // halted for the rest of the session with no way to recover short of a
+        // relaunch. The same dead end followed a watchdog cancellation: that
+        // clears goal_accepted_ but nothing ever re-sent the goal.
+        //
+        // A periodic tick retries whenever no goal is active, which covers both
+        // the slow-server case and re-establishing after a cancel.
+        mission_retry_timer_ = this->create_wall_timer(
+            std::chrono::milliseconds(static_cast<int>(mission_retry_sec_ * 1000)),
+            std::bind(&MissionCommandNode::mission_retry_tick, this)
+        );
         
         RCLCPP_INFO(this->get_logger(), "Mission Control Command Node ready.");
     }
@@ -100,6 +113,10 @@ private:
 
     // Watchdog
     rclcpp::TimerBase::SharedPtr watchdog_timer_;
+    rclcpp::TimerBase::SharedPtr mission_retry_timer_;
+    double mission_retry_sec_   = 5.0;   // how often to retry establishing the mission
+    bool   speed_limit_sent_    = false; // the speed cap only needs sending once
+    bool   mission_finished_    = false; // set on SUCCEEDED — stops the retry tick
     double action_watchdog_timeout_sec_ = 10.0;
 
     // ===================== Initialization Methods =====================
@@ -119,10 +136,12 @@ private:
         this->declare_parameter("des_long", 0.0);
 
         this->declare_parameter("action_watchdog_timeout_sec", 10.0);
+        this->declare_parameter("mission_retry_sec", 5.0);
 
         rover_speed_percent_ = this->get_parameter("rover_spd").as_int();
         destination_latitude_ = this->get_parameter("des_lat").as_double();
         destination_longitude_ = this->get_parameter("des_long").as_double();
+        mission_retry_sec_ = this->get_parameter("mission_retry_sec").as_double();
         action_watchdog_timeout_sec_ = this->get_parameter("action_watchdog_timeout_sec").as_double();
 
         RCLCPP_INFO(this->get_logger(), 
@@ -155,6 +174,32 @@ private:
      *   1. Send speed limit command via service
      *   2. Send navigation goal via action
      */
+    /**
+     * Periodic attempt to establish the mission.
+     *
+     * Runs while no goal is active. Uses action_server_is_ready() rather than
+     * wait_for_action_server() because this executes on the node's own executor
+     * -- blocking here would stall every other callback, including the
+     * watchdog. Terminal outcomes are respected: once the rover reports the
+     * mission SUCCEEDED there is nothing left to re-send, so the tick stops.
+     */
+    void mission_retry_tick() {
+        if (mission_finished_ || goal_accepted_) {
+            return;
+        }
+        if (!des_action_client_->action_server_is_ready()) {
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                "Waiting for the des_data action server on the rover...");
+            return;
+        }
+        if (!speed_limit_sent_) {
+            send_speed_limit();
+            speed_limit_sent_ = true;
+        }
+        RCLCPP_INFO(this->get_logger(), "Establishing mission goal...");
+        send_destination_goal();
+    }
+
     void send_commands() {
         RCLCPP_INFO(this->get_logger(), "Sending mission commands to rover...");
         
@@ -201,10 +246,11 @@ private:
         RCLCPP_INFO(this->get_logger(), "Sending destination goal: (%f, %f)",
             destination_latitude_, destination_longitude_);
         
-        // Wait up to 15 s — the RPi action server starts after several staggered launch delays
-        // so 2 s is too short when base PC launches first.
-        if (!des_action_client_->wait_for_action_server(std::chrono::seconds(15))) {
-            RCLCPP_ERROR(this->get_logger(), "Destination action server not available after 15 s — giving up.");
+        // Readiness is checked by the retry tick before we get here; never block
+        // on the executor thread. If the server vanished between the check and
+        // now, return quietly and the next tick will try again.
+        if (!des_action_client_->action_server_is_ready()) {
+            RCLCPP_WARN(this->get_logger(), "des_data action server not ready — will retry.");
             return;
         }
 
@@ -256,17 +302,23 @@ private:
                 }
                 switch (result.code) {
                     case rclcpp_action::ResultCode::SUCCEEDED:
+                        // Terminal: the destination was reached. Stop retrying,
+                        // otherwise the tick would immediately re-send the same
+                        // goal and the rover would never be allowed to finish.
+                        mission_finished_ = true;
                         RCLCPP_INFO(this->get_logger(),
                             "Mission Complete: %s",
                             result.result->result_fser.c_str());
                         break;
                     case rclcpp_action::ResultCode::ABORTED:
                         RCLCPP_WARN(this->get_logger(),
-                            "Mission aborted by rover.");
+                            "Mission aborted by rover — retrying in %.1f s.",
+                            mission_retry_sec_);
                         break;
                     case rclcpp_action::ResultCode::CANCELED:
                         RCLCPP_WARN(this->get_logger(),
-                            "Mission cancelled.");
+                            "Mission cancelled — retrying in %.1f s.",
+                            mission_retry_sec_);
                         break;
                     default:
                         RCLCPP_ERROR(this->get_logger(),
