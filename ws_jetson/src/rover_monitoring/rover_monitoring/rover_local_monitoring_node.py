@@ -86,6 +86,7 @@ class RoverLocalMonitoringNode(Node):
         super().__init__('rover_local_monitoring_node')
         
         # Initialize CSV logging
+        self._iface_skew_reported = False
         self.init_csv_logging()
         
         # Subscribe to telemetry relay (Domain 4)
@@ -229,6 +230,34 @@ class RoverLocalMonitoringNode(Node):
 
     def telemetry_relay_callback(self, msg):
         """Process telemetry relay message and write to all CSV files"""
+        # A diagnostic node must never take itself down: this is the process
+        # that records what happened, so if it dies the evidence dies with it.
+        #
+        # The realistic failure is an interface-version skew. ROS 2 Humble
+        # matches endpoints on topic and type NAME only -- there is no content
+        # hash -- so a machine running a msgs_ifaces built before a field was
+        # added still matches the publisher, deserialises, and then raises
+        # AttributeError on the field it has never heard of. That killed this
+        # node on the first telemetry message after chassis_cmd_steer_dir was
+        # introduced in 8d82ac7 (2026-07-16).
+        #
+        # Report it once, with the remedy, and keep logging whatever else works.
+        try:
+            self._write_telemetry_rows(msg)
+        except AttributeError as exc:
+            if not self._iface_skew_reported:
+                self._iface_skew_reported = True
+                self.get_logger().error(
+                    f"TelemetryRelay is missing a field this node expects ({exc}). "
+                    f"This machine's msgs_ifaces build predates the message "
+                    f"definition. Rebuild it on EVERY machine: "
+                    f"cd ~/almondmatcha/common_ifaces && colcon build --symlink-install"
+                )
+        except Exception as exc:
+            self.get_logger().error(f"Telemetry logging failed: {exc}", throttle_duration_sec=10.0)
+
+    def _write_telemetry_rows(self, msg):
+        """Write one telemetry sample to every CSV. Raises on interface skew."""
         timestamp = datetime.now().isoformat()
         
         # Write to unified CSV (all data in one file)
