@@ -283,6 +283,9 @@ sudo nmcli con up "Wired connection 1"
 
 # Verify connectivity
 ping 192.168.1.1 && ping 192.168.1.5 && ping 192.168.1.2 && ping 192.168.1.6
+
+# Or run the full self-diagnosis (environment + network + live DDS):
+bash ws_base/preflight_check.sh
 ```
 
 ### 3. Launch System

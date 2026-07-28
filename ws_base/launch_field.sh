@@ -173,11 +173,20 @@ preflight() {
     [[ -d "$WORKSPACE/ws_base/install"   ]] || die "ws_base not built — run: cd $WORKSPACE/ws_base && bash build_clean.sh"
     ok "  Workspace builds verified"
 
-    if [[ -z "${FASTRTPS_DEFAULT_PROFILES_FILE:-}" ]]; then
-        warn "  FASTRTPS_DEFAULT_PROFILES_FILE not set — FastDDS may bind to WiFi instead of rover LAN"
-        warn "  Add to ~/.bashrc: export FASTRTPS_DEFAULT_PROFILES_FILE=$WORKSPACE/ws_base/fastdds_base.xml"
+    # ── Self-diagnosis ────────────────────────────────────────────────────────
+    # Environment and network faults (unset ROS_DOMAIN_ID, missing DDS profile,
+    # a base-PC address outside the profile whitelist, a dead STM32, blocked
+    # multicast) all present identically at launch time: the rover comes up and
+    # the base PC silently sees nothing. Diagnose them BEFORE energising the
+    # chassis, and refuse to launch on a failure rather than warn and continue.
+    if [[ -x "$WORKSPACE/ws_base/preflight_check.sh" || -f "$WORKSPACE/ws_base/preflight_check.sh" ]]; then
+        echo ""
+        RPI_HOST="$RPI_HOST" JETSON_HOST="$JETSON_HOST" WORKSPACE="$WORKSPACE" \
+            bash "$WORKSPACE/ws_base/preflight_check.sh" \
+            || die "Self-check failed — see the FAIL lines above. Nothing was started."
+        echo ""
     else
-        ok "  FASTRTPS_DEFAULT_PROFILES_FILE=$FASTRTPS_DEFAULT_PROFILES_FILE"
+        warn "  preflight_check.sh missing — skipping self-diagnosis"
     fi
 
     log "  Authenticating to RPi ($RPI_HOST)..."
