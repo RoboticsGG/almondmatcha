@@ -59,9 +59,11 @@ Subscribed Topics:
 
 Published Topics:
 - `/tpc_rover_nav_lane` (std_msgs/Float32MultiArray): [curvature, theta, b, detected]
-  - curvature: Parabola coefficient A (x = A*y^2 + B*y + C) in the rover-centered warped frame; positive = curves right ahead, negative = curves left ahead
-  - theta: Heading error from lane center (degrees, positive = right)
-  - b: Lateral offset from lane center (pixels, positive = right)
+  - curvature: Parabola coefficient A (x = A*y^2 + B*y + C); metric, radius R = 1/(2*A*200); positive = curves right ahead, negative = curves left ahead
+  - theta: Heading error from lane center (real degrees, positive = right)
+  - b: Lateral offset from lane center (pixels at 200 px/m -- 100 px = 50 cm, positive = right)
+
+  All three are measured at a 1.23 m lookahead ahead of the front axle, not at the rover.
   - detected: Detection flag (1.0 = valid, 0.0 = not detected)
 
 Parameters:
@@ -69,8 +71,10 @@ Parameters:
 - `roi_base_points` (double array, 8 values): ROI trapezoid corners [x0,y0,...,x3,y3] at (roi_base_width x roi_base_height)
 - `roi_base_width` / `roi_base_height` (float, default 1280.0 / 720.0): reference resolution roi_base_points were authored against
 - `crop_margin_px` (float, default 20.0): margin around the ROI bounding box before cropping (in roi_base_width/height units, scaled to actual frame size)
+- `bev_width_px` / `bev_height_px` (int, default 720 / 340): fixed bird's-eye canvas, sets the 200 px/m metric scale
 - `sliding_windows` (int, default 9): number of vertical search windows
-- `window_margin` (int, default 100): search window half-width in pixels
+- `window_margin` (int, default 40): search window half-width in pixels. **Hard ceiling 61** -- half the 122 px painted-line spacing
+- `search_band_px` (float, default 45.0): how far from the previous frame's result the search may start. **Hard ceiling 61** -- stops the detector locking onto a neighbouring painted line
 - `min_window_pixels` (int, default 50): minimum pixels to recenter a search window
 - `min_lane_pixels` (int, default 50): minimum total detected pixels required for a valid fit
 
@@ -85,7 +89,11 @@ Processing Pipeline:
 6. Morphological opening (vectorized noise-blob removal)
 7. Perspective transform (bird's-eye view)
 8. 2nd-degree polyfit lane boundary detection (parabola, not a straight line)
-9. Curvature, theta, and b parameter calculation (in a rover-centered frame)
+9. Curvature, theta, and b parameter calculation (lookahead-centered frame)
+
+See [docs/VISION_PIPELINE.md](../../../docs/VISION_PIPELINE.md) for the full
+derivation: camera geometry, why the ROI is what it is, the metric bird's-eye
+scale, and the two parameters with hard correctness ceilings.
 
 #### Rover Kinematic Control Node (rover_kinematic_control)
 

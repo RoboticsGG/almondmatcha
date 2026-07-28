@@ -183,7 +183,9 @@ almondmatcha/
 │   ├── ARCHITECTURE.md                # System architecture & design
 │   ├── TOPICS.md                      # Complete topic reference
 │   ├── DOMAINS.md                     # Multi-domain architecture details
-│   └── LAUNCH_INSTRUCTIONS.md         # Complete system launch guide
+│   ├── LAUNCH_INSTRUCTIONS.md         # Complete system launch guide
+│   ├── VISION_PIPELINE.md             # Image processing: camera frame → lane geometry
+│   └── CONTROL_LAW.md                 # Steering & speed control law
 │
 ├── common_ifaces/                     # Shared ROS2 interfaces (messages/actions/services)
 │   ├── msgs_ifaces/                   # ChassisCtrl, ChassisIMU, ChassisSensors, SpresenseGNSS, UbloxGNSS, TelemetryRelay
@@ -402,6 +404,8 @@ See [docs/TOPICS.md](docs/TOPICS.md) for complete reference.
 ## Documentation
 
 **System-Level:** [ARCHITECTURE.md](docs/ARCHITECTURE.md) | [TOPICS.md](docs/TOPICS.md) | [DOMAINS.md](docs/DOMAINS.md) | [LAUNCH_INSTRUCTIONS.md](docs/LAUNCH_INSTRUCTIONS.md) | [CSV_LOGGING.md](docs/CSV_LOGGING.md)
+
+**Algorithms:** [VISION_PIPELINE.md](docs/VISION_PIPELINE.md) — camera frame → lane geometry | [CONTROL_LAW.md](docs/CONTROL_LAW.md) — lane geometry → motor commands
 
 **Workspace-Level:** [ws_rpi](ws_rpi/README.md) | [ws_jetson](ws_jetson/README.md) | [ws_base](ws_base/README.md) | [STM32 Chassis](mros2-mbed-chassis-dynamics/README.md) | [STM32 Sensors](mros2-mbed-sensors-gnss/README.md)
 

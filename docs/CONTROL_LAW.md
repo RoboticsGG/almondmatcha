@@ -59,9 +59,15 @@ curve before heading/offset error alone would build up enough to react.
 
 | Symbol | Field | Meaning |
 |---|---|---|
-| `κ` | curvature | Parabola coefficient A of the fitted lane, `x = A·y² + B·y + C` |
-| `θ` | theta_deg | Heading error, degrees (+ = needs right turn) |
-| `b` | b_offset | Lateral pixel offset from lane center |
+| `κ` | curvature | Parabola coefficient A of the fitted lane, `x = A·y² + B·y + C`. Metric: `R = 1/(2·A·S)`, `S` = 200 px/m |
+| `θ` | theta_deg | Heading error, real degrees (+ = needs right turn) |
+| `b` | b_offset | Lateral offset from lane center, px at 200 px/m (**100 px = 50 cm**) |
+
+All three are physical quantities, not canvas-dependent numbers — the
+bird's-eye view is isotropic. See [VISION_PIPELINE.md](VISION_PIPELINE.md)
+for how they are produced. Note that `b` and `κ` are measured at a **1.23 m
+lookahead ahead of the front axle**, not at the rover, so they encode partly
+the same information; tune `k_p` on `θ` first, then `k_e2`, then `k_ff`.
 | `detected` | detected_flag | Raw vision detection validity |
 
 Each raw input is clamped before filtering to keep a single bad frame from
@@ -152,10 +158,33 @@ flowchart LR
 | `k_p` | 4.0 | proportional |
 | `k_i` | 0.01 | integral |
 | `k_d` | 0.01 | derivative |
-| `k_ff` | 1000.0 | feedforward on curvature (curvature is ~1e-4–1e-3 in the warped pixel frame) |
+| `k_ff` | 0.0 | feedforward on curvature — **derived value 11459**, see below |
 | `ema_alpha` | 0.05 | filter smoothing |
 | `steer_max_deg` | ±60° | output saturation |
 | `steer_when_lost` | 0.0° | safety default, straight |
+
+### 1.7 Deriving `k_ff`
+
+Because the bird's-eye view is metric, the feedforward gain is calculable
+rather than tuned by hand. The fitted coefficient gives the arc radius as
+`A = 1/(2·R·S)`, and Ackermann geometry needs `δ = arctan(L/R)` to hold it,
+so for small `δ`:
+
+$$
+k_{ff} = 2 S L \frac{180}{\pi}
+       = 2 \times 200 \times 0.50 \times 57.2958
+       = 11459
+$$
+
+with `S = 200 px/m` and wheelbase `L = 0.50 m`. Checked against exact
+Ackermann: `R` = 10 m → 2.86° (exact 2.86), 20 m → 1.43° (exact 1.43),
+36.5 m → 0.78° (exact 0.78).
+
+**Shipped at 0.0.** On a 400 m running track (bend radius ≈ 36.5 m) the
+correct feedforward contribution is only 0.78°, while a momentarily bad
+curvature fit multiplied by 11459 would inject a large steering kick.
+Feedback alone covers this track. Raise toward 11459 only once the logs show
+`curvature_ema` is clean and stable through the bends.
 
 ---
 
