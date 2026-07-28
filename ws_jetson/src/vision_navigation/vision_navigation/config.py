@@ -104,7 +104,11 @@ class LaneDetectionConfig:
     # pixels, and that choice flips between frames. Must also stay below half
     # the line spacing (61 px). Doubles as the per-frame jump limiter: the
     # tracked line can move at most this far between frames.
-    SEARCH_BAND_PX = 45
+    # Float, not int: this is the declared default for the ROS parameter, and
+    # ROS 2 derives the parameter's type from it. Declared as int, the 45.0 in
+    # the params YAML is rejected as DOUBLE-vs-INTEGER and lane_detection_node
+    # refuses to start.
+    SEARCH_BAND_PX = 45.0
 
     # ===== Perspective Transform =====
     # ROI (Region of Interest) points for bird eye view (1280x720 base).

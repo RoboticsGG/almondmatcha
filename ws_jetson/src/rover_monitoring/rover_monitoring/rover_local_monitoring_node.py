@@ -174,6 +174,12 @@ class RoverLocalMonitoringNode(Node):
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             self.log_dir = os.path.join(runs_dir, f"run_{run_number:03d}_{timestamp}")
 
+        # Derive the label from the resolved path so it is defined on BOTH
+        # branches. run_number is only assigned when allocating a directory, so
+        # naming it below crashed with UnboundLocalError whenever $ROVER_RUN_DIR
+        # was set -- which is every launch-script run, and never a manual one.
+        run_label = os.path.basename(self.log_dir.rstrip(os.sep))
+
         log = self.get_logger()
 
         self.csv_unified = LazyCsv(
@@ -217,7 +223,7 @@ class RoverLocalMonitoringNode(Node):
             ], log)
 
         log.info(
-            f'CSV logging armed: Run #{run_number} — files are created on first '
+            f'CSV logging armed: {run_label} — files are created on first '
             f'message, at {self.log_dir}'
         )
 
