@@ -184,13 +184,12 @@ preflight() {
     # chassis, and refuse to launch on a failure rather than warn and continue.
     # Advisory, not a gate. The operator decides: a check can be wrong, and
     # being unable to start the rover in the field is worse than starting it
-    # with a known-suspect environment. SSH_OPTS is exported so the check's
-    # connection is the shared master -- with password auth that is one prompt
-    # per host for the entire launch, not one per command.
+    # with a known-suspect environment. The check is purely local -- it does
+    # not SSH anywhere, so it never prompts for a password; the RPi and Jetson
+    # are contacted once, below, where they have to be contacted anyway.
     if [[ -f "$WORKSPACE/ws_base/preflight_check.sh" ]]; then
         echo ""
-        if RPI_HOST="$RPI_HOST" JETSON_HOST="$JETSON_HOST" WORKSPACE="$WORKSPACE" \
-           SSH_OPTS="$SSH_OPTS" bash "$WORKSPACE/ws_base/preflight_check.sh"; then
+        if WORKSPACE="$WORKSPACE" bash "$WORKSPACE/ws_base/preflight_check.sh"; then
             echo ""
         else
             echo ""

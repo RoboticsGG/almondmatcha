@@ -7,12 +7,19 @@
 # Run standalone at any time:
 #     bash ws_base/preflight_check.sh
 #
-# launch_field.sh runs this automatically and refuses to launch on a FAIL.
+# launch_field.sh runs this automatically; on a FAIL it asks whether to go
+# ahead rather than refusing (--force skips the question).
 #
 # Exit codes:  0 = all critical checks passed   1 = at least one FAIL
 #
 # Checks are ordered cheapest-and-most-likely-first, so the first FAIL you see
 # is usually the root cause.
+#
+# Deliberately does NOT touch the RPi or Jetson over SSH. launch_field.sh has
+# to SSH to both machines anyway in order to start them, and verifies their
+# builds there, so probing them here only bought a duplicate password prompt
+# for information that arrives seconds later regardless. Everything below runs
+# locally: no SSH, no prompts, no waiting.
 
 set -uo pipefail
 
@@ -155,14 +162,8 @@ ping_host "$STM32_CHASSIS_IP" "STM32 chassis"  critical
 ping_host "$STM32_SENSORS_IP" "STM32 sensors"  critical
 
 # Multicast: the STM32 boards announce themselves via SPDP on 239.255.0.1:8650.
-#
-# It is not enough for a multicast route to exist — it must leave the SAME
-# interface that holds the rover-LAN address. On a laptop the default route is
-# normally WiFi, so multicast follows WiFi while the rover LAN sits on Ethernet.
-# SPDP announcements are then transmitted out of the wrong NIC and the STM32
-# boards are never discovered, even though ping to them succeeds (unicast is
-# routed correctly by the 192.168.1.0/24 subnet route). This failure is
-# invisible without an explicit check.
+# Reported for visibility only — see the note on the branch below for why a
+# mismatch here is normal on a laptop and is not treated as a fault.
 ROVER_IF=""
 if [[ -n "${MATCH:-}" ]]; then
     ROVER_IF=$(ip -4 -o addr show scope global 2>/dev/null | awk -v a="$MATCH" '$4 ~ "^"a"/" {print $2}' | head -1)
@@ -214,65 +215,7 @@ else
 fi
 
 # ============================================================================
-# 5. Remote machines — same environment traps apply there
-# ============================================================================
-hdr "5. Remote node environment"
-
-# SSH_OPTS is inherited from launch_field.sh when invoked from it, so the
-# connection this check authenticates is reused by every later SSH in the run:
-# with password auth that means ONE prompt per host for the whole launch, not
-# one per command. Standalone, we set up our own control socket for the same
-# reason. BatchMode is deliberately NOT set -- it suppresses the password
-# prompt, which would make password-only auth impossible to pass.
-if [[ -z "${SSH_OPTS:-}" ]]; then
-    _PF_SSH_DIR="$(mktemp -d /tmp/preflight_ssh.XXXXXX)"
-    SSH_OPTS="-o ControlMaster=auto -o ControlPath=${_PF_SSH_DIR}/%r@%h:%p -o ControlPersist=600"
-    trap '[[ -n "${_PF_SSH_DIR:-}" ]] && rm -rf "$_PF_SSH_DIR"' EXIT
-fi
-
-check_remote() {
-    local host="$1" name="$2" ws="$3" prof="$4"
-    # One SSH round trip: authenticate and collect all three answers together,
-    # so a password is asked for at most once per host.
-    local out
-    # NumberOfPasswordPrompts=1 so a declined/incorrect password fails once
-    # instead of re-prompting three times; the outer timeout stops the check
-    # sitting on an unattended prompt forever.
-    out=$(timeout 90 ssh $SSH_OPTS -o ConnectTimeout=10 -o NumberOfPasswordPrompts=1 "$host" \
-        "source ~/.bashrc >/dev/null 2>&1; echo \"\${ROS_DOMAIN_ID:-UNSET}|\${FASTRTPS_DEFAULT_PROFILES_FILE:-UNSET}|\$(test -d ~/almondmatcha/$ws/install && echo BUILT || echo MISSING)\"" 2>/dev/null)
-    if [[ -z "$out" ]]; then
-        # Not fatal: SSH may simply have been declined, or the host is still
-        # booting. launch_field.sh will surface a real auth failure itself.
-        warn "$name: could not query over SSH ($host)"
-        fix "if the rover is still booting, wait and re-run"
-        fix "otherwise check the host is up and the --rpi/--jetson argument is right"
-        return
-    fi
-    local dom="${out%%|*}"; local rest="${out#*|}"
-    local pf="${rest%%|*}"; local built="${rest##*|}"
-
-    # These read a non-interactive ~/.bashrc, which on many setups exits early
-    # before the exports are reached. A reported UNSET is therefore suggestive,
-    # not proof, so it warns rather than fails -- the node's own launch script
-    # sets the domain explicitly anyway.
-    [[ "$dom" == "$EXPECTED_DOMAIN" ]] \
-        && pass "$name ROS_DOMAIN_ID=$dom" \
-        || { warn "$name ROS_DOMAIN_ID=$dom (expected $EXPECTED_DOMAIN)"; \
-             fix "on $name: echo 'export ROS_DOMAIN_ID=$EXPECTED_DOMAIN' >> ~/.bashrc"; }
-    [[ "$pf" != "UNSET" ]] \
-        && pass "$name DDS profile set" \
-        || { warn "$name FASTRTPS_DEFAULT_PROFILES_FILE unset"; \
-             fix "on $name: echo 'export FASTRTPS_DEFAULT_PROFILES_FILE=\$HOME/almondmatcha/$prof' >> ~/.bashrc"; }
-    # A missing build is unambiguous and comes from a file test, so it stays fatal.
-    [[ "$built" == "BUILT" ]] \
-        && pass "$name $ws built" \
-        || { fail "$name $ws not built"; fix "on $name: cd ~/almondmatcha/$ws && colcon build"; }
-}
-check_remote "${RPI_HOST:-curry@192.168.1.1}"  "RPi"    "ws_rpi"    "ws_rpi/fastdds_rover.xml"
-check_remote "${JETSON_HOST:-yupi@192.168.1.5}" "Jetson" "ws_jetson" "ws_jetson/fastdds_jetson.xml"
-
-# ============================================================================
-# 6. Params-file wiring (static)
+# 5. Params-file wiring (static)
 #
 # A parameter YAML only applies if its top-level key equals the node's RUNTIME
 # name. A mismatch is silent: ROS 2 ignores the whole block and the node keeps
@@ -281,7 +224,7 @@ check_remote "${JETSON_HOST:-yupi@192.168.1.5}" "Jetson" "ws_jetson" "ws_jetson/
 # (`lane_detection:` vs the node's actual `lane_detection_node`), which meant
 # camera resolution, device_serial and show_window were all inert.
 # ============================================================================
-hdr "6. Parameter file wiring"
+hdr "5. Parameter file wiring"
 
 if [[ -d "$WORKSPACE" ]]; then
     NODE_NAMES=$( { grep -rhoP "super\(\)\.__init__\('\K[a-z0-9_]+" \
@@ -306,9 +249,9 @@ else
 fi
 
 # ============================================================================
-# 7. Live DDS discovery — the only check that proves the stack actually works
+# 6. Live DDS discovery — the only check that proves the stack actually works
 # ============================================================================
-hdr "7. Live DDS discovery (10 s listen)"
+hdr "6. Live DDS discovery (10 s listen)"
 
 if [[ -z "${ROS_DISTRO:-}" ]]; then
     warn "ROS not sourced — skipping live discovery probe"
