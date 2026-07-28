@@ -4,7 +4,7 @@
 # Steering control parameters are in rover_kinematic_control_params.yaml
 # Date: November 4, 2025
 
-camera_stream:
+camera_stream_node:
   ros__parameters:
     width: 960
     height: 540
@@ -17,7 +17,7 @@ camera_stream:
     loop_video: true
     json_config: ""
 
-lane_detection:
+lane_detection_node:
   ros__parameters:
     show_window: false           # Headless: no lane visualization
 

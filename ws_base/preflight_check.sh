@@ -234,9 +234,43 @@ check_remote "${RPI_HOST:-curry@192.168.1.1}"  "RPi"    "ws_rpi"    "ws_rpi/fast
 check_remote "${JETSON_HOST:-yupi@192.168.1.5}" "Jetson" "ws_jetson" "ws_jetson/fastdds_jetson.xml"
 
 # ============================================================================
-# 6. Live DDS discovery — the only check that proves the stack actually works
+# 6. Params-file wiring (static)
+#
+# A parameter YAML only applies if its top-level key equals the node's RUNTIME
+# name. A mismatch is silent: ROS 2 ignores the whole block and the node keeps
+# its declared defaults, so the config file looks authoritative while having no
+# effect whatsoever. This shipped undetected for both vision nodes
+# (`lane_detection:` vs the node's actual `lane_detection_node`), which meant
+# camera resolution, device_serial and show_window were all inert.
 # ============================================================================
-hdr "6. Live DDS discovery (10 s listen)"
+hdr "6. Parameter file wiring"
+
+if [[ -d "$WORKSPACE" ]]; then
+    NODE_NAMES=$( { grep -rhoP "super\(\)\.__init__\('\K[a-z0-9_]+" \
+                        "$WORKSPACE"/ws_*/src --include=*.py 2>/dev/null;
+                    grep -rhoP 'Node\("\K[a-z0-9_]+' \
+                        "$WORKSPACE"/ws_*/src --include=*.cpp 2>/dev/null; } | sort -u )
+    BAD=0
+    while IFS= read -r yml; do
+        [[ -z "$yml" ]] && continue
+        while IFS= read -r key; do
+            [[ -z "$key" || "$key" == "/**" ]] && continue
+            if ! grep -qx -- "$key" <<<"$NODE_NAMES"; then
+                fail "$(basename "$yml"): key '$key' matches no node name — this block is IGNORED"
+                fix "rename it to the node's runtime name, or use '/**:' to apply to all"
+                BAD=1
+            fi
+        done < <(grep -oE '^[a-zA-Z_][a-zA-Z0-9_]*:' "$yml" 2>/dev/null | tr -d ':')
+    done < <(find "$WORKSPACE"/ws_*/src -path '*/config/*.yaml' 2>/dev/null)
+    [[ $BAD -eq 0 ]] && pass "All params-file top-level keys match a real node name"
+else
+    warn "Workspace not found at $WORKSPACE — skipping params wiring check"
+fi
+
+# ============================================================================
+# 7. Live DDS discovery — the only check that proves the stack actually works
+# ============================================================================
+hdr "7. Live DDS discovery (10 s listen)"
 
 if [[ -z "${ROS_DISTRO:-}" ]]; then
     warn "ROS not sourced — skipping live discovery probe"
