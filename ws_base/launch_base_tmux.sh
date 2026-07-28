@@ -132,15 +132,15 @@ send_command_to_pane() {
     local title=$2
     local command=$3
     
-    tmux select-pane -t $SESSION_NAME:$pane -T "$title"
-    tmux send-keys -t $SESSION_NAME:$pane "cd $WS_PATH && source install/setup.bash" C-m
-    tmux send-keys -t $SESSION_NAME:$pane "export ROS_DOMAIN_ID=5" C-m
+    tmux select-pane -t $SESSION_NAME:0.$pane -T "$title"
+    tmux send-keys -t $SESSION_NAME:0.$pane "cd $WS_PATH && source install/setup.bash" C-m
+    tmux send-keys -t $SESSION_NAME:0.$pane "export ROS_DOMAIN_ID=5" C-m
     sleep 0.2
-    tmux send-keys -t $SESSION_NAME:$pane "clear" C-m
+    tmux send-keys -t $SESSION_NAME:0.$pane "clear" C-m
     sleep 0.1
-    tmux send-keys -t $SESSION_NAME:$pane "echo -e '\\e[1;36m>>> $title <<<\\e[0m'" C-m
+    tmux send-keys -t $SESSION_NAME:0.$pane "echo -e '\\e[1;36m>>> $title <<<\\e[0m'" C-m
     sleep 0.2
-    tmux send-keys -t $SESSION_NAME:$pane "$command" C-m
+    tmux send-keys -t $SESSION_NAME:0.$pane "$command" C-m
 }
 
 # ============================================================================
@@ -157,15 +157,15 @@ launch_nodes() {
     
     # Pane 1 (right): Mission Monitoring (Telemetry Relay Subscriber - Domain 4)
     print_info "Launching mission_monitoring_node_pc in pane 1 (Domain 4)..."
-    tmux select-pane -t $SESSION_NAME:1 -T "MISSION MONITORING (Domain 4)"
-    tmux send-keys -t $SESSION_NAME:1 "cd $WS_PATH && source install/setup.bash" C-m
-    tmux send-keys -t $SESSION_NAME:1 "export ROS_DOMAIN_ID=4" C-m
+    tmux select-pane -t $SESSION_NAME:0.1 -T "MISSION MONITORING (Domain 4)"
+    tmux send-keys -t $SESSION_NAME:0.1 "cd $WS_PATH && source install/setup.bash" C-m
+    tmux send-keys -t $SESSION_NAME:0.1 "export ROS_DOMAIN_ID=4" C-m
     sleep 0.2
-    tmux send-keys -t $SESSION_NAME:1 "clear" C-m
+    tmux send-keys -t $SESSION_NAME:0.1 "clear" C-m
     sleep 0.1
-    tmux send-keys -t $SESSION_NAME:1 "echo -e '\\e[1;36m>>> MISSION MONITORING (Domain 4) <<<\\e[0m'" C-m
+    tmux send-keys -t $SESSION_NAME:0.1 "echo -e '\\e[1;36m>>> MISSION MONITORING (Domain 4) <<<\\e[0m'" C-m
     sleep 0.2
-    tmux send-keys -t $SESSION_NAME:1 "ros2 run mission_control mission_monitoring_node_pc" C-m
+    tmux send-keys -t $SESSION_NAME:0.1 "ros2 run mission_control mission_monitoring_node_pc" C-m
     
     print_success "All nodes launched"
     echo ""
@@ -221,7 +221,7 @@ main() {
     display_info
     
     # Focus on pane 0 and attach
-    tmux select-pane -t $SESSION_NAME:0
+    tmux select-pane -t $SESSION_NAME:0.0
     print_info "Attaching to tmux session..."
     echo ""
     
