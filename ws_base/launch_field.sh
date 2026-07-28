@@ -22,6 +22,7 @@
 #   bash ws_base/launch_field.sh --rpi curry@192.168.1.1
 #   bash ws_base/launch_field.sh --jetson yupi@192.168.1.5
 #   bash ws_base/launch_field.sh --skip-base    # skip local base station launch
+#   bash ws_base/launch_field.sh --force        # don't prompt if the self-check fails
 #
 # Prerequisites (one-time, per machine):
 #   • Base PC: ws_base built
@@ -46,6 +47,7 @@ JETSON_HOST="yupi@192.168.1.5"
 WORKSPACE="$HOME/almondmatcha"
 
 SKIP_BASE=false
+FORCE=false
 
 SSH_CONTROL_DIR="$(mktemp -d /tmp/field_ssh_ctl.XXXXXX)"
 SSH_OPTS="-o ControlMaster=auto -o ControlPath=${SSH_CONTROL_DIR}/%r@%h:%p -o ControlPersist=600"
@@ -71,6 +73,7 @@ while [[ $# -gt 0 ]]; do
         --rpi)        RPI_HOST="$2";    shift 2 ;;
         --jetson)     JETSON_HOST="$2"; shift 2 ;;
         --skip-base)  SKIP_BASE=true;   shift   ;;
+        --force|--yes) FORCE=true;      shift   ;;
         *) die "Unknown argument: $1" ;;
     esac
 done
@@ -179,24 +182,48 @@ preflight() {
     # multicast) all present identically at launch time: the rover comes up and
     # the base PC silently sees nothing. Diagnose them BEFORE energising the
     # chassis, and refuse to launch on a failure rather than warn and continue.
-    if [[ -x "$WORKSPACE/ws_base/preflight_check.sh" || -f "$WORKSPACE/ws_base/preflight_check.sh" ]]; then
+    # Advisory, not a gate. The operator decides: a check can be wrong, and
+    # being unable to start the rover in the field is worse than starting it
+    # with a known-suspect environment. SSH_OPTS is exported so the check's
+    # connection is the shared master -- with password auth that is one prompt
+    # per host for the entire launch, not one per command.
+    if [[ -f "$WORKSPACE/ws_base/preflight_check.sh" ]]; then
         echo ""
-        RPI_HOST="$RPI_HOST" JETSON_HOST="$JETSON_HOST" WORKSPACE="$WORKSPACE" \
-            bash "$WORKSPACE/ws_base/preflight_check.sh" \
-            || die "Self-check failed — see the FAIL lines above. Nothing was started."
-        echo ""
+        if RPI_HOST="$RPI_HOST" JETSON_HOST="$JETSON_HOST" WORKSPACE="$WORKSPACE" \
+           SSH_OPTS="$SSH_OPTS" bash "$WORKSPACE/ws_base/preflight_check.sh"; then
+            echo ""
+        else
+            echo ""
+            warn "Self-check reported critical issues (see the FAIL lines above)."
+            if [[ "$FORCE" == true ]]; then
+                warn "  --force given — continuing anyway."
+            elif [[ ! -t 0 ]]; then
+                warn "  Not an interactive terminal — continuing anyway."
+            else
+                echo -en "${YELLOW}Launch anyway? [y/N] ${NC}"
+                read -r _reply
+                [[ "$_reply" =~ ^[Yy]$ ]] || die "Aborted by operator. Nothing was started."
+                warn "  Continuing at operator request."
+            fi
+            echo ""
+        fi
     else
         warn "  preflight_check.sh missing — skipping self-diagnosis"
     fi
 
+    # SSH is genuinely required -- the remote nodes cannot be started without
+    # it -- so this one still aborts. Password auth is fine: no BatchMode is
+    # set, so ssh prompts normally, and ControlMaster means the password is
+    # asked for once per host for the whole run (the self-check above will
+    # usually have established the connection already).
     log "  Authenticating to RPi ($RPI_HOST)..."
     ssh $SSH_OPTS -o ConnectTimeout=10 "$RPI_HOST" true \
-        || die "Cannot SSH to RPi ($RPI_HOST)"
+        || die "Cannot SSH to RPi ($RPI_HOST) — wrong password, or host unreachable"
     ok "  RPi reachable"
 
     log "  Authenticating to Jetson ($JETSON_HOST)..."
     ssh $SSH_OPTS -o ConnectTimeout=10 "$JETSON_HOST" true \
-        || die "Cannot SSH to Jetson ($JETSON_HOST)"
+        || die "Cannot SSH to Jetson ($JETSON_HOST) — wrong password, or host unreachable"
     ok "  Jetson reachable"
 
     # Verify remote workspaces are built

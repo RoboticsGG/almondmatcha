@@ -218,27 +218,52 @@ fi
 # ============================================================================
 hdr "5. Remote node environment"
 
+# SSH_OPTS is inherited from launch_field.sh when invoked from it, so the
+# connection this check authenticates is reused by every later SSH in the run:
+# with password auth that means ONE prompt per host for the whole launch, not
+# one per command. Standalone, we set up our own control socket for the same
+# reason. BatchMode is deliberately NOT set -- it suppresses the password
+# prompt, which would make password-only auth impossible to pass.
+if [[ -z "${SSH_OPTS:-}" ]]; then
+    _PF_SSH_DIR="$(mktemp -d /tmp/preflight_ssh.XXXXXX)"
+    SSH_OPTS="-o ControlMaster=auto -o ControlPath=${_PF_SSH_DIR}/%r@%h:%p -o ControlPersist=600"
+    trap '[[ -n "${_PF_SSH_DIR:-}" ]] && rm -rf "$_PF_SSH_DIR"' EXIT
+fi
+
 check_remote() {
     local host="$1" name="$2" ws="$3" prof="$4"
-    if ! ssh -o ConnectTimeout=5 -o BatchMode=yes "$host" true 2>/dev/null; then
-        fail "$name: SSH failed ($host)"
-        fix "ssh-copy-id $host    (or check the --rpi/--jetson argument)"
+    # One SSH round trip: authenticate and collect all three answers together,
+    # so a password is asked for at most once per host.
+    local out
+    # NumberOfPasswordPrompts=1 so a declined/incorrect password fails once
+    # instead of re-prompting three times; the outer timeout stops the check
+    # sitting on an unattended prompt forever.
+    out=$(timeout 90 ssh $SSH_OPTS -o ConnectTimeout=10 -o NumberOfPasswordPrompts=1 "$host" \
+        "source ~/.bashrc >/dev/null 2>&1; echo \"\${ROS_DOMAIN_ID:-UNSET}|\${FASTRTPS_DEFAULT_PROFILES_FILE:-UNSET}|\$(test -d ~/almondmatcha/$ws/install && echo BUILT || echo MISSING)\"" 2>/dev/null)
+    if [[ -z "$out" ]]; then
+        # Not fatal: SSH may simply have been declined, or the host is still
+        # booting. launch_field.sh will surface a real auth failure itself.
+        warn "$name: could not query over SSH ($host)"
+        fix "if the rover is still booting, wait and re-run"
+        fix "otherwise check the host is up and the --rpi/--jetson argument is right"
         return
     fi
-    local out
-    out=$(ssh -o ConnectTimeout=5 "$host" \
-        "source ~/.bashrc >/dev/null 2>&1; echo \"\${ROS_DOMAIN_ID:-UNSET}|\${FASTRTPS_DEFAULT_PROFILES_FILE:-UNSET}|\$(test -d ~/almondmatcha/$ws/install && echo BUILT || echo MISSING)\"" 2>/dev/null)
     local dom="${out%%|*}"; local rest="${out#*|}"
     local pf="${rest%%|*}"; local built="${rest##*|}"
 
+    # These read a non-interactive ~/.bashrc, which on many setups exits early
+    # before the exports are reached. A reported UNSET is therefore suggestive,
+    # not proof, so it warns rather than fails -- the node's own launch script
+    # sets the domain explicitly anyway.
     [[ "$dom" == "$EXPECTED_DOMAIN" ]] \
         && pass "$name ROS_DOMAIN_ID=$dom" \
-        || { fail "$name ROS_DOMAIN_ID=$dom (expected $EXPECTED_DOMAIN)"; \
+        || { warn "$name ROS_DOMAIN_ID=$dom (expected $EXPECTED_DOMAIN)"; \
              fix "on $name: echo 'export ROS_DOMAIN_ID=$EXPECTED_DOMAIN' >> ~/.bashrc"; }
     [[ "$pf" != "UNSET" ]] \
         && pass "$name DDS profile set" \
-        || { fail "$name FASTRTPS_DEFAULT_PROFILES_FILE unset"; \
+        || { warn "$name FASTRTPS_DEFAULT_PROFILES_FILE unset"; \
              fix "on $name: echo 'export FASTRTPS_DEFAULT_PROFILES_FILE=\$HOME/almondmatcha/$prof' >> ~/.bashrc"; }
+    # A missing build is unambiguous and comes from a file test, so it stays fatal.
     [[ "$built" == "BUILT" ]] \
         && pass "$name $ws built" \
         || { fail "$name $ws not built"; fix "on $name: cd ~/almondmatcha/$ws && colcon build"; }
