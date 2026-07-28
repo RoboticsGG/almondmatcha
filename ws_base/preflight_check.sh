@@ -171,10 +171,23 @@ fi
 if ip route get "$SPDP_MCAST" &>/dev/null; then
     MCIF=$(ip route get "$SPDP_MCAST" 2>/dev/null | grep -oP 'dev \K\S+' | head -1)
     if [[ -n "$ROVER_IF" && -n "$MCIF" && "$MCIF" != "$ROVER_IF" ]]; then
-        fail "Multicast leaves '$MCIF' but the rover LAN ($MATCH) is on '$ROVER_IF'"
-        fix "STM32 SPDP is going out the wrong NIC — ping works, discovery cannot"
-        fix "sudo ip route add 224.0.0.0/4 dev $ROVER_IF metric 0"
-        fix "verify with: ip route get $SPDP_MCAST   (must say 'dev $ROVER_IF')"
+        # INFORMATIONAL, not a failure. `ip route get` shows what an *unbound*
+        # socket would do. Fast-DDS does not use that path: interfaceWhiteList
+        # makes it create the UDPv4 transport only on the listed address and
+        # set the multicast interface explicitly, so SPDP still leaves the
+        # rover NIC even when the kernel's default multicast route points at
+        # WiFi. Verified on a machine in exactly this state -- rover LAN on
+        # Ethernet, multicast route on WiFi -- where all three STM32 topics
+        # were discovered normally.
+        #
+        # It only becomes a real fault when the profile is NOT loaded (see
+        # section 2), because then FastDDS falls back to default transports and
+        # does follow this route. Reported so it is visible if discovery is
+        # actually failing, but it must never block a launch on its own.
+        warn "Multicast route prefers '$MCIF', rover LAN ($MATCH) is on '$ROVER_IF'"
+        fix "harmless while the DDS profile is loaded — it pins DDS to $ROVER_IF regardless"
+        fix "only act on this if STM32 topics are genuinely missing:"
+        fix "  sudo ip route add 224.0.0.0/4 dev $ROVER_IF metric 0"
     elif [[ -n "$MCIF" ]]; then
         pass "Multicast route to $SPDP_MCAST via $MCIF${ROVER_IF:+ (rover LAN NIC)}"
     else
