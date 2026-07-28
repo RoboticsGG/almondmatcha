@@ -34,6 +34,33 @@ _next=$(( 10#${_last:-000} + 1 ))
 export ROVER_RUN_DIR="$RUNS_DIR/$(printf 'run_%03d_%s' "$_next" "$(date +%Y%m%d_%H%M%S)")"
 echo "[run] output directory for this launch: $ROVER_RUN_DIR"
 
+# ============================================================================
+# Per-node console logs
+# ============================================================================
+# Every node's stdout+stderr is teed to $ROVER_RUN_DIR/<node>.log alongside the
+# CSVs, so a run is one self-contained folder and a node that dies at startup
+# leaves its reason on disk. Without this the only copy of a startup error --
+# e.g. camera_stream's "Failed to start RealSense pipeline ... Connected
+# devices: [...]" -- lives in a tmux scrollback that is gone once the session
+# is killed, which is exactly when it is needed.
+#
+# stdbuf -oL -eL and PYTHONUNBUFFERED=1 are required, not cosmetic: stdout
+# becomes block-buffered the moment it is a pipe rather than a tty, so without
+# them the log lags by kilobytes and a crash discards the buffered tail --
+# losing precisely the lines that explain the crash.
+export PYTHONUNBUFFERED=1
+mkdir -p "$ROVER_RUN_DIR"
+
+# run_logged <pane> <logname> <command>
+# The command is passed single-quoted by every caller so that any $(...) inside
+# it reaches the pane's shell intact and is evaluated there, not here.
+run_logged() {
+    local pane="$1" name="$2" cmd="$3"
+    tmux send-keys -t $SESSION_NAME:$pane \
+        "stdbuf -oL -eL $cmd 2>&1 | tee -a '$ROVER_RUN_DIR/$name.log'" C-m
+}
+
+
 # Kill existing session if exists
 tmux kill-session -t $SESSION_NAME 2>/dev/null
 
@@ -64,7 +91,7 @@ tmux send-keys -t $SESSION_NAME:0.0 "source /opt/ros/humble/setup.bash && cd ~/a
 tmux send-keys -t $SESSION_NAME:0.0 "export ROVER_RUN_DIR='$ROVER_RUN_DIR'" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "export ROS_DOMAIN_ID=6" C-m
 tmux send-keys -t $SESSION_NAME:0.0 "clear && echo -e '\\e[1;36m>>> [Domain 6] CAMERA STREAM <<<\\e[0m' && sleep 1" C-m
-tmux send-keys -t $SESSION_NAME:0.0 "ros2 run vision_navigation camera_stream_node --ros-args --params-file src/vision_navigation/config/vision_nav_headless.yaml" C-m
+run_logged 0.0 camera_stream 'ros2 run vision_navigation camera_stream_node --ros-args --params-file src/vision_navigation/config/vision_nav_headless.yaml'
 
 # Pane 1 (top-right): Lane Detection - Domain 6
 tmux select-pane -t 1 -T "Lane_Detect_D6"
@@ -73,7 +100,7 @@ tmux send-keys -t $SESSION_NAME:0.1 "export ROVER_RUN_DIR='$ROVER_RUN_DIR'" C-m
 tmux send-keys -t $SESSION_NAME:0.1 "export ROS_DOMAIN_ID=6" C-m
 tmux send-keys -t $SESSION_NAME:0.1 "clear && echo -e '\\e[1;32m>>> [Domain 6] LANE DETECTION <<<\\e[0m'" C-m
 tmux send-keys -t $SESSION_NAME:0.1 "echo 'Waiting for camera initialization (3s)...' && sleep 3" C-m
-tmux send-keys -t $SESSION_NAME:0.1 "ros2 run vision_navigation lane_detection_node --ros-args --params-file src/vision_navigation/config/vision_nav_headless.yaml" C-m
+run_logged 0.1 lane_detection 'ros2 run vision_navigation lane_detection_node --ros-args --params-file src/vision_navigation/config/vision_nav_headless.yaml'
 
 # Pane 2 (bottom-right): Rover Kinematic Control — dual-context (D6 sub | D5 pub)
 tmux select-pane -t 2 -T "Kinematic_Ctrl_D6+D5"
@@ -81,7 +108,7 @@ tmux send-keys -t $SESSION_NAME:0.2 "source /opt/ros/humble/setup.bash && cd ~/a
 tmux send-keys -t $SESSION_NAME:0.2 "export ROVER_RUN_DIR='$ROVER_RUN_DIR'" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "clear && echo -e '\\e[1;33m>>> [D6 sub + D5 pub] ROVER KINEMATIC CONTROL <<<\\e[0m'" C-m
 tmux send-keys -t $SESSION_NAME:0.2 "echo 'Waiting for lane detection (4s)...' && sleep 4" C-m
-tmux send-keys -t $SESSION_NAME:0.2 "ros2 run vision_navigation rover_kinematic_control --ros-args --params-file src/vision_navigation/config/rover_kinematic_control_params.yaml" C-m
+run_logged 0.2 rover_kinematic_control 'ros2 run vision_navigation rover_kinematic_control --ros-args --params-file src/vision_navigation/config/rover_kinematic_control_params.yaml'
 
 # Pane 3 (bottom-right): Rover Local Monitoring — Domain 4 CSV logger
 tmux select-pane -t 3 -T "Local_Monitor_D4"
@@ -90,7 +117,7 @@ tmux send-keys -t $SESSION_NAME:0.3 "export ROVER_RUN_DIR='$ROVER_RUN_DIR'" C-m
 tmux send-keys -t $SESSION_NAME:0.3 "export ROS_DOMAIN_ID=4" C-m
 tmux send-keys -t $SESSION_NAME:0.3 "clear && echo -e '\\e[1;35m>>> [Domain 4] ROVER LOCAL MONITORING (CSV) <<<\\e[0m'" C-m
 tmux send-keys -t $SESSION_NAME:0.3 "echo 'Waiting for telemetry relay (5s)...' && sleep 5" C-m
-tmux send-keys -t $SESSION_NAME:0.3 "ros2 run rover_monitoring rover_local_monitoring_node" C-m
+run_logged 0.3 rover_local_monitoring 'ros2 run rover_monitoring rover_local_monitoring_node'
 
 # Pane 4 (bottom-right): Camera Recorder — Domain 6, raw video for offline debugging
 tmux select-pane -t 4 -T "Camera_Recorder_D6"
@@ -99,7 +126,7 @@ tmux send-keys -t $SESSION_NAME:0.4 "export ROVER_RUN_DIR='$ROVER_RUN_DIR'" C-m
 tmux send-keys -t $SESSION_NAME:0.4 "export ROS_DOMAIN_ID=6" C-m
 tmux send-keys -t $SESSION_NAME:0.4 "clear && echo -e '\\e[1;96m>>> [Domain 6] CAMERA RECORDER (raw video, offline debug) <<<\\e[0m'" C-m
 tmux send-keys -t $SESSION_NAME:0.4 "echo 'Waiting for camera initialization (3s)...' && sleep 3" C-m
-tmux send-keys -t $SESSION_NAME:0.4 "ros2 run vision_navigation camera_recorder_node" C-m
+run_logged 0.4 camera_recorder 'ros2 run vision_navigation camera_recorder_node'
 
 # Focus on camera pane and attach
 tmux select-pane -t 0

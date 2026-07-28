@@ -6,8 +6,8 @@
 
 camera_stream_node:
   ros__parameters:
-    width: 960
-    height: 540
+    width: 1280
+    height: 720
     fps: 30
     device_serial: "806312060441"
     fallback_video: "/home/yupi/Almond/ros2-jetson-ws/001.mp4"

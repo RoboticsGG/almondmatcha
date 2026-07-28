@@ -6,10 +6,14 @@
 
 camera_stream_node:
   ros__parameters:
-    width: 960
-    height: 540
+    width: 1280
+    height: 720
     fps: 30
-    device_serial: "806312060441"  # (the D405 is 218622277831)
+    # Pin the D415 by serial so a second camera on the bus (D405
+    # 218622277831) can never be picked up instead. If the node exits with
+    # "Failed to start RealSense pipeline", check this against the
+    # "Connected devices:" list it prints.
+    device_serial: "806312060441"
     fallback_video: "/home/yupi/Almond/ros2-jetson-ws/001.mp4"
     open_cam: false              # Headless: no camera preview
     enable_depth: false
