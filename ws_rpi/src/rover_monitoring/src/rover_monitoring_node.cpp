@@ -288,6 +288,25 @@ private:
     void init_csv_logging() {
         std::string runs_dir = resolve_ws_rpi_root() + "/runs";
 
+        // Prefer the launcher's directory. launch_rover_tmux.sh computes one
+        // run directory per launch and exports it as $ROVER_RUN_DIR, exactly as
+        // ws_jetson does, so every logger on this machine writes into the same
+        // folder. Allocating independently here meant each launch produced TWO
+        // directories on the RPi -- the launcher's, holding the per-node console
+        // logs, and this node's, holding the CSVs -- splitting one run across
+        // two folders and consuming two run numbers.
+        //
+        // Falls back to allocating its own when the variable is unset, which is
+        // the case when this node is started by hand with `ros2 run`.
+        if (const char* from_env = std::getenv("ROVER_RUN_DIR")) {
+            if (from_env[0] != '\0') {
+                log_dir_ = std::string(from_env);
+                RCLCPP_INFO(this->get_logger(),
+                            "CSV logging armed: %s (from $ROVER_RUN_DIR)", log_dir_.c_str());
+                return;
+            }
+        }
+
         int run_number = get_next_run_number(runs_dir);
         auto now = std::chrono::system_clock::now();
         std::time_t now_c = std::chrono::system_clock::to_time_t(now);
