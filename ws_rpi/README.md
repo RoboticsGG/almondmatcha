@@ -30,7 +30,9 @@ tmux kill-session -t rover
 |---------|---------|
 | `chassis_control` | Motor coordination, closed-loop speed control (encoder feedback), cruise control |
 | `chassis_sensors` | Sensor data logging (IMU, encoders, power) |
-| `gnss_navigation` | GPS waypoint navigation, mission monitoring || `rover_monitoring` | Telemetry relay publisher (D4), CSV data logger || `rover_bringup` | System-wide launch configuration |
+| `gnss_navigation` | GPS waypoint navigation, mission monitoring |
+| `rover_monitoring` | `rover_monitoring_node` (full CSV logger) + `mission_monitoring_node_rpi` (D5→D4 telemetry relay, no local logging) |
+| `rover_bringup` | System-wide launch configuration |
 
 ## Building
 
@@ -109,7 +111,8 @@ The ws_rpi system can be launched in three ways: **tmux session** (recommended f
 
 ### Option 1: Full System with Tmux (Recommended)
 
-Launch all rover nodes in an organized tmux session with 8 panes:
+Launch all rover nodes in an organized tmux session — a 3x3 grid, 9 panes
+(pane 8 is a spare shell):
 
 ```bash
 cd ~/almondmatcha/ws_rpi
@@ -117,16 +120,17 @@ cd ~/almondmatcha/ws_rpi
 ```
 
 **What Gets Launched:**
-- **Pane 0:** GNSS Spresense (Sony Spresense GNSS module)
-- **Pane 1:** GNSS Ublox RTK (High-precision GNSS)
-- **Pane 2:** GNSS Mission Monitor (Mission status & waypoint tracking)
-- **Pane 3:** Chassis Controller (Motor coordination & cruise control)
-- **Pane 4:** Chassis IMU (Accelerometer/gyroscope data logger)
-- **Pane 5:** Chassis Sensors (Encoders, voltage, current logger)
-- **Pane 6:** Rover Monitoring (CSV data logger for all sensors)
-- **Pane 7:** Domain Relay (Bridges data from Domain 5 → Domain 4 for base station)
+- **Pane 0:** GNSS Spresense (Sony Spresense GNSS module) — Domain 5
+- **Pane 1:** Chassis Controller (Motor coordination & cruise control) — Domain 5
+- **Pane 2:** Mission Monitor RPi (D5→D4 telemetry relay — no local CSV logging) — Domain 5 sub / Domain 4 pub
+- **Pane 3:** GNSS Ublox RTK (High-precision GNSS) — Domain 5
+- **Pane 4:** GNSS Mission Monitor (Mission status & waypoint tracking) — Domain 5
+- **Pane 5:** Chassis IMU (Accelerometer/gyroscope data logger) — Domain 5
+- **Pane 6:** Chassis Sensors (Encoders, voltage, current logger) — Domain 5
+- **Pane 7:** CSV Logger (`rover_monitoring_node` — full-fidelity per-topic CSVs) — Domain 5
+- **Pane 8:** Spare shell
 
-**All nodes run on Domain 5** (unified rover architecture).
+**All application nodes run on Domain 5**; `mission_monitoring_node_rpi` additionally publishes to Domain 4.
 
 **Tmux Session Controls:**
 - **Navigate panes:** `Ctrl+b` then arrow keys
@@ -153,8 +157,8 @@ cd ~/almondmatcha/ws_rpi
 
 **What Gets Launched:**
 - **Pane 0:** GNSS Ublox RTK (Domain 5)
-- **Pane 1:** Rover Monitoring (Domain 5) - CSV logger
-- **Pane 2:** Domain Relay (5→4) - Relays status to base station
+- **Pane 1:** Mission Monitor RPi — D5→D4 telemetry relay (`mission_monitoring_node_rpi`, no local CSV logging)
+- **Pane 2:** CSV Logger (`rover_monitoring_node`, Domain 5)
 
 **Use case:** When you only need monitoring/logging without active control, or when chassis/sensors are already running separately.
 
@@ -277,6 +281,7 @@ ros2 node list
 # /gnss_ublox_node
 # /gnss_mission_monitor_node
 # /mission_monitoring_node_rpi
+# /rover_monitoring_node
 ```
 
 ### Monitor Topics
@@ -404,8 +409,10 @@ ros2 topic echo tpc_chassis_imu
 
 ## Data Logging
 
-All sensor data is logged to time-stamped run directories by `mission_monitoring_node_rpi`
-(rover_monitoring package) in `~/almondmatcha/ws_rpi/runs/run_NNN_YYYYMMDD_HHMMSS/`:
+All sensor data is logged to time-stamped run directories by `rover_monitoring_node`
+(rover_monitoring package — the full-fidelity local logger; `mission_monitoring_node_rpi`
+is the separate D5→D4 relay and does no local CSV logging) in
+`~/almondmatcha/ws_rpi/runs/run_NNN_YYYYMMDD_HHMMSS/`:
 
 | File | Rate | Content |
 |------|------|---------|
@@ -414,9 +421,10 @@ All sensor data is logged to time-stamped run directories by `mission_monitoring
 | `chassis_imu.csv` | ~10 Hz | Accelerometer, gyroscope |
 | `chassis_sensors.csv` | ~4 Hz | Encoders, voltage, current |
 | `chassis_cmd.csv` | ~50 Hz | Motor commands |
+| `chassis_speed_pid.csv` | ~4 Hz | Closed-loop speed PID: measured/target tick rate, error, output |
 | `mission_state.csv` | event | Mission status, steering, lane detection |
 
-Logging starts automatically when `mission_monitoring_node_rpi` launches.
+Logging starts automatically when `rover_monitoring_node` launches.
 See [docs/CSV_LOGGING.md](../docs/CSV_LOGGING.md) for complete schema.
 
 ## Directory Structure
@@ -426,7 +434,6 @@ ws_rpi/
 ├── README.md                    # This file
 ├── build.sh                     # Automated build script
 ├── launch_rover_tmux.sh         # Tmux launcher
-├── BUILD.md                     # Detailed build documentation
 └── src/
     ├── chassis_control/     # Motor coordination + closed-loop speed control
     │   ├── src/
@@ -474,10 +481,10 @@ ws_rpi/
 - [/docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md) - System architecture
 - [/docs/TOPICS.md](/docs/TOPICS.md) - Topic reference
 - [/docs/DOMAINS.md](/docs/DOMAINS.md) - Domain configuration
-- [/docs/LAUNCH_SEQUENCE_GUIDE.md](/docs/LAUNCH_SEQUENCE_GUIDE.md) - System startup guide
+- [/docs/LAUNCH_INSTRUCTIONS.md](/docs/LAUNCH_INSTRUCTIONS.md) - System startup guide
 
 ---
 
 **Platform:** Raspberry Pi 4B  
 **ROS2:** Humble  
-**Domain:** 5 (7 control nodes) + 4 (mission_monitoring_node_rpi relay context)
+**Domain:** 5 (8 control nodes) + 4 (mission_monitoring_node_rpi relay context)

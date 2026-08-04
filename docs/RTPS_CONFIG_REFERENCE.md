@@ -11,8 +11,8 @@
 | Parameter | Chassis (192.168.1.2) | Sensors (192.168.1.6) | Notes |
 |-----------|----------------------|-----------------------|-------|
 | `MAX_NUM_PARTICIPANTS` | `1` | `1` | Local participant only — STM32 never discovers STM32 |
-| `SPDP_MAX_NUMBER_FOUND_PARTICIPANTS` | `30` | `30` | 11 D5 nodes + daemons + CLI tools + margin |
-| `NUM_STATEFUL_WRITERS` | `3` | `3` | 2 SEDP + 1 app publisher (`tpc_chassis_imu` / `tpc_sensors_data`) |
+| `SPDP_MAX_NUMBER_FOUND_PARTICIPANTS` | `30` | `30` | 12 D5 nodes + daemons + CLI tools + margin |
+| `NUM_STATEFUL_WRITERS` | `3` | `3` | 2 SEDP + 1 app publisher (`tpc_chassis_imu` / `tpc_chassis_sensors`) |
 | `NUM_STATEFUL_READERS` | `3` | `2` | Chassis: 2 SEDP + 1 sub (`tpc_chassis_cmd`); Sensors: 2 SEDP only |
 | `NUM_WRITERS_PER_PARTICIPANT` | `16` | `16` | Max publishers per remote participant (10 actual + margin) |
 | `NUM_READERS_PER_PARTICIPANT` | `16` | `16` | Max subscribers per remote participant (11 actual + margin) |
@@ -40,9 +40,11 @@ that is `SPDP_MAX_NUMBER_FOUND_PARTICIPANTS`. This controls how many *local*
 participant objects can be instantiated. Because each STM32 creates exactly one
 mROS2 node, the minimum is 1.
 
-**Memory impact:** Each participant uses ~200 KB of BSS for its writer/reader proxy arrays.
-Setting this to 15 (old default) wastes ~2.8 MB — more than the F767ZI has.
-`MAX_NUM_PARTICIPANTS=1` is mandatory.
+**Memory impact:** Each participant uses ~38 KB of BSS for its writer/reader proxy
+arrays (`NUM_WRITERS_PER_PARTICIPANT × NUM_WRITER_PROXIES_PER_READER × ~80 B` — see the
+derivation in [STM32_RTPS_MEMORY_CALCULATION.md](STM32_RTPS_MEMORY_CALCULATION.md)).
+Setting this to 15 (old default) needs `15 × 38 KB ≈ 570 KB`, more than the F767ZI's
+512 KB SRAM. `MAX_NUM_PARTICIPANTS=1` is mandatory.
 
 #### `SPDP_MAX_NUMBER_FOUND_PARTICIPANTS`
 The size of the discovered-participant table. Every DDS participant that sends a
@@ -51,7 +53,7 @@ one slot. If the table is full, new participants are silently dropped and their 
 data never arrives.
 
 **In production (D5 domain):**
-- 11 application nodes (ws_rpi×7, ws_base×1, ws_jetson×1, chassis STM32, sensors STM32)
+- 12 application nodes (ws_rpi×8, ws_base×1, ws_jetson×1, chassis STM32, sensors STM32)
 - 4–6 daemon/daemon-router participants per SBC
 - Ephemeral CLI participants (`ros2 topic list`, `ros2 node info`, etc.)
 
@@ -96,7 +98,7 @@ Must match the actual number of stateful endpoints created at runtime:
 | Board | Writers | Readers |
 |-------|---------|---------|
 | Chassis | 3 (SEDP pub + SEDP sub + `tpc_chassis_imu`) | 3 (SEDP pub + SEDP sub + `tpc_chassis_cmd`) |
-| Sensors | 3 (SEDP pub + SEDP sub + `tpc_sensors_data`) | 2 (SEDP pub + SEDP sub) |
+| Sensors | 3 (SEDP pub + SEDP sub + `tpc_chassis_sensors`) | 2 (SEDP pub + SEDP sub) |
 
 SEDP endpoints are always 2 per participant (`sedpPubWriter` + `sedpSubWriter` and their
 reader counterparts). Application endpoints add on top.

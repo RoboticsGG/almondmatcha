@@ -119,11 +119,11 @@ sensors_node/
 - Protocol: NMEA 0183
 - Device: SimpleRTK2b u-blox F9P
 
-**Supported NMEA Sentence Types:**
-- `$GPRMC` - Recommended Minimum Navigation Information
-- `$GPGGA` - Global Positioning System Fix Data
-- `$GPGSA` - GPS DOP and Active Satellites
-- `$GPGSV` - GPS Satellites in View
+**NMEA Sentence Handling:** `gnss_reader_is_valid_sentence()` does not filter
+by sentence type — it only checks basic structure (starts with `$`, at least
+5 characters). Any NMEA sentence the SimpleRTK2b emits (`$GPRMC`, `$GPGGA`,
+`$GPGSA`, `$GPGSV`, `$GNRMC`, etc.) is captured and forwarded generically;
+type-specific parsing happens downstream, not in this reader.
 
 ### Main Loop (4 Hz)
 
@@ -450,7 +450,7 @@ int gnss_reader_is_valid_sentence(const char* s); // Validate NMEA
 1. **Connect board** via USB (appears as DAPLINK/NODE_F767ZI)
 2. **Copy binary** to board mount point:
    ```bash
-   cp build/NUCLEO_F767ZI/sensors_node.bin /mnt/DAPLINK/
+   cp build/NUCLEO_F767ZI/mros2-mbed.bin /mnt/DAPLINK/
    ```
 3. **Press reset button** on board
 4. **Monitor serial console** at 115200 baud for startup messages

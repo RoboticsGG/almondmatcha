@@ -1,7 +1,16 @@
 # Session Log - November 2025 (Consolidated)
 
+> **Superseded (reviewed 2026-08-04).** This describes the pre-tri-domain
+> architecture (Domain 2/5/6, `node_domain_bridge`, `steering_control`, six
+> ws_rpi nodes) as "current status," but the system has since moved to the
+> tri-domain design (D4/D5/D6, no domain-bridge node, `rover_kinematic_control`
+> replacing `steering_control`, eight ws_rpi nodes) — see
+> [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) and
+> [docs/DOMAINS.md](../docs/DOMAINS.md) for the current design. Kept below as
+> historical record, not current state. A candidate for archival/deletion.
+
 **Last Updated:** November 4, 2025 (11:49 AM)  
-**Status:** All systems production-ready
+**Status:** All systems production-ready (as of that date — see notice above)
 
 ---
 

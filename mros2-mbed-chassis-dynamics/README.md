@@ -152,14 +152,14 @@ gyro_z: 2
 ```bash
 export ROS_DOMAIN_ID=5
 ros2 topic pub /tpc_chassis_cmd msgs_ifaces/msg/ChassisCtrl \
-    '{fdr_msg: 0, ro_ctrl_msg: 5.0, bdr_msg: 0, spd_msg: 50}'
+    '{fdr_msg: 2, ro_ctrl_msg: 5.0, bdr_msg: 1, spd_msg: 50}'
 ```
 
 **Message Fields:**
-- `fdr_msg`: Front direction (0=straight, 1=left, 2=right)
-- `ro_ctrl_msg`: Steering angle in degrees (-45 to +45)
-- `bdr_msg`: Back direction (0=forward, 1=backward, 2=stop)
-- `spd_msg`: Motor speed 0-100%
+- `fdr_msg`: Front (steering) direction — 1=right, 2=straight, 3=left
+- `ro_ctrl_msg`: Steering angle magnitude in degrees, unsigned (0 to `steer_max_deg`, sign carried by `fdr_msg`) — not a signed −45..+45 range
+- `bdr_msg`: Back (drive) direction — 0=stop, 1=forward, 2=backward
+- `spd_msg`: Motor speed 0-100% duty cycle
 
 ## Pinout
 

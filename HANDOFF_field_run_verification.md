@@ -1,5 +1,9 @@
 # Hand-off: field-run verification of tonight's logging/recording changes
 
+**Reassessed 2026-08-04.** Task 2 (speed-PID debug signal) is resolved — see
+its section below. Task 1 (`camera_recorder_node` video playback) is still
+open; no commit since this was written touches the codec/playback path.
+
 Written 2026-07-27, end of a long session that reworked RPi CSV logging
 architecture and added camera video recording. All of it is committed and
 pushed to `main` (commits `0f33e48` → `17f90f1`, see list below). Nothing is
@@ -64,7 +68,7 @@ closed.
 of the file) plus updating `docs/CSV_LOGGING.md`'s note about it. Don't
 need to touch anything else.
 
-## Task 2: Verify the new speed-PID debug signal makes sense
+## Task 2: Verify the new speed-PID debug signal makes sense — RESOLVED
 
 New topic `tpc_chassis_speed_debug`, published by `chassis_controller_node`
 (`ws_rpi/src/chassis_control/src/chassis_controller_node.cpp`), logged by
@@ -73,14 +77,16 @@ speed PID's measured wheel speed (ticks/sec), setpoint, error, and PID
 output — signals that were previously computed and discarded with no
 external trace.
 
-**Not yet verified against real encoder data.** This closed-loop speed
-controller (`speed_kp`/`speed_ki`/`speed_kd` in
-`ws_rpi/src/chassis_control/config/chassis_speed_control_params.yaml`) was
-already flagged as needing field tuning before tonight's session (see
-`max_ticks_per_sec` placeholder value). Now that `chassis_speed_pid.csv`
-exists, the next field run is a chance to actually plot `Target_TPS` vs
-`Measured_Avg_TPS` vs `Error` over time and tune those gains — that was the
-whole point of adding this signal.
+**Verified via field data, same week (commits `5c3a3fa`, `f46768c`,
+`dc858af`).** The debug signal was used exactly as intended: it drove
+auto-calibration of `max_ticks_per_sec` and stall detection (`5c3a3fa`), a
+self-enabling closed loop with a 20%-target/40%-cap headroom design
+(`f46768c`), and a threshold correction to match the measured operating
+band — this rover cruises at 15–16% duty and stalls on the ramp at 11%
+(`dc858af`). Gains (`speed_kp=0.3`, `speed_ki=0.5`, `speed_kd=0`) moved from
+placeholder values (`0.05`/`0.01`/`0`) to these field-derived ones. See
+[docs/CONTROL_LAW.md](docs/CONTROL_LAW.md) §2 for the current gains and
+auto-calibration parameters.
 
 ## Context for a fresh session (don't re-derive or re-propose)
 

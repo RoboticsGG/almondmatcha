@@ -26,25 +26,32 @@
 > `mission_executive_node`, `imu_processor_node`, `odometry_node`,
 > `safety_monitor_node`, `state_machine_node`) that predated the real
 > implementation and undercounted by one (missing `rover_monitoring_node`,
-> which has been a real running D5 participant all along — this table was
-> just never updated to include it). See [ARCHITECTURE.md](ARCHITECTURE.md),
+> which has been a real running D5 participant all along — this table had
+> not been updated to include it). See [ARCHITECTURE.md](ARCHITECTURE.md),
 > [DOMAINS.md](DOMAINS.md), [TOPICS.md](TOPICS.md) for the current node/topic
 > reference.
 
-| Node | Process | Host |
-|------|---------|------|
-| `chassis_controller` | STM32 | 192.168.1.2 |
-| `sensors_node` | STM32 | 192.168.1.6 |
-| `gnss_spresense_node` | ws_rpi | 192.168.1.1 |
-| `gnss_ublox_node` | ws_rpi | 192.168.1.1 |
-| `gnss_mission_monitor_node` | ws_rpi | 192.168.1.1 |
-| `chassis_controller_node` | ws_rpi | 192.168.1.1 |
-| `chassis_imu_node` | ws_rpi | 192.168.1.1 |
-| `chassis_sensors_node` | ws_rpi | 192.168.1.1 |
-| `mission_monitoring_node_rpi` | ws_rpi | 192.168.1.1 |
-| `rover_monitoring_node` | ws_rpi | 192.168.1.1 |
-| `mission_command_node` | ws_base | 192.168.1.10 |
-| `rover_kinematic_control` | ws_jetson | 192.168.1.5 |
+| Node (display name) | Actual DDS participant name | Process | Host |
+|------|------|---------|------|
+| chassis controller | `rover_node` | STM32 | 192.168.1.2 |
+| sensors node | `mros2_node_sensors_d6` | STM32 | 192.168.1.6 |
+| gnss_spresense_node | `gnss_spresense_node` | ws_rpi | 192.168.1.1 |
+| gnss_ublox_node | `gnss_ublox_node` | ws_rpi | 192.168.1.1 |
+| gnss_mission_monitor_node | `gnss_mission_monitor_node` | ws_rpi | 192.168.1.1 |
+| chassis_controller_node | `chassis_controller_node` | ws_rpi | 192.168.1.1 |
+| chassis_imu_node | `chassis_imu_node` | ws_rpi | 192.168.1.1 |
+| chassis_sensors_node | `chassis_sensors_node` | ws_rpi | 192.168.1.1 |
+| mission_monitoring_node_rpi | `mission_monitoring_node_rpi` | ws_rpi | 192.168.1.1 |
+| rover_monitoring_node | `rover_monitoring_node` | ws_rpi | 192.168.1.1 |
+| mission_command_node | `mission_command_node` | ws_base | 192.168.1.10 |
+| rover kinematic control (D5 side) | `rover_kinematic_control_d5` | ws_jetson | 192.168.1.5 |
+
+The STM32 boards' actual DDS participant names diverge from their
+directory/display names (`rover_node`, `mros2_node_sensors_d6`) — see
+`app.cpp` in each firmware workspace. `rover_kinematic_control_node.py` runs
+two `rclpy` contexts in one process: the D5-side participant is named
+`rover_kinematic_control_d5`; the D6-side one (not counted in this D5
+inventory) is `rover_kinematic_control`.
 
 Total: **12 application participants** in D5.
 

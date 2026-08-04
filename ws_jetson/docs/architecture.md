@@ -6,25 +6,28 @@
 Camera Input (D415 or Video)
     |
     v
-[Camera Stream Node] -> /tpc_rover_d415_rgb (RGB frames)
+[camera_stream_node] -> /tpc_rover_d415_rgb (RGB frames)
     |                -> /tpc_rover_d415_depth (Depth frames, optional)
     v
-[Lane Detection Node] -> /tpc_rover_nav_lane (Lane parameters)
-    |                 -> lane_pub_log.csv (Detection logging)
+[lane_detection_node] -> /tpc_rover_nav_lane (Lane parameters)
+    |                  -> runs/run_NNN_<stamp>/lane_detection.csv (Detection logging)
     v
-[Rover Kinematic Control Node] -> /tpc_rover_ctrl_cmd (Kinematic control cmd)
-                               -> logs/ws_jetson_kinematic_ctrl_TIMESTAMP.csv (Control logging)
+[rover_kinematic_control] -> /tpc_rover_ctrl_cmd (Kinematic control cmd)
+                          -> runs/run_NNN_<stamp>/kinematic_control.csv (Control logging)
     v
 Steering Actuator (Front Module)
 ```
+
+Both CSV files land under `<ws_jetson>/runs/run_NNN_<stamp>/` — one
+directory per launch, shared across nodes in that run.
 
 ## Node Communication
 
 | Node | Publishes | Subscribes | Rate |
 |------|-----------|-----------|------|
-| **camera_stream** | `/tpc_rover_d415_rgb`, `/tpc_rover_d415_depth` | - | 30 FPS |
-| **lane_detection** | `/tpc_rover_nav_lane` | `/tpc_rover_d415_rgb` | 25-30 FPS |
-| **rover_kinematic_control** | `/tpc_rover_ctrl_cmd` | `/tpc_rover_nav_lane` | 50 Hz |
+| **camera_stream_node** | `/tpc_rover_d415_rgb`, `/tpc_rover_d415_depth` | - | 30 FPS |
+| **lane_detection_node** | `/tpc_rover_nav_lane` | `/tpc_rover_d415_rgb` | 25-30 FPS |
+| **rover_kinematic_control** | `/tpc_rover_ctrl_cmd` | `/tpc_rover_nav_lane` | Event-driven — publishes once per received lane message, no fixed-rate timer |
 
 ## Message Types
 
@@ -40,8 +43,9 @@ Steering Actuator (Front Module)
   - `detected`: Detection flag (1.0 = valid, 0.0 = not detected)
 
 ### Steering Control
-- **Steering command**: `std_msgs/Float32MultiArray` with [steer_angle, detected]
+- **Control command**: `std_msgs/Float32MultiArray` with [steer_angle, speed_cmd, detected]
   - `steer_angle`: Steering command in degrees (+right, -left)
+  - `speed_cmd`: Chassis speed command (0–100% PWM duty cycle)
   - `detected`: Lane detection status flag
 
 ## Sign Conventions
@@ -80,4 +84,4 @@ If lane not detected: steer = steer_when_lost
 | Typical end-to-end latency | 100-150 ms |
 | EMA filter warmup time | ~1.5 seconds (default alpha=0.05) |
 | Memory per node | 150-200 MB |
-| Camera resolution | 960x540 |
+| Camera resolution | 1280x720 |

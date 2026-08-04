@@ -40,7 +40,7 @@ The system uses a multi-domain design to optimize performance:
 - Isolated from network, invisible to STM32 boards
 
 **Domain 5 (Control Interface - Network):**
-- Lightweight steering control (50 Hz)
+- Lightweight steering control, event-driven — publishes once per received lane-detection message, not on a fixed-rate timer
 - Subscribes to Domain 6 via localhost DDS
 - Publishes to rover control network
 
@@ -53,9 +53,11 @@ This architecture reduces STM32 discovery overhead and enables scalable vision/A
 |------|--------|----------|------|
 | `camera_stream_node` | 6 | D415 RGB/depth streaming | 30 FPS |
 | `lane_detection_node` | 6 | Lane parameter extraction | 25-30 FPS |
-| `rover_kinematic_control` | 5 | Kinematic control (steering + speed) | 50 Hz |
+| `rover_kinematic_control` | 6→5 | Kinematic control (steering + speed) | Event-driven, tracks lane detection rate |
+| `rover_local_monitoring_node` | 4 | Aggregated telemetry CSV logger | 5 Hz (paced by D4 relay) |
+| `camera_recorder_node` | 6 | Field-run video recording (debug) | 10 FPS default |
 
-The kinematic control node bridges domains: subscribes to Domain 6 vision data, publishes Domain 5 control commands.
+The kinematic control node bridges domains: subscribes to Domain 6 vision data, publishes Domain 5 control commands — it has no periodic timer of its own, only a 5 s heartbeat log.
 
 ## Building
 
@@ -147,18 +149,23 @@ Changes take effect on next launch (no rebuild required).
 
 **Launch organized session:**
 ```bash
-./launch_jetson_tmux.sh  # Creates 'jetson_vision' session with 3 panes
+./launch_jetson_tmux.sh  # Creates 'jetson_vision' session with 5 panes
 ```
+
+`launch_jetson_tmux.sh` starts each node directly with `ros2 run` (not via
+the `.launch.py` files below), one per pane:
 
 **Session layout:**
 ```
-┌─────────────────────┬─────────────────────┐
-│                     │ [1] Lane Detection  │
-│  [0] Camera Stream  │     (Domain 6)      │
-│     (Domain 6)      ├─────────────────────┤
-│                     │ [2] Steering Ctrl   │
-│                     │     (Domain 5)      │
-└─────────────────────┴─────────────────────┘
+┌─────────────────────┬─────────────────────────┐
+│                     │ [1] Lane_Detect_D6       │
+│  [0] Camera_D6      ├─────────────────────────┤
+│                     │ [2] Kinematic_Ctrl_D6+D5 │
+│                     ├─────────────────────────┤
+│                     │ [3] Local_Monitor_D4     │
+│                     ├─────────────────────────┤
+│                     │ [4] Camera_Recorder_D6   │
+└─────────────────────┴─────────────────────────┘
 ```
 
 **Tmux cheat sheet:**
@@ -203,7 +210,7 @@ ros2 topic hz /tpc_rover_nav_lane  # Should be ~30 Hz
 export ROS_DOMAIN_ID=5
 ros2 node list  # Should show: /rover_kinematic_control, /chassis_controller, etc.
 ros2 topic list  # Should NOT show camera topics
-ros2 topic hz /tpc_rover_ctrl_cmd  # Should be ~50 Hz
+ros2 topic hz /tpc_rover_ctrl_cmd  # Event-driven — matches the lane-detection publish rate, not a fixed 50 Hz
 ```
 
 **Verify cross-domain communication:**
@@ -256,7 +263,7 @@ ros2 daemon stop && ros2 daemon start
 |--------|--------|---------|
 | Camera FPS | 30 | 30 |
 | Lane detection FPS | 25 | 25-30 |
-| Steering update rate | 50 Hz | 50 Hz |
+| Steering update rate | Event-driven | Tracks lane detection FPS (25-30 Hz) |
 | End-to-end latency | <150 ms | 100-120 ms |
 | CPU usage | <60% | 40-50% |
 
@@ -268,7 +275,7 @@ ros2 daemon stop && ros2 daemon start
 - `tpc_rover_nav_lane` - Lane parameters [curvature, theta, b, detected] (30 FPS)
 
 **Domain 5 (network-wide):**
-- `tpc_rover_ctrl_cmd` - Kinematic control commands [steer_angle, speed_cmd, detected] (50 Hz)
+- `tpc_rover_ctrl_cmd` - Kinematic control commands [steer_angle, speed_cmd, detected] (event-driven, tracks lane detection rate)
 
 Steering commands are consumed by `chassis_controller_node` (ws_rpi) and converted to motor commands for STM32.
 

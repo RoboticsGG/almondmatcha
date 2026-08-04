@@ -242,7 +242,7 @@ See [CSV_LOGGING.md](CSV_LOGGING.md) for full schema and analysis guidance.
 
 **YAML Configuration (Jetson):**
 - `vision_nav_gui.yaml` / `vision_nav_headless.yaml`
-- `steering_control_params.yaml`
+- `rover_kinematic_control_params.yaml`
 
 **Hardcoded (STM32):**
 - Network: IP, netmask, gateway in `mros2-platform.h`

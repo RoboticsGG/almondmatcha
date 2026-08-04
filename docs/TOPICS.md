@@ -58,7 +58,7 @@ nodes (`mission_monitoring_node_rpi`, `rover_monitoring_node`) deliberately do n
 subscribe to this topic — they couldn't anyway, since DDS domain IDs are a hard
 discovery partition (a D5 subscriber can't see a D6-only publisher regardless of
 matching topic name/type). Raw lane data is logged only on the Jetson side, in
-`ws_jetson_lane_detection_*.csv` (see [CSV_LOGGING.md](CSV_LOGGING.md)).
+`<ws_jetson>/runs/run_NNN_<stamp>/lane_detection.csv` (see [CSV_LOGGING.md](CSV_LOGGING.md)).
 
 **Fields:**
 ```yaml
@@ -132,18 +132,18 @@ Motor and steering commands to chassis controller.
 
 **Message Definition:**
 ```
-uint8 fdr_msg           # Front direction: 0=straight, 1=left, 2=right
-float32 ro_ctrl_msg     # Steering angle in degrees (-45 to +45)
-uint8 bdr_msg           # Back direction: 0=forward, 1=backward, 2=stop
+uint8 fdr_msg           # Front direction: 1=right, 2=straight, 3=left
+float32 ro_ctrl_msg     # Steering angle magnitude in degrees (0-45); sign carried by fdr_msg
+uint8 bdr_msg           # Back direction: 0=stop, 1=forward, 2=backward
 uint8 spd_msg           # Motor speed 0-100%
 ```
 
 **Example:**
 ```yaml
-fdr_msg: 0
-ro_ctrl_msg: 5.0        # 5° right turn
-bdr_msg: 0              # Forward
-spd_msg: 50             # 50% speed
+fdr_msg: 1               # Right
+ro_ctrl_msg: 5.0         # 5 degree turn
+bdr_msg: 1                # Forward
+spd_msg: 50               # 50% speed
 ```
 
 ---
@@ -244,7 +244,7 @@ data: [measured_left_tps, measured_right_tps, measured_avg_tps, target_tps, erro
 
 **Type:** `msgs_ifaces/msg/SpresenseGNSS`  
 **Publisher:** `gnss_spresense_node`  
-**Subscribers:** `gnss_mission_monitor_node`, `node_ekf_fusion` (future)  
+**Subscribers:** `gnss_mission_monitor_node`, `mission_monitoring_node_rpi`, `rover_monitoring_node`, `node_ekf_fusion` (future)  
 **Rate:** 10 Hz  
 **QoS:** Reliable, Depth 10  
 **Domain:** 5  
@@ -253,22 +253,24 @@ GPS position data from Sony Spresense module.
 
 **Message Definition:**
 ```
+string date                # Date string (YYYY-MM-DD)
+string time                # Time string (HH:MM:SS)
+int32 num_satellites       # Number of satellites in view
+bool fix                   # GNSS fix status (true=fix acquired, false=no fix)
 float64 latitude           # Decimal degrees (WGS84)
 float64 longitude          # Decimal degrees (WGS84)
 float64 altitude           # Meters above mean sea level
-float32 accuracy           # Position accuracy (m)
-uint8 fix_quality          # 0=no fix, 1=GPS, 2=DGPS, 3=RTK
-uint8 num_satellites       # Number of satellites in view
 ```
 
 **Example:**
 ```yaml
+date: "2025-01-11"
+time: "14:30:22"
+num_satellites: 8
+fix: true
 latitude: 7.007286
 longitude: 100.502030
 altitude: 15.5
-accuracy: 2.5              # ±2.5m accuracy
-fix_quality: 1             # Standard GPS fix
-num_satellites: 8
 ```
 
 ---
@@ -286,27 +288,27 @@ RTK GNSS position data from u-blox SimpleRTK2b module with centimeter-level accu
 
 **Message Definition:**
 ```
-string date                # Date string (DDMMYY)
-string time                # Time string (HHMMSS.SSS)
+string date                # Date string (YYYYMMDD, converted from NMEA DDMMYY)
+string time                # Time string (HHMMSS)
 float64 latitude           # Decimal degrees (WGS84)
 float64 longitude          # Decimal degrees (WGS84)
 float64 altitude           # Meters above mean sea level
-uint8 satellites_tracked   # Number of satellites tracked
-uint8 fix_quality          # 0=invalid, 1=GPS, 2=DGPS, 4=RTK fixed, 5=RTK float
+int32 satellites_tracked   # Number of satellites tracked
+string fix_quality         # "No Fix" / "Auto" / "DGPS" / "RTK Fixed" / "Float" / "Unknown"
 float32 snr                # Signal-to-noise ratio (dB)
-float32 speed              # Ground speed (m/s)
+float64 speed              # Ground speed (m/s)
 float32 centimeter_error   # Estimated position error (cm)
 ```
 
 **Example:**
 ```yaml
-date: "110125"             # January 11, 2025
-time: "143022.500"         # 14:30:22.500 UTC
+date: "20250111"           # January 11, 2025
+time: "143022"             # 14:30:22 UTC
 latitude: 7.007286
 longitude: 100.502030
 altitude: 15.523           # Altitude with cm precision
 satellites_tracked: 12
-fix_quality: 4             # RTK fixed solution
+fix_quality: "RTK Fixed"   # RTK fixed solution
 snr: 42.5                  # Strong signal
 speed: 0.05                # 5 cm/s (~stationary)
 centimeter_error: 2.3      # ±2.3cm accuracy
@@ -319,8 +321,8 @@ centimeter_error: 2.3      # ±2.3cm accuracy
 **Type:** `std_msgs/msg/Bool`  
 **Publisher:** `gnss_mission_monitor_node`  
 **Subscribers:** `chassis_controller_node`  
-**Rate:** 10 Hz  
-**QoS:** Reliable, Depth 10  
+**Rate:** ~0.5 Hz (published on the 2 s mission-execution loop tick, event-driven otherwise)  
+**QoS:** Reliable, Transient Local, Depth 10  
 **Domain:** 5  
 
 Mission status flag (used for cruise control logic).
@@ -337,9 +339,9 @@ data: false   # Mission inactive or completed
 
 **Type:** `std_msgs/msg/Float64`  
 **Publisher:** `gnss_mission_monitor_node`  
-**Subscribers:** Base station monitoring  
-**Rate:** 10 Hz  
-**QoS:** Reliable, Depth 10  
+**Subscribers:** `mission_monitoring_node_rpi` (relayed to the base station via `tpc_telemetry_relay`)  
+**Rate:** ~0.5 Hz (published on the 2 s mission-execution loop tick)  
+**QoS:** Reliable, Transient Local, Depth 10  
 **Domain:** 5  
 
 Remaining distance to waypoint in kilometers.
@@ -355,10 +357,10 @@ data: 0.0      # Arrived at waypoint
 ### `tpc_rover_dest_coordinate`
 
 **Type:** `std_msgs/msg/Float64MultiArray`  
-**Publisher:** Service response from `gnss_mission_monitor_node`  
-**Subscribers:** Internal mission monitor use  
-**Rate:** Event-driven  
-**QoS:** Reliable, Depth 10  
+**Publisher:** `gnss_mission_monitor_node` (republished on every incoming `tpc_gnss_spresense` message, not just when a new goal is accepted)  
+**Subscribers:** `mission_monitoring_node_rpi` (relayed to the base station via `tpc_telemetry_relay`)  
+**Rate:** ~10 Hz (tied to `tpc_gnss_spresense`)  
+**QoS:** Reliable, Transient Local, Depth 10  
 **Domain:** 5  
 
 Destination coordinates for navigation mission.
@@ -399,7 +401,7 @@ float64 dis_remain  # Distance remaining (km)
 
 **Result:**
 ```yaml
-uint8 result_fser   # Result code
+string result_fser  # Result code
 ```
 
 ### `/srv_spd_limit` (Service)
@@ -459,7 +461,7 @@ Aggregated rover state published from RPi to Domain 4. The RPi node subscribes t
 - Spresense GNSS: `spresense_valid`, `spresense_latitude`, `spresense_longitude`, `spresense_altitude`
 - Chassis: `encoder_left/right`, `voltage`, `current`, `power_watts`
 - IMU: `accel_x/y/z`, `gyro_x/y/z`
-- Commands: `chassis_cmd_left/right_speed/direction`
+- Commands: `chassis_cmd_left_speed`, `chassis_cmd_right_speed`, `chassis_cmd_steer_dir`, `chassis_cmd_drive_dir`
 - Navigation: `steering_command`; `lane_theta`/`lane_b`/`lane_detected` are always `0`/`false` — raw lane data is Domain-6-only and never reaches this node (see `tpc_rover_nav_lane` above), fields stay in the schema for other consumers but are never populated here
 - Destination: `destination_latitude`, `destination_longitude`
 

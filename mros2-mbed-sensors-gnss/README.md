@@ -24,7 +24,7 @@ sudo ./build.bash all NUCLEO_F767ZI sensors_node
 |------|------|----------|
 | Encoder Reader | 100 ms | Quadrature encoder polling |
 | Power Monitor | 200 ms | INA226 voltage/current reading |
-| GNSS Reader | 100 ms | SimpleRTK2b NMEA sentence parsing |
+| GNSS Reader | 500 ms (2 Hz) | SimpleRTK2b NMEA sentence parsing |
 | Main Loop | 250 ms | Aggregate and publish all sensor data |
 
 ## Building
@@ -206,7 +206,7 @@ Configurable in `workspace/sensors_node/app.cpp`:
 ```cpp
 const uint32_t ENCODER_SAMPLE_PERIOD_MS = 100;    // Encoder: 10 Hz
 const uint32_t POWER_SAMPLE_PERIOD_MS = 200;      // Power: 5 Hz
-const uint32_t GNSS_SAMPLE_PERIOD_MS = 100;       // GNSS: 10 Hz
+const uint32_t GNSS_SAMPLE_PERIOD_MS = 500;       // GNSS: 2 Hz
 const uint32_t MAIN_LOOP_PERIOD_MS = 250;         // Publish: 4 Hz
 const uint32_t GNSS_PRINT_INTERVAL = 4;           // Print GNSS every 1s
 ```

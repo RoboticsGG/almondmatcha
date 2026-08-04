@@ -17,7 +17,7 @@ wrapper: parameters, frame-to-frame state, publishing, CSV logging).
 
 ```mermaid
 flowchart TD
-    CAM["camera frame · BGR 960×540"] --> CROP["1 · crop to ROI bounding box"]
+    CAM["camera frame · BGR 1280×720"] --> CROP["1 · crop to ROI bounding box"]
     CROP --> PRE["2 · preprocess → binary mask"]
     PRE --> WARP["3 · perspective transform → metric bird's-eye"]
     WARP --> WIN["4 · bounded sliding-window search"]
@@ -46,7 +46,7 @@ first thing to re-check if the rover is rebuilt.
 | Lateral position | front-centre, on the rover centreline |
 | Longitudinal position | 7 cm **behind** the front axle |
 | Wheelbase | 0.50 m |
-| Capture resolution | 960 × 540 (16:9, so the full sensor FOV is used) |
+| Capture resolution | 1280 × 720 (16:9, so the full sensor FOV is used) |
 
 A pixel `(u, v)` maps to a ground point `(X, Z)` — `X` lateral, `Z` forward
 from the camera — by intersecting its ray with the ground plane:
@@ -63,18 +63,18 @@ t = \frac{h}{d_y}
 $$
 
 giving `X = t·(u−c_x)/f_x` and `Z = t·d_z`, with `h = 0.50 m` and
-`φ = 20°`. The horizon (where `d_y = 0`) sits at row **17 of 540** — nearly
+`φ = 20°`. The horizon (where `d_y = 0`) sits at row **23 of 720** — nearly
 the entire frame is ground.
 
 What the camera actually covers:
 
 | | row | distance ahead | ground width visible |
 |---|---|---|---|
-| bottom of frame | 540 | 0.57 m | 0.98 m |
+| bottom of frame | 720 | 0.57 m | 0.98 m |
 | **ROI near edge** | 377 | **1.30 m** | 1.43 m |
 | **ROI far edge** | 188 | **3.00 m** | 3.85 m |
 
-> **Intrinsics caveat.** `f_x ≈ 693`, `f_y ≈ 694` at 960×540 are derived from
+> **Intrinsics caveat.** `f_x ≈ 924`, `f_y ≈ 925` at 1280×720 are derived from
 > the datasheet FOV (69.4° × 42.5°), **not** read from the device.
 > `camera_stream_node` opens the colour stream but never calls
 > `get_intrinsics()`. If the real values differ by more than a few percent,
@@ -262,6 +262,15 @@ move at most 45 px (22 cm) per frame, i.e. 6.7 m/s of lateral tracking at
 > parameters in the pipeline with a hard correctness ceiling rather than a
 > tuning range.
 
+**`max_abs_b_px` (absolute plausibility bound, 100 px).** The per-frame
+rate limit above stops jumps but not a steady walk: a field log showed `b`
+creeping from -46 to -230 px over 19 frames while `detected` stayed true
+throughout, ending 1.9 line spacings off and outside the ROI. `lane_detection_node`
+now rejects any frame where `|b| > max_abs_b_px` — forcing `detected = false`
+and letting the seed reset re-acquire from the canvas centre — since 100 px
+(0.50 m) is also the downstream `rover_kinematic_control` clamp, past which
+the value cannot reach the controller unsaturated regardless of cause.
+
 ---
 
 ## 5. Lane fit
@@ -342,6 +351,7 @@ kept in sync.
 | `search_band_px` | 45.0 | **Hard ceiling 61** — half the line spacing |
 | `min_window_pixels` | 50 | Recenter threshold |
 | `min_lane_pixels` | 50 | Validity threshold |
+| `max_abs_b_px` | 100.0 | Absolute plausibility bound on fitted `b`; past it the frame is rejected (`detected` forced false) and the seed resets |
 
 ---
 

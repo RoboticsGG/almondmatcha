@@ -20,13 +20,16 @@ Handles mission planning and rover command transmission.
 - Load mission parameters (destination, speed limit)
 - Send destination goals to rover via ROS2 action
 - Send speed limit commands to rover via ROS2 service
-- Monitor goal progress through feedback
+- Retry sending the goal on a timer (`mission_retry_sec`) until it is accepted
+- Monitor goal progress through feedback; cancel if feedback stalls past `action_watchdog_timeout_sec`
 - Handle mission cancellation on shutdown
 
 **Parameters:**
 - `rover_spd`: Speed limit as percentage (0-100), default: 50
 - `des_lat`: Target latitude coordinate, default: 0.0
 - `des_long`: Target longitude coordinate, default: 0.0
+- `action_watchdog_timeout_sec`: cancel the goal if no feedback arrives for this long, default: 10.0 (production `params.yaml` sets 20.0)
+- `mission_retry_sec`: how often to retry sending the goal until accepted, default: 5.0
 
 **Interfaces:**
 - Action Client: `/des_data` (DesData action) - Navigation goal
@@ -56,22 +59,17 @@ The package uses custom message types defined in `msgs_ifaces`:
 
 - **SpdLimit** (service): Speed limit command
   - Request: `rover_spd` - Speed 0-100%
-  - Response: (acknowledgment)
+  - Response: `spd_result` - Result string
 
-- **SpresenseGNSS**: GNSS position from Sony Spresense board
-  - `date`: Date string (YYYY-MM-DD)
-  - `time`: Time string (HH:MM:SS)
-  - `num_satellites`: Number of satellites in view
-  - `fix`: GNSS fix status
-  - `latitude`: Current latitude (decimal degrees)
-  - `longitude`: Current longitude (decimal degrees)
-  - `altitude`: Altitude above mean sea level (meters)
-
-- **ChassisCtrl**: Rover control commands
-  - `fdr_msg`: Front direction (1=right, 2=straight, 3=left)
-  - `ro_ctrl_msg`: Steering control value (0.0 to 1.0)
-  - `spd_msg`: Speed command (0-255)
-  - `bdr_msg`: Back direction (0=stop, 1=forward, 2=backward)
+- **TelemetryRelay** (topic, `/tpc_telemetry_relay`, Domain 4): the only
+  message `mission_monitoring_node_pc` subscribes to. This package does not
+  touch the raw D5 types (`SpresenseGNSS`, `ChassisCtrl`, etc.) directly —
+  those are aggregated into `TelemetryRelay` by `mission_monitoring_node_rpi`
+  on the RPi. Key fields: `mission_active`, `distance_remaining_km`,
+  `ublox_*`/`spresense_*` GNSS fields, `chassis_cmd_*`/`chassis_sensors_*`/
+  `chassis_imu_*` fields, `lane_*` fields (always false/0 — raw lane data
+  stays Domain-6-only by design), `destination_*` fields. See
+  `common_ifaces/msgs_ifaces/msg/TelemetryRelay.msg` for the complete list.
 
 ## Building
 
@@ -123,45 +121,53 @@ ros2 run mission_control mission_monitoring_node_pc
 ros2 launch mission_control mission_control.launch.py
 ```
 
-### With ROS2 Parameters File
+### With Individual Launch Arguments
 ```bash
 ros2 launch mission_control mission_control.launch.py \
-  params_file:=src/mission_control/config/mission_params.yaml
+  rover_spd:=75 des_lat:=35.6892 des_long:=139.6917
 ```
+
+The launch file always loads `config/params.yaml` as the base config; these
+arguments override individual values on top of it (see
+`launch/mission_control.launch.py` — there is no `params_file:=` argument).
 
 ## Parameters Configuration
 
-Create `config/mission_params.yaml`:
+Edit `config/params.yaml`:
 
 ```yaml
 mission_command_node:
   ros__parameters:
-    rover_spd: 75
-    des_lat: 35.6892
-    des_long: 139.6917
-
-mission_monitoring_node_pc:
-  ros__parameters: {}
+    rover_spd: 15
+    des_lat: 8.007286
+    des_long: 101.90203
+    action_watchdog_timeout_sec: 20.0
 ```
 
 ## Status Output
 
-The monitoring node displays comprehensive status every 1 second:
+The monitoring node prints a full telemetry dashboard on every
+`tpc_telemetry_relay` message — event-driven, paced by the RPi relay's 5 Hz
+publish rate, not a local timer:
 
 ```
-[INFO] [mission_monitoring_node_pc]: ============ MISSION STATUS ============
-[INFO] [mission_monitoring_node_pc]: Status: ACTIVE
-[INFO] [mission_monitoring_node_pc]: 
-[INFO] [mission_monitoring_node_pc]: --- Navigation ---
-[INFO] [mission_monitoring_node_pc]: Target: Lat: 35.689200, Long: 139.691700
-[INFO] [mission_monitoring_node_pc]: Current: Lat: 35.689120, Long: 139.691810
-[INFO] [mission_monitoring_node_pc]: Distance Remaining: 0.12 km
-[INFO] [mission_monitoring_node_pc]: 
-[INFO] [mission_monitoring_node_pc]: --- Rover Control ---
-[INFO] [mission_monitoring_node_pc]: Steering: Maintain Course
-[INFO] [mission_monitoring_node_pc]: Movement: Forward at 75%
-[INFO] [mission_monitoring_node_pc]: ========================================
+[INFO] [mission_monitoring_node_pc]: ╔══════════════════════════════════════════════════════════════╗
+[INFO] [mission_monitoring_node_pc]: ║              ROVER TELEMETRY DASHBOARD                       ║
+[INFO] [mission_monitoring_node_pc]: ╚══════════════════════════════════════════════════════════════╝
+[INFO] [mission_monitoring_node_pc]: ┌─ Mission Status ────────────────────────────────────────────┐
+[INFO] [mission_monitoring_node_pc]: │ Active: YES
+[INFO] [mission_monitoring_node_pc]: │ Distance Remaining: 0.120 km
+[INFO] [mission_monitoring_node_pc]: └─────────────────────────────────────────────────────────────┘
+[INFO] [mission_monitoring_node_pc]: ┌─ GNSS Position ─────────────────────────────────────────────┐
+[INFO] [mission_monitoring_node_pc]: │ RTK (uBlox F9P):
+[INFO] [mission_monitoring_node_pc]: │   Position: 35.68912000°, 139.69181000°
+[INFO] [mission_monitoring_node_pc]: │   Fix Quality: RTK Fixed
+[INFO] [mission_monitoring_node_pc]: └─────────────────────────────────────────────────────────────┘
+[INFO] [mission_monitoring_node_pc]: Data Status: RTK=✓ | GPS=✓ | Sensors=✓ | IMU=✓ | Steering=✓ | Lane=✗
 ```
+
+See `telemetry_callback()` in `mission_monitoring_node_pc.cpp` for the full
+set of sections (Chassis Status, Vision & Navigation).
 
 ## Code Structure
 
@@ -169,26 +175,29 @@ The monitoring node displays comprehensive status every 1 second:
 - **MissionCommandNode**: Main class
   - `init_parameters()`: Load mission parameters
   - `init_clients()`: Initialize ROS2 clients
-  - `send_commands()`: Orchestrate command sequence
+  - `send_commands()`: Orchestrate command sequence (first attempt)
   - `send_speed_limit()`: Send speed command via service
   - `send_destination_goal()`: Send navigation goal via action
+  - `mission_retry_tick()`: Retry `send_commands()` on a timer until the goal is accepted
+  - `watchdog_check()`: Cancel the goal if feedback stalls past `action_watchdog_timeout_sec`
   - `cancel_mission()`: Cancel active mission on shutdown
 
-### node_monitoring.cpp (mission_monitoring_node_pc)
+### mission_monitoring_node_pc.cpp
 - **MissionMonitoringNodePc**: Main class
-  - `init_subscriptions()`: Subscribe to `/tpc_telemetry_relay` on Domain 4
-  - `init_timer()`: Setup status update timer
-  - `on_telemetry_relay()`: Unpack and cache TelemetryRelay fields
-  - `publish_status_update()`: Print periodic status
+  - Constructor subscribes to `/tpc_telemetry_relay` on Domain 4
+  - `telemetry_callback()`: single callback — unpacks the message and prints
+    the full status dashboard immediately, once per relay message (no
+    separate timer or cached-state display step)
 
 ## Data Flow
 
 ```
 Command Node:
   Load Parameters -> Send Speed Limit -> Send Destination Goal -> Monitor Feedback
+  -> (retry on mission_retry_sec until accepted; cancel on watchdog timeout)
 
 Monitoring Node (D4):
-  Subscribe /tpc_telemetry_relay -> Update Internal State -> Display Status (1 Hz)
+  Subscribe /tpc_telemetry_relay -> Display Status (event-driven, per message, ~5 Hz)
 
 Rover Communication:
   Command Node -> [Action/Service] -> Rover
@@ -231,8 +240,8 @@ ros2 action send_goal /des_data action_ifaces/action/DesData "{des_lat: 35.6892,
 ## Performance
 
 - Command transmission: Non-blocking async
-- Monitoring update rate: 1 Hz (configurable via timer)
-- Feedback rate: Rover-dependent (typically 10 Hz)
+- Monitoring update rate: event-driven, matches the RPi relay's 5 Hz publish rate — no local timer
+- Action feedback rate: ~0.5 Hz (every 2 s, from `gnss_mission_monitor_node`) — `action_watchdog_timeout_sec` should stay at least 3x this period
 
 ## Dependencies
 
@@ -259,7 +268,7 @@ mission_control/
 │   ├── mission_command_node.cpp     # D5 command node
 │   └── mission_monitoring_node_pc.cpp # D4 telemetry display node
 ├── config/
-│   └── mission_params.yaml  # Parameter configuration
+│   └── params.yaml          # Parameter configuration
 └── launch/
     └── mission_control.launch.py  # Launch file
 ```
@@ -274,8 +283,9 @@ mission_control/
 
 ## License
 
-See LICENSE file in workspace root.
+Apache 2.0 (per the root [README.md](../../../README.md) — no separate LICENSE file is currently checked into the repository).
 
 ## Support
 
-For issues or questions, refer to workspace documentation in WORK_SESSION files.
+For issues or questions, see [ws_base/docs/](../../docs/) and the root
+[README.md](../../../README.md) documentation index.

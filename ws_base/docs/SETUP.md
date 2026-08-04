@@ -165,16 +165,22 @@ With the rover powered on and connected:
 
 ```bash
 cd ~/almondmatcha
-bash ws_base/tools/check_connectivity.sh
+bash ws_base/preflight_check.sh
 ```
 
-Expected output: all 5 checks pass (ping, SPDP multicast, multicast group, topic
-discovery, data flow).  If STM32 topics fail, restart the daemon and retry:
+Runs entirely locally (no SSH to RPi/Jetson — `launch_field.sh` verifies
+those separately when it connects). Each check prints PASS/FAIL and, on
+FAIL, the exact command that fixes it. If STM32 topics fail, restart the
+daemon and retry:
 
 ```bash
 ros2 daemon stop && ros2 daemon start
-bash ws_base/tools/check_connectivity.sh
+bash ws_base/preflight_check.sh
 ```
+
+`launch_field.sh` runs this automatically before launching and asks whether
+to continue on a FAIL rather than refusing outright (`--force` skips the
+prompt).
 
 ---
 
@@ -187,7 +193,7 @@ bash ws_base/tools/check_connectivity.sh
 [ ] ros2 daemon restarted after setting env var
 [ ] SSH to curry@192.168.1.1 works without password
 [ ] SSH to yupi@192.168.1.5 works without password
-[ ] check_connectivity.sh passes all 5 steps
+[ ] preflight_check.sh passes with no FAILs
 ```
 
 ---
@@ -268,7 +274,7 @@ ls ~/almondmatcha/ws_base/install/mission_control/lib/mission_control/
 
 # Should show:
 # - mission_command_node
-# - mission_monitoring_node
+# - mission_monitoring_node_pc
 ```
 
 ### No topics visible
@@ -347,8 +353,8 @@ tmux a -t base_station       # Tmux
 ### High CPU usage
 ```bash
 # Check node stats
-ros2 topic hz tpc_chassis_cmd    # Should be ~10 Hz
-ros2 node info /mission_monitoring_node
+ros2 topic hz tpc_chassis_cmd    # ~50 Hz (steering-paced)
+ros2 node info /mission_monitoring_node_pc
 ```
 
 ### High network usage
@@ -375,9 +381,11 @@ Edit `src/mission_control/config/params.yaml`:
 ```yaml
 mission_command_node:
   ros__parameters:
-    rover_spd: 15      # Speed (0-100%)
-    des_lat: 7.007286  # Target latitude
-    des_long: 100.50203 # Target longitude
+    rover_spd: 15                        # Speed (0-100%)
+    des_lat: 8.007286                    # Target latitude
+    des_long: 101.90203                  # Target longitude
+    action_watchdog_timeout_sec: 20.0    # Cancel goal if no feedback this long
+    mission_retry_sec: 5.0               # Retry interval until the mission is established
 ```
 
 Rebuild:

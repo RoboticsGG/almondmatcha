@@ -75,7 +75,8 @@ node.create_publisher<msgs_ifaces::msg::ChassisSensors>("tpc_chassis_sensors", 1
 // → best_effort + volatile
 ```
 
-**Subscribers**: ws_rpi `chassis_sensors_node`, `chassis_controller_node` (closed-loop speed PID)
+**Subscribers**: ws_rpi `chassis_sensors_node`, `chassis_controller_node` (closed-loop speed PID),
+`rover_monitoring_node` (full CSV logger), `mission_monitoring_node_rpi` (D4 relay)
 ```cpp
 rclcpp::QoS qos(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_sensor_data));
 qos.best_effort();  // Match STM32
@@ -98,15 +99,24 @@ qos.reliable().transient_local();
 
 **Subscribers**: 
 - ws_rpi `gnss_mission_monitor_node`
+- ws_rpi `rover_monitoring_node` (full CSV logger)
 - ws_rpi `mission_monitoring_node_rpi` (aggregates for D4 relay)
 ```cpp
+// gnss_mission_monitor_node, rover_monitoring_node:
 rclcpp::QoS qos(10);
 qos.reliable().transient_local();
+
+// mission_monitoring_node_rpi (source declares reliable() only — no
+// .transient_local() call, so its actual durability is volatile; still
+// compatible, since a volatile subscriber can receive from a
+// transient_local publisher):
+rclcpp::QoS qos(10);
+qos.reliable();
 ```
 
 **Rationale**:
 - Reliable delivery critical for navigation waypoints
-- Transient_local provides last-known position to late joiners
+- Transient_local (where declared) provides last-known position to late joiners
 - Lower frequency (1 Hz) suits reliable transport
 
 ---
@@ -140,11 +150,12 @@ qos.reliable().transient_local();
 
 **Subscribers**: 
 - ws_rpi `chassis_controller_node`
-- ws_rpi `mission_monitoring_node_rpi` (aggregates for D4 relay)
+- ws_rpi `rover_monitoring_node` (full CSV logger)
+- ws_rpi `mission_monitoring_node_rpi` (aggregates for D4 relay; subscriber-side durability volatile, see note above)
 
 **Rationale**:
 - Critical state flag requires reliable delivery
-- Transient_local ensures late joiners get current mission status
+- Transient_local (publisher side) ensures late joiners get current mission status
 
 ---
 
@@ -155,13 +166,13 @@ rclcpp::QoS qos(10);
 qos.reliable().transient_local();
 ```
 
-**Subscriber**: ws_rpi `mission_monitoring_node_rpi` (aggregated into D4 relay)
+**Subscribers**: ws_rpi `rover_monitoring_node` (full CSV logger), `mission_monitoring_node_rpi` (aggregated into D4 relay)
 
 **Rationale**: Reliable navigation metric, included in telemetry relay at 5 Hz
 
 ---
 
-### 3. Base Station Command Topics (Domain 5)
+### 3. Base Station Command Interfaces + RPi-Internal Waypoint Topic (Domain 5)
 
 #### `/des_data` - Navigation Goal (Action)
 **Action Client**: ws_base `mission_command_node`
@@ -180,21 +191,23 @@ qos.reliable().transient_local();
 **Rationale**: Critical command requires guaranteed delivery
 
 #### `tpc_rover_dest_coordinate` - Target Waypoint
-**Publisher**: ws_base `mission_command_node` (Domain 5)
+
+Not a base-station topic — published and consumed entirely on the RPi.
+`mission_command_node` (ws_base) never touches it directly; it only sends
+the destination via the `/des_data` action, which `gnss_mission_monitor_node`
+then republishes as this topic.
+
+**Publisher**: ws_rpi `gnss_mission_monitor_node` (Domain 5)
 ```cpp
 rclcpp::QoS qos(10);
 qos.reliable().transient_local();
 ```
 
-**Subscriber**: ws_rpi `gnss_mission_monitor_node` (Domain 5)
-```cpp
-rclcpp::QoS qos(10);
-qos.reliable().transient_local();
-```
+**Subscribers**: ws_rpi `rover_monitoring_node`, `mission_monitoring_node_rpi` (Domain 5)
 
 **Rationale**:
 - Mission-critical commands require guaranteed delivery
-- Transient_local preserves target even if connection temporarily interrupted
+- Transient_local (publisher side) preserves target even if connection temporarily interrupted
 
 ---
 
@@ -202,11 +215,11 @@ qos.reliable().transient_local();
 
 | Publisher QoS          | Subscriber QoS         | Compatible? | Notes |
 |------------------------|------------------------|-------------|-------|
-| best_effort + volatile | best_effort + volatile | ✅ Yes  | Perfect match |
-| best_effort + volatile | reliable + volatile    | ❌ No | Subscriber too strict |
-| reliable + transient   | reliable + transient   | ✅ Yes | Perfect match |
-| reliable + transient   | best_effort + volatile | ❌ No | Subscriber too lenient |
-| best_effort + volatile | best_effort + transient| ✅ Yes | Subscriber more flexible |
+| best_effort + volatile | best_effort + volatile | Yes | Perfect match |
+| best_effort + volatile | reliable + volatile    | No  | Subscriber too strict |
+| reliable + transient   | reliable + transient   | Yes | Perfect match |
+| reliable + transient   | best_effort + volatile | No  | Subscriber too lenient |
+| best_effort + volatile | best_effort + transient| Yes | Subscriber more flexible |
 
 ## Common QoS Errors and Solutions
 
@@ -298,29 +311,30 @@ ros2 run chassis_sensors chassis_imu_node 2>&1 | grep -i "incompatible"
 # Note: node_name in executable is chassis_imu_node (correct suffix form)
 ```
 
+### Test QoS Compatibility
+```bash
+# Terminal 1: Publisher with sensor QoS
+ros2 topic pub /test_topic std_msgs/msg/String "data: test" \
+  --qos-durability transient_local --qos-reliability best_effort
+
+# Terminal 2: Subscriber with matching QoS
+ros2 topic echo /test_topic \
+  --qos-durability transient_local --qos-reliability best_effort
+```
+
 ---
-
-## References
-
-- [ROS2 QoS Documentation](https://docs.ros.org/en/humble/Concepts/About-Quality-of-Service-Settings.html)
-- [mros2 QoS Defaults](https://github.com/mROS-base/mros2)
-- [DDS QoS Policies](https://www.omg.org/spec/DDS/1.4/PDF)
-
-## Author
-Almondmatcha Development Team  
-Last Updated: November 7, 2025
 
 ## Topic-Specific QoS Matrix
 
 | Topic | Publisher | Publisher QoS | Subscriber | Subscriber QoS | Notes |
 |-------|-----------|---------------|------------|----------------|-------|
-| `tpc_chassis_imu` | STM32 chassis_controller | sensor_data + best_effort + volatile | chassis_imu_node, mission_monitoring_node_rpi | Same | High frequency IMU |
-| `tpc_chassis_sensors` | STM32 sensors_node | sensor_data + best_effort + volatile | chassis_sensors_node, chassis_controller_node, mission_monitoring_node_rpi | Same | Encoder/power data; chassis_controller_node uses it for closed-loop speed PID |
-| `tpc_gnss_spresense` | gnss_spresense_node | reliable + transient_local | gnss_mission_monitor_node, mission_monitoring_node_rpi | Same | GNSS position |
-| `tpc_chassis_cmd` | chassis_controller_node | reliable + transient_local | STM32 chassis_controller | best_effort (compatible) | Motor commands |
-| `tpc_gnss_mission_active` | gnss_mission_monitor_node | reliable + transient_local | chassis_controller_node, mission_monitoring_node_rpi | Same | Mission status |
-| `tpc_gnss_mission_remain_dist` | gnss_mission_monitor_node | reliable + transient_local | mission_monitoring_node_rpi | Same | Distance remaining |
-| `tpc_rover_dest_coordinate` | mission_command_node (Base, D5) | reliable + transient_local | gnss_mission_monitor_node | Same | Waypoint coords |
+| `tpc_chassis_imu` | STM32 chassis_controller | sensor_data + best_effort + volatile | chassis_imu_node, rover_monitoring_node, mission_monitoring_node_rpi | Same | High frequency IMU |
+| `tpc_chassis_sensors` | STM32 sensors_node | sensor_data + best_effort + volatile | chassis_sensors_node, chassis_controller_node, rover_monitoring_node, mission_monitoring_node_rpi | Same | Encoder/power data; chassis_controller_node uses it for closed-loop speed PID |
+| `tpc_gnss_spresense` | gnss_spresense_node | reliable + transient_local | gnss_mission_monitor_node, rover_monitoring_node | Same (transient_local) | mission_monitoring_node_rpi also subscribes but declares volatile (still compatible) |
+| `tpc_chassis_cmd` | chassis_controller_node | reliable + transient_local | STM32 chassis_controller, rover_monitoring_node, mission_monitoring_node_rpi | best_effort on STM32 (compatible) | Motor commands |
+| `tpc_gnss_mission_active` | gnss_mission_monitor_node | reliable + transient_local | chassis_controller_node, rover_monitoring_node | Same (transient_local) | mission_monitoring_node_rpi also subscribes but declares volatile (still compatible) |
+| `tpc_gnss_mission_remain_dist` | gnss_mission_monitor_node | reliable + transient_local | rover_monitoring_node, mission_monitoring_node_rpi | mission_monitoring_node_rpi declares volatile (still compatible) | Distance remaining |
+| `tpc_rover_dest_coordinate` | gnss_mission_monitor_node (RPi, D5) — not ws_base | reliable + transient_local | rover_monitoring_node, mission_monitoring_node_rpi | mission_monitoring_node_rpi declares volatile (still compatible) | Waypoint coords, RPi-internal |
 | `tpc_rover_ctrl_cmd` | rover_kinematic_control (Jetson, D5) | best_effort + volatile | chassis_controller_node | Same | Kinematic control cmd |
 | `/des_data` (action) | mission_command_node (Base, D5) | reliable (default) | gnss_mission_monitor_node | reliable | Navigation goals |
 | `/srv_spd_limit` (service) | mission_command_node (Base, D5) | reliable (default) | chassis_controller_node | reliable | Speed limits |
@@ -328,11 +342,11 @@ Last Updated: November 7, 2025
 ## Domain-Specific Considerations
 
 ### Domain 5 (Control Network)
-- **ws_rpi**: 7 nodes (gnss, chassis, mission_monitoring_node_rpi D5 sub context)
+- **ws_rpi**: 8 nodes (gnss ×3, chassis ×3, rover_monitoring_node, mission_monitoring_node_rpi D5 sub context)
 - **ws_jetson**: rover_kinematic_control (dual-context D6 sub / D5 pub)
 - **ws_base**: mission_command_node only (D5 actions/services)
 - **STM32 mbed boards**: chassis_controller + sensors_node (publish/subscribe D5)
-- Total D5 participants: **11** — QoS must match between mbed publishers and ROS2 subscribers
+- Total D5 participants: **12** — QoS must match between mbed publishers and ROS2 subscribers
 
 **Domain 4** (not D5): mission_monitoring_node_rpi pub context, mission_monitoring_node_pc (Base), rover_local_monitoring_node (Jetson) — invisible to STM32
 
@@ -391,51 +405,18 @@ pub_gnss_spresense_ = this->create_publisher<msgs_ifaces::msg::SpresenseGNSS>(
 );
 ```
 
-### Example 4: Base Station Subscriber (Domain 5)
+### Example 4: RPi Relay Subscriber (Domain 5, relays to Domain 4)
 ```cpp
 // In mission_monitoring_node_rpi.cpp (ws_rpi, Domain 5 context)
+// Note: this node declares reliable() only, no .transient_local() call —
+// its actual subscriber durability is volatile.
 
-// Subscribe to rover topics on Domain 5
 rclcpp::QoS qos_reliable(10);
-qos_reliable.reliable().transient_local();
+qos_reliable.reliable();
 
 sub_gnss_ = this->create_subscription<msgs_ifaces::msg::SpresenseGNSS>(
     "tpc_gnss_spresense", qos_reliable, callback
 );
-```
-
-## Verification Commands
-
-### Check Topic QoS Settings
-```bash
-# View QoS for a specific topic
-export ROS_DOMAIN_ID=5
-ros2 topic info -v /tpc_chassis_imu
-
-# Expected output should show:
-# QoS profile:
-#   Reliability: BEST_EFFORT
-#   Durability: TRANSIENT_LOCAL
-```
-
-### Monitor QoS Warnings
-```bash
-# Run node and watch for QoS warnings in logs
-ros2 run chassis_sensors chassis_imu_node
-
-# Look for warnings like:
-# [WARN] ... incompatible QoS ... DURABILITY_QOS_POLICY
-```
-
-### Test QoS Compatibility
-```bash
-# Terminal 1: Publisher with sensor QoS
-ros2 topic pub /test_topic std_msgs/msg/String "data: test" \
-  --qos-durability transient_local --qos-reliability best_effort
-
-# Terminal 2: Subscriber with matching QoS
-ros2 topic echo /test_topic \
-  --qos-durability transient_local --qos-reliability best_effort
 ```
 
 ## Best Practices

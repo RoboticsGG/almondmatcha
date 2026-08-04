@@ -75,10 +75,11 @@ Parameters:
 - `sliding_windows` (int, default 9): number of vertical search windows
 - `window_margin` (int, default 40): search window half-width in pixels. **Hard ceiling 61** -- half the 122 px painted-line spacing
 - `search_band_px` (float, default 45.0): how far from the previous frame's result the search may start. **Hard ceiling 61** -- stops the detector locking onto a neighbouring painted line
+- `max_abs_b_px` (float, default 100.0): absolute plausibility bound on the fitted lateral offset (100 px = 0.50 m, matching the downstream clamp in rover_kinematic_control) -- a fit beyond this is rejected instead of reported as a detection
 - `min_window_pixels` (int, default 50): minimum pixels to recenter a search window
 - `min_lane_pixels` (int, default 50): minimum total detected pixels required for a valid fit
 
-CSV Output: columns [timestamp, curvature, theta, b, detected]. Written on a background thread (queue-based) so file I/O never blocks the image callback.
+CSV Output: columns [timestamp, curvature, theta, b, detected, fps]. Written on a background thread (queue-based) so file I/O never blocks the image callback.
 
 Processing Pipeline:
 1. Crop frame to the ROI bounding box (plus margin) -- cuts CPU on the steps below without reducing pixel density inside the ROI
@@ -329,12 +330,14 @@ Reusable utility functions (50+ total):
 
 ### Lane Detection Log (`<ws_jetson>/runs/run_NNN_<stamp>/lane_detection.csv`)
 
-Columns: timestamp, curvature, theta, b, detected
+Columns: timestamp, curvature, theta, b, detected, fps
+
+`fps` is a rolling-window measurement of achieved throughput, not the configured target.
 
 Example:
 ```
-2025-11-04T10:30:45.123456,0.000412,5.23,45.67,1.0
-2025-11-04T10:30:45.153456,-0.000298,-3.21,42.11,1.0
+2026-08-04T10:30:45.123456,0.000412,5.23,45.67,1.0,27.3
+2026-08-04T10:30:45.153456,-0.000298,-3.21,42.11,1.0,27.1
 ```
 
 ### Steering Control Log (`<ws_jetson>/runs/run_NNN_<stamp>/kinematic_control.csv`)
@@ -353,8 +356,8 @@ Example:
 - End-to-end latency: 100-150 ms (typical)
 - EMA filter warmup time: 1.5 seconds (default alpha=0.05)
 - Memory per node: 150-200 MB
-- Camera resolution: 960x540 (configured in vision_nav_headless.yaml / vision_nav_gui.yaml)
-- Preprocessing runs on the ROI crop (~960x255 at default roi_base_points/crop_margin_px), not the full frame
+- Camera resolution: 1280x720 (configured in vision_nav_headless.yaml / vision_nav_gui.yaml)
+- Preprocessing runs on the ROI crop (~1234x229 at default roi_base_points/crop_margin_px), not the full frame
 
 ## Troubleshooting
 
@@ -427,17 +430,27 @@ vision_navigation/
 ├── package.xml                         # ROS2 metadata
 ├── setup.py                            # Python setup
 ├── setup.cfg                           # Setup config
+├── config/
+│   ├── vision_nav_gui.yaml             # Camera + lane detection, GUI mode
+│   ├── vision_nav_headless.yaml        # Camera + lane detection, headless mode
+│   └── rover_kinematic_control_params.yaml  # Steering/speed control gains
 ├── launch/
-│   └── vision_navigation.launch.py     # ROS2 launch file
+│   ├── vision_navigation.launch.py     # Single-domain launch; only file that wires launch args into node parameters
+│   ├── vision_nav_gui.launch.py        # GUI mode (loads vision_nav_gui.yaml)
+│   ├── vision_nav_headless.launch.py   # Headless mode (loads vision_nav_headless.yaml)
+│   ├── vision_domain6.launch.py        # Vision-only nodes, Domain 6
+│   └── control_domain5.launch.py       # Kinematic control only, Domain 5
 ├── vision_navigation/
 │   ├── __init__.py
 │   ├── config.py                       # Centralized configuration
 │   ├── helpers.py                      # Utility functions
 │   ├── camera_stream_node.py           # Camera streaming node
+│   ├── camera_recorder_node.py         # Field-run video recording (debug)
 │   ├── lane_detection_node.py          # Lane detection node
 │   ├── rover_kinematic_control_node.py # Kinematic control node
 │   ├── lane_detector.py                # Lane detection pipeline
-│   └── control_filters.py              # Filters and utilities
+│   ├── control_filters.py              # Filters and utilities
+│   └── demo_lane.py                    # Standalone lane-detection demo/debug script
 ├── resource/                           # Package resources
 └── test/                               # Unit tests
 ```

@@ -45,6 +45,10 @@ See [EMBEDDEDRTPS_PATCHES.md](EMBEDDEDRTPS_PATCHES.md) for full root-cause analy
 
 ## Launch Sequence (25 seconds total)
 
+**Recommended:** `bash ws_base/launch_field.sh` runs the sequence below as a single
+command from the base PC, with pre-flight checks and Ctrl-C as an all-machine
+emergency stop. The manual steps:
+
 **Network:** All systems connect via Ethernet switch before starting
 
 ### 1. Power on Ethernet Switch

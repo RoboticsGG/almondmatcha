@@ -1,5 +1,16 @@
 # Action Items - Next Session
 
+> **Superseded (reviewed 2026-08-04).** This note is from the November 2025
+> session and describes a since-replaced executable naming scheme
+> (`camera_stream`, `steering_control`, `vision_nav_system.launch.py` — current
+> entry points are `camera_stream_node`, `lane_detection_node`,
+> `rover_kinematic_control`, and `vision_navigation.launch.py` /
+> `vision_nav_headless.launch.py`, per `ws_jetson/src/vision_navigation/setup.py`).
+> The two files under "Reference Files" below
+> (`FINAL_SESSION_SUMMARY_2025-11-04.md`, `SESSION_SUMMARY_2025-11-04.md`) no
+> longer exist in this directory. Kept as historical record; not an active
+> task list. A candidate for archival/deletion.
+
 ## ws_jetson (COMPLETED - November 4, 2025)
 
 ### Build & Documentation - DONE

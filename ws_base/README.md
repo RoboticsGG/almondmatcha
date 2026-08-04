@@ -51,6 +51,8 @@ source install/setup.bash
 | `launch_base_tmux.sh` | Starts base-station nodes only (tmux, 2 panes) | Base nodes only — RPi and Jetson already running |
 | `launch_base_screen.sh` | Same as above but GNU screen | Preference for screen over tmux |
 | `launch_monitoring.sh` | Starts `mission_monitoring_node_pc` only (D4 display) | Watch telemetry without commanding |
+| `emergency_stop.sh` | Stops the rover from any shell on the base PC (not just the `launch_field.sh` terminal) | Callable any time; commonly aliased |
+| `preflight_check.sh` | Environment + network + live-DDS self-diagnosis before a field run | Run before `launch_field.sh` in the field |
 
 ### Production launch (single command)
 
@@ -90,8 +92,9 @@ mission_command_node:
   ros__parameters:
     rover_spd: 15              # Speed limit (0-100%)
     des_lat: 8.007286          # Target latitude (decimal degrees)
-    des_long: 101.50203        # Target longitude (decimal degrees)
-    action_watchdog_timeout_sec: 10.0  # Cancel goal if no feedback for this many seconds
+    des_long: 101.90203        # Target longitude (decimal degrees)
+    action_watchdog_timeout_sec: 20.0  # Cancel goal if no feedback for this many seconds
+    mission_retry_sec: 5.0     # How often to retry establishing the mission (code default; not in the YAML)
 ```
 
 **Apply Changes:**
@@ -322,9 +325,13 @@ ros2 node list
 ```
 ws_base/
 ├── README.md                       # This file
-├── launch_base_screen.sh           # GNU Screen launcher
-├── launch_base_tmux.sh             # Tmux launcher
-- [DOMAIN_CONFIG_SUMMARY.md](DOMAIN_CONFIG_SUMMARY.md) - Domain architecture notes
+├── launch_field.sh                 # Production launcher (SSH RPi + Jetson + base)
+├── launch_base_screen.sh           # GNU Screen launcher (base-only)
+├── launch_base_tmux.sh             # Tmux launcher (base-only)
+├── launch_monitoring.sh            # D4 telemetry display only
+├── emergency_stop.sh               # Stop the rover from any shell on the base PC
+├── preflight_check.sh              # Field self-diagnosis before launch
+├── build_clean.sh / build_inc.sh   # Build scripts
 ├── docs/                           # Detailed documentation
 │   ├── QUICK_START.md
 │   ├── ARCHITECTURE.md

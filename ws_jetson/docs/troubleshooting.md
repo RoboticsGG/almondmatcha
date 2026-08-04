@@ -38,13 +38,13 @@ realsense-viewer  # Visual test
 **Problem**: Lane detection not working or inconsistent
 
 **Quick checks**:
-1. Enable visualization: `lane_detection --ros-args -p show_window:=True`
+1. Enable visualization: `lane_detection_node --ros-args -p show_window:=True`
 2. Check lighting conditions (shadows, reflections)
 3. Verify lane markers are visible and contrasting
 4. Ensure camera is properly mounted and focused
 
 **Tuning**:
-- Adjust color thresholds in `vision_navigation_pkg/lane_detector.py`
+- Adjust color thresholds in `vision_navigation/lane_detector.py`
 - Check Sobel gradient sensitivity
 - Verify ROI (region of interest) is correct
 
@@ -171,7 +171,7 @@ cat log/latest_build/vision_navigation/stdout_stderr.log
 
 ### Scripts Not Found After Build
 
-**Problem**: `camera_stream: command not found`
+**Problem**: `camera_stream_node: command not found`
 
 **Solution**:
 ```bash
@@ -268,7 +268,7 @@ Can occur if node is restarted - safe to ignore.
 For reference, expected performance on Jetson Orin Nano:
 - Camera FPS: 30
 - Lane detection: 25-30 FPS
-- Control loop: 50 Hz
+- Control loop: event-driven, tracks lane detection FPS (no fixed-rate timer)
 - End-to-end latency: 100-150 ms
 - CPU usage: 40-60% (GUI disabled)
 - Memory: 150-200 MB per node

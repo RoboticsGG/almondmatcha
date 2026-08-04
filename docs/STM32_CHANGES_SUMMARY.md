@@ -28,7 +28,7 @@ Applied by `build.bash` from `platform/patches/`. Idempotent — safe to rebuild
 |-----------|---------|------------|--------|
 | `MAX_NUM_PARTICIPANTS` | 15 | **1** | Pool of 15 = 525 KB BSS → OOM at boot |
 | `SPDP_MAX_NUMBER_FOUND_PARTICIPANTS` | 14 | **30** | 14 exhausted by daemons + CLI tools |
-| `NUM_WRITER_PROXIES_PER_READER` | 6 | **30** | 6 < 11 D5 nodes → MemoryPool panic |
+| `NUM_WRITER_PROXIES_PER_READER` | 6 | **30** | 6 < 12 D5 nodes → MemoryPool panic |
 | `NUM_READER_PROXIES_PER_WRITER` | 6 | **30** | Same |
 | `THREAD_POOL_READER_STACKSIZE` | 4096 | **8192** | 4096 → HardFault at 99.6% stack depth |
 | `THREAD_POOL_WORKLOAD_QUEUE_LENGTH` | 20 | **40** | 20 → drops during 3-node SPDP burst |
@@ -45,12 +45,12 @@ Full reference: [RTPS_CONFIG_REFERENCE.md](RTPS_CONFIG_REFERENCE.md)
 
 | Fix | Before | After |
 |-----|--------|-------|
-| mbed-os acquisition | `mbed-tools deploy` (broken in Docker) | `git clone --depth 1 mbed-os-6.17.0` |
-| mros2 acquisition | `mbed-tools deploy` | `git clone --depth 1 mros2-mbed` |
+| mbed-os acquisition | `mbed-tools deploy` (fails: vendored sensor libs in `libs/` are plain source, not git repos, so deploy errors with "Could not find a valid git repository at this path") | `git clone` ARMmbed/mbed-os, then checkout the pinned commit (`d723bf9e...`) |
+| mros2 acquisition | `mbed-tools deploy` | `git clone --branch v0.5.4` mROS-base/mros2 |
 | embeddedRTPS submodule | Not initialized | `git -C mros2 submodule update --init` |
 | Patch application | None | Loop over `platform/patches/*.patch` with `--reverse` idempotency check |
 | Docker safe.directory | `git: dubious ownership` | `git config --global --add safe.directory '*'` |
-| msgs_ifaces sync | Manual | Auto `rsync` from `common_ifaces/msgs_ifaces/` |
+| msgs_ifaces sync | Manual | Auto `cp -f` from `mros2_add_msgs/mros2_msgs/msgs_ifaces/msg/*.hpp` into `mros2/mros2_msgs/msgs_ifaces/msg/` (upstream mros2 only ships std msgs) |
 | File ownership | Root-owned after Docker | `chown -R $SUDO_USER build/ mros2/ mbed-os/ platform/` |
 
 Chassis only: `sed -i 's/chassis_im_u\.hpp/chassis_imu.hpp/g' platform/templates.hpp` (typo fix).
@@ -65,7 +65,7 @@ Chassis only: `sed -i 's/chassis_im_u\.hpp/chassis_imu.hpp/g' platform/templates
 | Non-blocking discovery wait | Both | Moved 3s wait inside IMU/sensors task; `spin()` runs during wait → STM32 responds to SPDP from t=0 |
 | Print-once sensor output | Both | `_first_print_done` flag limits sensor print to first sample only (was flooding at 100 Hz) |
 | GNSS task rate | Sensors | 10 Hz → 2 Hz (RTK fixes arrive at ~1 Hz; 10 Hz added UART contention) |
-| Node name | Sensors | `mros2_node_sensors_d6` → `mros2_node_sensors` (stale `_d6` suffix removed) |
+| Node name | Sensors | Still `mros2_node_sensors_d6` in production — an earlier attempt to drop the `_d6` suffix was reverted |
 | IMU reader stack | Chassis | 2048 → 4096 bytes (prevents overflow during mros2 publish + CDR + lwIP UDP send) |
 
 ---

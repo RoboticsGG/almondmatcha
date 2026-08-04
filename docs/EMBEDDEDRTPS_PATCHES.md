@@ -1,264 +1,8 @@
 # embeddedRTPS Patches — Root Cause Analysis & Fixes
 
-**Applies to:** `mros2-mbed-chassis-dynamics` and `mros2-mbed-sensors-gnss`  
-**Patch directory:** `platform/patches/` (applied automatically by `build.bash`)  
+**Applies to:** `mros2-mbed-chassis-dynamics` and `mros2-mbed-sensors-gnss`
+**Patch directory:** `platform/patches/` (applied automatically by `build.bash`)
 **Base version:** mROS-base/mros2 v0.5.4 (embeddedRTPS commit `de70e01`)
-
-## Patch Summary
-
-| File | Description |
-|------|-------------|
-| `001-rtps-deserialization-fixes.patch` | AckNack bitmap overflow, `octetsToNextHeader==0` misparse, TopicData name overflow |
-| `002-rtps-hardfault-prevention.patch` | Receive buffer isolation, guard-word corruption detection, NUCLEO-F767ZI pointer validation |
-| `003-discovery-pool-diagnostic.patch` | MemoryPool error message with size/used counters; SEDP_VERBOSE silenced |
-| `004-spdp-pbuf-and-sedp-locator-fallback.patch` | SPDP packet corruption fix (PBUF_RAW); SEDP locator fallback chain; SEDP immediate resend |
-| `005-multicast-address-detection-fix.patch` | `isMulticastAddress()` byte-order bug; `readLocatorIntoList()` operator precedence bug |
-
-Patches are applied to `mros2/embeddedRTPS` by `build.bash` after `git -C mros2 submodule update --init`.
-The patch loop is idempotent — it checks `--reverse` before applying, so rebuilds are safe.
-
----
-
-## Crash Signature (HardFault on Discovery Burst)
-
-Both NUCLEO-F767ZI boards HardFault during DDS discovery burst when 3+ Linux
-nodes join domain 5 simultaneously (RPi, Jetson, Base PC). The crash is in
-`memcpy` ← `doCopyAndMoveOn()` in `MessageTypes.cpp:33`.
-
-| Register | Chassis | Sensors | Meaning |
-|----------|---------|---------|---------|
-| R1 (src) | 0xD7087EC3 | 0x4C8B0E83 | Garbage pointer (corrupted `currentPos`) |
-| R5 (size) | 2 | 4 | Copy size (uint16_t / uint32_t field) |
-| R6 | 1 | 1 | Loop iteration — crash always on 2nd submessage |
-| R7 | 0x2003E36C | 0x2003E93C | Static data ptr (MessageReceiver BSS address) |
-| LR | 0x080197AF | 0x080195AF | `doCopyAndMoveOn` return-from-memcpy |
-| UFSR | 0x0100 | 0x0000 | UNALIGNED UsageFault (chassis) |
-| BFSR | 0x00 | 0x82 | PRECISERR+BFARVALID (sensors) |
-| BFAR | — | 0x4C8B0E83 | BusFault address (sensors) |
-
-**Key finding:** R1 is identical across multiple independent runs — proving the corrupted
-pointer value is ABSOLUTE, not stack-relative. Stack depth at crash was 184/8192 bytes (2.2%)
-so this is NOT a stack overflow.
-
-**Fault types:**
-- Chassis: `UFSR=0x0100` → UNALIGNED UsageFault (odd address 0xD7087EC3)
-- Sensors: `BFSR=0x82` → Precise data BusFault (unmapped address 0x4C8B0E83 in FMC space)
-
----
-
-## Patch 001 — Deserialization Fixes
-
-### Bug A — `octetsToNextHeader == 0` mishandling (PRIMARY CRASH ROOT CAUSE)
-
-**File:** `src/messages/MessageReceiver.cpp`
-
-The RTPS spec allows the last submessage to set `octetsToNextHeader = 0`
-("extends to end of message"). FastDDS uses this for SEDP DATA packets.
-
-**Original code:** advanced `nextPos` by only 4 bytes when `octetsToNextHeader=0`.
-Subsequent loop iterations re-interpreted body data as submessage headers, causing
-`currentPos` to land on CDR payload bytes (SEDP endpoint IP addresses) which
-became garbage memory addresses — the deterministic crash source.
-
-**Fix:** Set `msgInfo.nextPos = msgInfo.size` when `octetsToNextHeader == 0`.
-Also added overflow guard for `nextPos` advancement and fixed `processDataSubmessage()`
-size underflow (`0 - 24 + 4` wraps as uint16).
-
-### Bug B — TopicData name buffer overflow
-
-**File:** `src/discovery/TopicData.cpp`
-
-`readFromUcdrBuffer()` passed unclamped `topicNameLength`/`typeNameLength` from the
-wire to `ucdr_deserialize_array_char()`. A FastDDS node registering topic/type names
-longer than `MAX_TOPICNAME_LENGTH` (40) or `MAX_TYPENAME_LENGTH` (60) causes overflow.
-
-**Fix:** Bounds check before deserialize; oversized names are skipped safely.
-
-### Bug C — AckNack bitmap overflow
-
-**Files:** `include/rtps/common/types.h`, `src/messages/MessageTypes.cpp`
-
-`SequenceNumberSet::bitMap` was `std::array<uint32_t, 1>` (4 bytes) but the RTPS spec
-allows up to 256-bit (32-byte) AckNack bitmaps. FastDDS sends 256-bit bitmaps.
-
-**Fix:** Expanded to `std::array<uint32_t, 8>`. Added `numBits > 256` bounds check.
-
----
-
-## Patch 002 — HardFault Prevention (Defense-in-Depth)
-
-Patch 001 reduced crash frequency but the deterministic HardFault persisted.
-Three defense-in-depth layers were added:
-
-### Layer 1 — Receive Buffer Isolation
-
-**File:** `src/messages/MessageReceiver.cpp`
-
-`MessageReceiver` gets a dedicated 1536-byte BSS buffer (`m_recvBuffer`).
-`processMessage()` copies the incoming packet from the lwIP pbuf into this buffer
-before parsing. This decouples the parser from the pbuf lifecycle — even if lwIP
-reuses or frees the pbuf while callbacks run, the parsed data remains valid.
-Messages > 1536 bytes are rejected (impossible in non-fragmented RTPS unicast/multicast).
-
-### Layer 2 — Guard-Word Corruption Detection
-
-**File:** `src/messages/MessageReceiver.h`, `MessageReceiver.cpp`
-
-Two volatile `uint32_t` guard words (`m_guardPre`, `m_guardPost`) bracket the receive
-buffer, both initialized to `0xDEADC0DE` at the start of `processMessage()`.
-After each submessage callback — the exact point where corruption was observed — the
-guards are checked. If either has changed, processing is immediately aborted.
-
-### Layer 3 — NUCLEO-F767ZI Pointer Validation
-
-**File:** `src/messages/MessageTypes.cpp`
-
-`isValidReadPtr()` validates the source pointer passed to `doCopyAndMoveOn()`/`memcpy`
-against the STM32F767ZI memory map before each copy:
-
-| Region | Address range | Size |
-|--------|---------------|------|
-| DTCM RAM | 0x20000000 – 0x2001FFFF | 128 KB |
-| SRAM1 | 0x20020000 – 0x2007BFFF | 368 KB |
-| SRAM2 | 0x2007C000 – 0x2007FFFF | 16 KB |
-| Flash | 0x08000000 – 0x081FFFFF | 2 MB |
-
-Addresses in FMC bank space (0xD7087EC3, 0x4C8B0E83) are caught and the copy is skipped.
-
-**Also:** `THREAD_POOL_WORKLOAD_QUEUE_LENGTH` doubled from 20 → 40 in `config.h` to absorb
-discovery burst packets (tracked in git, not part of the patch file).
-
----
-
-## Patch 003 — Discovery Pool Diagnostic
-
-**Problem:** `[MemoryPool] RESSOURCE LIMIT EXCEEDED` with no context.
-`SPDP_MAX_NUMBER_FOUND_PARTICIPANTS=19` was exhausted by `ros2` CLI tool processes
-creating ephemeral DDS participants.
-
-**Changes:**
-
-| File | Fix |
-|------|-----|
-| `MemoryPool.h` | Added `size` and `used` counters: `RESSOURCE LIMIT EXCEEDED (size=30, used=30)` |
-| `Log.h` | `SEDP_VERBOSE=0` — silences hundreds of serial log lines during SEDP burst that saturated UART and blocked the reader thread |
-
-**Resolution:** `SPDP_MAX_NUMBER_FOUND_PARTICIPANTS` raised to 30 in `config.h`.
-
----
-
-## Patch 004 — SPDP Packet Corruption + SEDP Discovery Fixes
-
-**Problem:** `ros2 topic info` showed `Publisher count: 0`. STM32 SPDP packets
-were malformed and SEDP discovery never completed.
-
-### Bug A — SPDP Packet Corruption (`PBufWrapper.h`)
-
-`lwip_pbuf_alloc()` was called with `PBUF_TRANSPORT`. The `PBUF_TRANSPORT` type
-reserves 50 bytes for IP/UDP/Ethernet headers inside the payload, pushing the CDR
-payload start offset by 50 bytes. FastDDS received malformed SPDP PDUs with garbage
-data in the first 50 bytes.
-
-**Fix:** Use `PBUF_RAW` which reserves 0 bytes. CDR payload starts at offset 0.
-
-### Bug B — Missing SEDP Locator Fallback (`SPDPAgent.cpp`)
-
-`addProxiesForBuiltInEndpoints()` had no fallback for locating the remote SEDP writer.
-When `PID_METATRAFFIC_UNICAST_LOCATOR` was absent from the remote's SPDP, SEDP was
-never sent.
-
-**Fix:** Three-level fallback chain:
-1. `m_metatrafficUnicastLocatorList` (explicit unicast metatraffic port)
-2. `m_metatrafficMulticastLocatorList` (239.255.0.1:8650 for domain 5)
-3. Derived: `m_defaultUnicastLocatorList.port - 1` (legacy fallback)
-
-### Bug C — Missing SEDP Immediate Resend (`SPDPAgent.cpp`)
-
-After `addProxiesForBuiltInEndpoints()`, SEDP writers waited until the next
-heartbeat cycle (up to `SF_WRITER_HB_PERIOD_MS = 1000 ms`) before sending.
-
-**Fix:** Call `setAllChangesToUnsent()` on `sedpPubWriter` and `sedpSubWriter`
-immediately after adding proxies — triggers SEDP send without waiting.
-
----
-
-## Patch 005 — Multicast Address Detection (TRUE ROOT CAUSE of Publisher count: 0)
-
-**Problem:** Patch 004's Fallback 2 (metatraffic multicast) never fired because
-`m_metatrafficMulticastLocatorList` was always empty. Two bugs in
-`readLocatorIntoList()` silently discarded `PID_METATRAFFIC_MULTICAST_LOCATOR` (0x0033)
-from FastDDS SPDP announcements.
-
-### Bug A — `isMulticastAddress()` byte-order bug (`UdpDriver.cpp`)
-
-```cpp
-// WRONG: assumes host byte order
-return (addr.addr >> 28) == 14;
-
-// For 239.255.0.1: lwIP stores in network byte order (LE)
-// transformIP4ToU32(239,255,0,1) = 0x0100FFEF
-// 0x0100FFEF >> 28 = 0  ← never matches 14
-```
-
-**Fix:** `ip4_addr_ismulticast(&addr)` — lwIP's own byte-order-correct macro.
-
-### Bug B — Operator precedence in `readLocatorIntoList()` (`ParticipantProxyData.cpp`)
-
-```cpp
-// WRONG: && binds tighter than ||
-ret && locator.isSameSubnet() || locator.isMulticastAddress()
-// Parsed as: (ret && locator.isSameSubnet()) || locator.isMulticastAddress()
-// With Bug A always returning false for multicast: only isSameSubnet() path worked
-
-// CORRECT:
-ret && (locator.isSameSubnet() || locator.isMulticastAddress())
-```
-
-**Effect of both bugs together:** `PID_METATRAFFIC_MULTICAST_LOCATOR = 239.255.0.1:8650`
-from FastDDS SPDP was silently discarded every time. Fallback 2 in Patch 004 found an
-empty multicast locator list and fell through to Fallback 3 (wrong port). SEDP never
-reached FastDDS.
-
-**With both fixed:** multicast locator is stored correctly → Fallback 2 fires →
-SEDP goes to 239.255.0.1:8650 where FastDDS is actually listening → discovery completes.
-
----
-
-## Upstream embeddedRTPS Gap Analysis
-
-The mros2 fork (`de70e01`) diverged from upstream `embedded-software-laboratory/embeddedRTPS`
-at commit `1410a87` (May 2022). The upstream has 8+ commits the fork is missing.
-
-**Recommendation:** Do NOT bump the embeddedRTPS version. The mros2 fork has mbed-specific
-adaptations (OS threads, lwIP socket layer, Mbed RTOS primitives) that would conflict with
-upstream changes. Apply targeted patches as needed.
-
----
-
-## Build Notes
-
-Patches are applied in `build.bash` after `git -C mros2 submodule update --init`:
-
-```bash
-if [ -d platform/patches ] && [ -d mros2/embeddedRTPS ]; then
-  for p in platform/patches/*.patch; do
-    [ -f "$p" ] || continue
-    abspath="$(cd "$(dirname "$p")" && pwd)/$(basename "$p")"
-    if ! git -C mros2/embeddedRTPS apply --check --reverse "$abspath" 2>/dev/null; then
-      git -C mros2/embeddedRTPS apply "$abspath" && echo "INFO: applied patch $(basename $p)"
-    fi
-  done
-fi
-```
-
-- `--reverse` check makes the loop idempotent (safe to re-run)
-- `abspath` conversion is required because `git -C` changes CWD
-- Patches apply to a clean `embeddedRTPS` clone; patching a dirty tree will fail
-
----
-
-**See Also:** [STM32_CHANGES_SUMMARY.md](STM32_CHANGES_SUMMARY.md) · [RTPS_CONFIG_REFERENCE.md](RTPS_CONFIG_REFERENCE.md) · [STM32_RTPS_MEMORY_CALCULATION.md](STM32_RTPS_MEMORY_CALCULATION.md)
-# embeddedRTPS Patches — Root Cause Analysis & Fixes
 
 ## Patch files
 
@@ -271,14 +15,16 @@ fi
 | `platform/patches/005-multicast-address-detection-fix.patch` | `isMulticastAddress()` byte-order bug; `readLocatorIntoList()` operator precedence bug |
 
 Applied to `mros2/embeddedRTPS` (cloned from mROS-base/mros2 v0.5.4) by
-`build.bash` after clone. Same patches used in both firmware trees.
+`build.bash` after `git -C mros2 submodule update --init`. Same patches used
+in both firmware trees. The patch loop is idempotent — it checks `--reverse`
+before applying, so rebuilds are safe.
 
 ---
 
-## Crash signature (runs 012–015, ALL identical)
+## Crash signature (runs 012–015, all identical)
 
 Both STM32 boards (NUCLEO-F767ZI) HardFault during DDS discovery burst when
-3 Linux nodes join domain 5 (RPi, Jetson, base PC).  The crash is in
+3 Linux nodes join domain 5 (RPi, Jetson, base PC). The crash is in
 `memcpy` ← `doCopyAndMoveOn()` in `MessageTypes.cpp:33`.
 
 | Register | Chassis (all runs) | Sensors (all runs) | Meaning |
@@ -292,12 +38,12 @@ Both STM32 boards (NUCLEO-F767ZI) HardFault during DDS discovery burst when
 | BFSR | 0x00 | 0x82 | PRECISERR+BFARVALID (sensors) |
 | BFAR | — | 0x4C8B0E83 | BusFault address (sensors) |
 
-**Key observation:** R1 is IDENTICAL across runs 012–015 despite stack position
-and firmware shifting between rebuilds.  R0/R4/SP shift in lockstep with the
-stack base (heap allocation).  R7 is a fixed BSS address.  This means the
-corrupted pointer value is ABSOLUTE — not stack-relative.
+**Key observation:** R1 is identical across runs 012–015 despite stack position
+and firmware shifting between rebuilds. R0/R4/SP shift in lockstep with the
+stack base (heap allocation). R7 is a fixed BSS address. This means the
+corrupted pointer value is absolute — not stack-relative.
 
-**Stack depth at crash:** 184 bytes of 8192 (2.2%).  No stack overflow.
+**Stack depth at crash:** 184 bytes of 8192 (2.2%). No stack overflow.
 Peak depth during SPDP/SEDP callback chain is ~550 bytes (6.7% of 8192).
 
 **Fault types:**
@@ -305,97 +51,46 @@ Peak depth during SPDP/SEDP callback chain is ~550 bytes (6.7% of 8192).
 - Sensors: BFSR=0x82 → Precise data BusFault (unmapped address 0x4C8B0E83)
 
 The crash is deterministic because the same FastDDS SPDP/SEDP payloads arrive
-every run (same nodes, same topics, same IPs).  The corrupted `data` pointer
+every run (same nodes, same topics, same IPs). The corrupted `data` pointer
 in `MessageProcessingInfo` causes `currentPos` to land at the same garbage
 address each time.
 
 ---
 
-## Root cause hypothesis (in progress)
+## Root cause investigation (concluded inconclusive)
 
 The `msgInfo.data` pointer in `processMessage()` becomes corrupted between the
-1st and 2nd iterations of the submessage parsing loop.  R6=1 across all crash
+1st and 2nd iterations of the submessage parsing loop. R6=1 across all crash
 dumps suggests the crash always occurs on the **2nd submessage**.
 
 The 1st submessage (likely SPDP DATA) is processed successfully, firing deep
 callback chains (SPDPAgent::handleSPDPPackage → processProxyData →
-addProxiesForBuiltInEndpoints → addNewMatchedWriter).  After these callbacks
+addProxiesForBuiltInEndpoints → addNewMatchedWriter). After these callbacks
 return, `msgInfo.data` has been corrupted to a value that, when combined with
 `nextPos`, produces an address in the FMC/peripheral memory range.
 
-**Possible corruption mechanisms under investigation:**
-1. **Compiler register allocation:** If the compiler stores `msgInfo.data` in a
+**Corruption mechanisms considered:**
+1. **Compiler register allocation:** if the compiler stores `msgInfo.data` in a
    callee-saved register (R6-R11) and a callee function fails to properly
-   save/restore it.  R7=0x2003E36C (static address) is constant — it is NOT
+   save/restore it. R7=0x2003E36C (static address) is constant — it is NOT
    the data pointer.
-2. **Callback side-effect on stack:** The SPDP callback chain acquires mutexes
-   and modifies participant/endpoint data structures.  A subtle bug in one of
+2. **Callback side-effect on stack:** the SPDP callback chain acquires mutexes
+   and modifies participant/endpoint data structures. A subtle bug in one of
    these (e.g., writing past a MemoryPool slot) could corrupt the reader
    thread's stack frame.
-3. **Single-domain participant exhaustion:** With ALL nodes on domain 5, the
+3. **Single-domain participant exhaustion:** with all nodes on domain 5, the
    number of SPDP/SEDP messages during discovery burst is significantly higher
-   than in the multi-domain (main branch) setup that didn't crash.  Although
-   MAX_NUM_PARTICIPANTS=20 and MemoryPool bounds are checked, resource
+   than in the multi-domain (main branch) setup that didn't crash. Although
+   `MAX_NUM_PARTICIPANTS` and MemoryPool bounds are checked, resource
    exhaustion could trigger unexpected code paths.
 
-**This crash did NOT occur on the multi-domain `main` branch** where nodes
-were spread across domains 0, 5, and 10.
-
----
-
-## Patch 002 — HardFault prevention (defense-in-depth, NUCLEO-F767ZI only)
-
-**Files:** `include/rtps/messages/MessageReceiver.h`,
-`src/messages/MessageReceiver.cpp`, `src/messages/MessageTypes.cpp`
-
-**Also:** `platform/rtps/config.h` — `THREAD_POOL_WORKLOAD_QUEUE_LENGTH`
-increased from 20 to 40 (tracked in git, not part of the patch file).
-
-Three layers protect against the deterministic HardFault during discovery
-burst:
-
-### Layer 1 — Receive buffer isolation
-
-`MessageReceiver` gets a 1536-byte dedicated receive buffer (`m_recvBuffer`)
-in BSS.  `processMessage()` copies the incoming packet from the lwip pbuf
-payload into this buffer before parsing.  This decouples the parser from the
-pbuf lifecycle — even if the pbuf is freed/reused by another thread, the data
-remains valid.
-
-The buffer is large enough for any Ethernet-size RTPS message.  Messages
-exceeding 1536 bytes are rejected (these should never appear in non-
-fragmented unicast RTPS traffic).
-
-### Layer 2 — Guard-word corruption detection
-
-Two volatile `uint32_t` guard words (`m_guardPre`, `m_guardPost`) bracket the
-receive buffer.  Both are set to `0xDEADC0DE` at the start of
-`processMessage()`.  After each submessage callback returns — the exact point
-where corruption was observed in runs 012–015 — the guards are checked.  If
-either has changed, processing is aborted immediately.
-
-### Layer 3 — NUCLEO-F767ZI pointer validation
-
-`isValidReadPtr()` in `MessageTypes.cpp` validates that the source pointer
-passed to `doCopyAndMoveOn()`/`memcpy` falls within the STM32F767ZI memory
-map:
-
-| Region | Address range | Size |
-|--------|--------------|------|
-| DTCM RAM | 0x20000000 – 0x2001FFFF | 128 KB |
-| SRAM1 | 0x20020000 – 0x2007BFFF | 368 KB |
-| SRAM2 | 0x2007C000 – 0x2007FFFF | 16 KB |
-| Flash | 0x08000000 – 0x081FFFFF | 2 MB |
-
-No external SDRAM/FMC.  Any pointer outside these ranges (e.g., the crash
-value 0xD7087EC3 in FMC bank space) is caught and the copy is skipped.
-
-### Queue length increase
-
-`THREAD_POOL_WORKLOAD_QUEUE_LENGTH` doubled from 20 to 40 in both boards'
-`config.h`.  This gives the incoming packet circular buffer more room during
-discovery bursts when 3 Linux nodes simultaneously announce SPDP/SEDP
-endpoints.  Each slot holds one `PacketInfo` with a `PBufWrapper` reference.
+This crash did not occur on the multi-domain `main` branch, where nodes were
+spread across domains 0, 5, and 10. No single mechanism above was confirmed as
+the definitive root cause — the investigation was superseded by Patch 002's
+defense-in-depth approach (buffer isolation, guard words, pointer validation),
+which prevents the corrupted pointer from causing a HardFault regardless of
+how it becomes corrupted. The board now detects and drops the bad copy instead
+of crashing.
 
 ---
 
@@ -406,23 +101,23 @@ endpoints.  Each slot holds one `PacketInfo` with a `PBufWrapper` reference.
 **File:** `src/messages/MessageReceiver.cpp`
 
 The RTPS spec allows the last submessage to set `octetsToNextHeader = 0`
-("extends to end of message").  The original code advanced `nextPos` by only
+("extends to end of message"). The original code advanced `nextPos` by only
 4 bytes → subsequent loop iterations re-interpreted body data as submessage
 headers, causing cascading misparse.
 
 **Fix:** Set `msgInfo.nextPos = msgInfo.size` when `octetsToNextHeader == 0`.
 Also added overflow guard and fixed `processDataSubmessage()` size underflow.
 
-**Note:** This was initially believed to be the primary root cause but the
-crash persisted through run_015 unchanged.  The fix is still correct and
-prevents a different class of misparse crashes.
+**Note:** This was initially believed to be the primary root cause of the
+HardFault above, but the crash persisted through run_015 unchanged. The fix
+is still correct and prevents a different class of misparse crashes.
 
 ### Bug B — TopicData name buffer overflow
 
 **File:** `src/discovery/TopicData.cpp`
 
 `readFromUcdrBuffer()` passed unclamped `topicNameLength`/`typeNameLength`
-(from wire) to `ucdr_deserialize_array_char()`.  If a FastDDS node registers
+(from wire) to `ucdr_deserialize_array_char()`. If a FastDDS node registers
 topic/type names longer than `MAX_TOPICNAME_LENGTH` (40) or
 `MAX_TYPENAME_LENGTH` (60), buffer overflow occurs.
 
@@ -440,6 +135,62 @@ FastDDS sends up to 256-bit AckNack bitmaps per RTPS spec.
 
 ---
 
+## Patch 002 — HardFault prevention (defense-in-depth, NUCLEO-F767ZI only)
+
+**Files:** `include/rtps/messages/MessageReceiver.h`,
+`src/messages/MessageReceiver.cpp`, `src/messages/MessageTypes.cpp`
+
+**Also:** `platform/rtps/config.h` — `THREAD_POOL_WORKLOAD_QUEUE_LENGTH`
+increased from 20 to 40 (tracked in git, not part of the patch file).
+
+Three layers protect against the deterministic HardFault during discovery
+burst:
+
+### Layer 1 — Receive buffer isolation
+
+`MessageReceiver` gets a 1536-byte dedicated receive buffer (`m_recvBuffer`)
+in BSS. `processMessage()` copies the incoming packet from the lwip pbuf
+payload into this buffer before parsing. This decouples the parser from the
+pbuf lifecycle — even if the pbuf is freed/reused by another thread, the data
+remains valid.
+
+The buffer is large enough for any Ethernet-size RTPS message. Messages
+exceeding 1536 bytes are rejected (these should never appear in
+non-fragmented unicast RTPS traffic).
+
+### Layer 2 — Guard-word corruption detection
+
+Two volatile `uint32_t` guard words (`m_guardPre`, `m_guardPost`) bracket the
+receive buffer. Both are set to `0xDEADC0DE` at the start of
+`processMessage()`. After each submessage callback returns — the exact point
+where corruption was observed in runs 012–015 — the guards are checked. If
+either has changed, processing is aborted immediately.
+
+### Layer 3 — NUCLEO-F767ZI pointer validation
+
+`isValidReadPtr()` in `MessageTypes.cpp` validates that the source pointer
+passed to `doCopyAndMoveOn()`/`memcpy` falls within the STM32F767ZI memory
+map:
+
+| Region | Address range | Size |
+|--------|--------------|------|
+| DTCM RAM | 0x20000000 – 0x2001FFFF | 128 KB |
+| SRAM1 | 0x20020000 – 0x2007BFFF | 368 KB |
+| SRAM2 | 0x2007C000 – 0x2007FFFF | 16 KB |
+| Flash | 0x08000000 – 0x081FFFFF | 2 MB |
+
+No external SDRAM/FMC. Any pointer outside these ranges (e.g., the crash
+value 0xD7087EC3 in FMC bank space) is caught and the copy is skipped.
+
+### Queue length increase
+
+`THREAD_POOL_WORKLOAD_QUEUE_LENGTH` doubled from 20 to 40 in both boards'
+`config.h`. This gives the incoming packet circular buffer more room during
+discovery bursts when 3 Linux nodes simultaneously announce SPDP/SEDP
+endpoints. Each slot holds one `PacketInfo` with a `PBufWrapper` reference.
+
+---
+
 ## Upstream embeddedRTPS gap analysis
 
 The mros2 fork (`de70e01`) diverged from upstream
@@ -448,17 +199,17 @@ The upstream has 8+ commits the fork is missing:
 
 | Commit | Date | Description | Relevant? |
 |--------|------|-------------|-----------|
-| `00ed575` | 2024-04 | **fix: make locks not unlock immediately** | NO — mros2 fork already uses named Lock variables |
-| `866a71f` | 2023-08 | Feature/discovery rework | MAYBE — major discovery changes |
-| `2e6ca4b` | 2023-02 | Randomized GUIDs, History >256 | LOW |
-| `96060d9` | 2022-11 | `at()` bounds check (REVERTED in 9f28d30) | NO |
-| `1fd03aa` | 2022-08 | Consistent Mutex Usage | LOW — mros2 has correct usage |
-| `c05ca9f` | 2022-08 | Skip full mempool buckets | MAYBE |
-| `4f49cf9` | 2022-08 | Feature/endpoint deletion | LOW |
+| `00ed575` | 2024-04 | fix: make locks not unlock immediately | No — mros2 fork already uses named Lock variables |
+| `866a71f` | 2023-08 | Feature/discovery rework | Maybe — major discovery changes |
+| `2e6ca4b` | 2023-02 | Randomized GUIDs, History >256 | Low |
+| `96060d9` | 2022-11 | `at()` bounds check (reverted in 9f28d30) | No |
+| `1fd03aa` | 2022-08 | Consistent Mutex Usage | Low — mros2 has correct usage |
+| `c05ca9f` | 2022-08 | Skip full mempool buckets | Maybe |
+| `4f49cf9` | 2022-08 | Feature/endpoint deletion | Low |
 
-**Recommendation:** Do NOT bump the embeddedRTPS version directly.  The mros2
+**Recommendation:** do not bump the embeddedRTPS version directly. The mros2
 fork adds fragmented message support (`9ac80c3`) not present upstream, and
-the discovery rework (`866a71f`) is a large, risky change.  Instead,
+the discovery rework (`866a71f`) is a large, risky change. Instead,
 cherry-pick specific fixes as needed via patches.
 
 ---
@@ -470,7 +221,7 @@ cherry-pick specific fixes as needed via patches.
 ### MemoryPool error message
 
 The original `printf("[MemoryPool] RESSOURCE LIMIT EXCEEDED \n")` gave no
-context about which pool or how full it was.  The fix adds size and used
+context about which pool or how full it was. The fix adds size and used
 counters:
 
 ```
@@ -478,16 +229,16 @@ counters:
 ```
 
 This was essential for diagnosing the `m_remoteParticipants` overflow in
-runs 016–018 (SPDP_MAX was 19 but `ros2 topic hz` CLI tools each create
-ephemeral DDS participants, exhausting the pool).
+runs 016–018 (`SPDP_MAX_NUMBER_FOUND_PARTICIPANTS` was 14 but `ros2 topic hz`
+CLI tools each create ephemeral DDS participants, exhausting the pool).
 
 ### SEDP_VERBOSE silenced
 
-`SEDP_VERBOSE` changed from 1 to 0.  The SEDP verbose path prints each
-endpoint match over serial UART at 115200 baud.  With 15 topics × 16 remote
+`SEDP_VERBOSE` changed from 1 to 0. The SEDP verbose path prints each
+endpoint match over serial UART at 115200 baud. With 15 topics × 16 remote
 nodes = ~50 endpoint pairs, the SEDP burst produces hundreds of log lines
 within 5 seconds at startup, saturating the UART and blocking the reader
-thread.  Silencing it has no functional effect and reduces discovery latency.
+thread. Silencing it has no functional effect and reduces discovery latency.
 
 ---
 
@@ -503,20 +254,20 @@ completing between STM32 boards and Linux FastDDS nodes.
 **File:** `include/rtps/storages/PBufWrapper.h`
 
 **Symptom:** `ros2 topic info /tpc_chassis_imu` shows Publisher count: 0 and
-`ros2 node list` does not show the STM32 `rover_node`.  A Python UDP
+`ros2 node list` does not show the STM32 `rover_node`. A Python UDP
 multicast receiver revealed the STM32 SPDP payload had 50 stale bytes
 prefixed before the CDR encapsulation (`00 03 00 00`).
 
 **Root cause:** `PBufWrapper` allocated all pbufs with `PBUF_TRANSPORT`.
 lwIP's `pbuf_alloc(PBUF_TRANSPORT, size, PBUF_POOL)` reserves space for
 network headers in every pbuf: 14 (ETH) + 20 (IP) + 8 (UDP) + 8 alignment =
-50 bytes.  The reserved space is counted in `tot_len`, so
+50 bytes. The reserved space is counted in `tot_len`, so
 `PBufWrapper::spaceUsed()` returned 50 for an empty buffer.
 `PBufWrapper::append()` called `pbuf_take_at(pbuf, data, length, 50)`,
-writing the CDR payload at byte offset 50.  The first 50 bytes were stale
+writing the CDR payload at byte offset 50. The first 50 bytes were stale
 network headers from recycled lwIP pool buffers.
 
-**Fix:** `PBUF_TRANSPORT` → `PBUF_RAW`.  `PBUF_RAW` reserves zero header
+**Fix:** `PBUF_TRANSPORT` → `PBUF_RAW`. `PBUF_RAW` reserves zero header
 space, so `spaceUsed()` returns 0 for an empty buffer and `pbuf_take_at()`
 writes at offset 0.
 
@@ -525,20 +276,20 @@ writes at offset 0.
 **File:** `src/discovery/SPDPAgent.cpp` — `addProxiesForBuiltInEndpoints()`
 
 **Symptom:** SPDP from FastDDS does not contain `PID_METATRAFFIC_UNICAST_LOCATOR`
-(0x0032).  `addProxiesForBuiltInEndpoints()` finds no metatraffic unicast
-locator, returns `false`, and no SEDP builtin proxies are created.  The STM32
+(0x0032). `addProxiesForBuiltInEndpoints()` finds no metatraffic unicast
+locator, returns `false`, and no SEDP builtin proxies are created. The STM32
 never sends unicast SEDP, and FastDDS never receives STM32 endpoint
 announcements.
 
 **Root cause (original):** `ws_base/fastdds_base.xml` sets explicit
-`metatrafficMulticastLocatorList` (239.255.0.1:8650).  When this is
+`metatrafficMulticastLocatorList` (239.255.0.1:8650). When this is
 configured, FastDDS uses multicast-only metatraffic and omits
-`PID_METATRAFFIC_UNICAST_LOCATOR` from its SPDP.  FastDDS also does NOT
+`PID_METATRAFFIC_UNICAST_LOCATOR` from its SPDP. FastDDS also does NOT
 bind any metatraffic unicast ports (8660, 8662, etc.) — confirmed by
 `ss -ulnp` showing no listeners on those ports.
 
 `addProxiesForBuiltInEndpoints()` only ever checked
-`m_metatrafficUnicastLocatorList`.  FastDDS DOES include
+`m_metatrafficUnicastLocatorList`. FastDDS does include
 `PID_METATRAFFIC_MULTICAST_LOCATOR` (0x0033) in SPDP, which embeddedRTPS
 correctly parses into `m_metatrafficMulticastLocatorList` — but this field
 was dead data, never read by any consumer.
@@ -548,18 +299,18 @@ was dead data, never read by any consumer.
 1. **Primary:** `m_metatrafficUnicastLocatorList` — standard RTPS unicast
    (isSameSubnet)
 2. **Fallback 1:** `m_metatrafficMulticastLocatorList` — for FastDDS with
-   explicit multicast metatraffic config (isMulticastAddress).  The STM32 now
+   explicit multicast metatraffic config (isMulticastAddress). The STM32 now
    sends its SEDP to 239.255.0.1:8650, where all FastDDS nodes listen.
 3. **Fallback 2:** Derive from `m_defaultUnicastLocatorList` with
    `port - 1` (D3−D1=1 in the RTPS port formula) — last-resort for DDS
    implementations that advertise neither metatraffic locator PID.
 
-**Note:** Fallback 1 was non-functional until Patch 005.  `readLocatorIntoList()`
+**Note:** Fallback 1 was non-functional until Patch 005. `readLocatorIntoList()`
 silently discarded multicast locators during SPDP parsing due to two bugs in
-`isMulticastAddress()` and operator precedence (see Patch 005).  As a result,
+`isMulticastAddress()` and operator precedence (see Patch 005). As a result,
 `m_metatrafficMulticastLocatorList` was always empty and Fallback 1 never
-fired.  Execution fell through to Fallback 2, which derived port 8660 — a port
-no process listened on.  Patch 005 makes Fallback 1 effective.
+fired. Execution fell through to Fallback 2, which derived port 8660 — a port
+no process listened on. Patch 005 makes Fallback 1 effective.
 
 ### Bug C — Missing SEDP immediate resend for new participants
 
@@ -570,14 +321,14 @@ no process listened on.  Patch 005 makes Fallback 1 effective.
 arrived.
 
 **Root cause:** `StatefulWriter::addNewMatchedReader()` does NOT mark existing
-history cache entries as unsent for the new reader proxy.  Discovery relied
-entirely on the heartbeat→ACKNACK→resend cycle.  With `SF_WRITER_HB_PERIOD_MS`
+history cache entries as unsent for the new reader proxy. Discovery relied
+entirely on the heartbeat→ACKNACK→resend cycle. With `SF_WRITER_HB_PERIOD_MS`
 at 2000 ms and `ros2 topic hz` timeout at 4 s, the cycle often did not
 complete in time.
 
 **Fix:** After calling `addProxiesForBuiltInEndpoints()`, immediately call
 `setAllChangesToUnsent()` on both SEDP writers (`sedpPubWriter`,
-`sedpSubWriter`) in addition to the existing `spdpWriter` call.  This
+`sedpSubWriter`) in addition to the existing `spdpWriter` call. This
 enqueues a resend of all existing SEDP endpoint announcements to the newly
 matched reader proxies via the threadpool, without waiting for the next
 heartbeat cycle.
@@ -590,7 +341,7 @@ heartbeat cycle.
 `src/discovery/ParticipantProxyData.cpp`
 
 **Symptom (runs 019–022):** `ros2 topic info` still shows Publisher count: 0
-despite Patch 004's SEDP locator fallback chain being in place.  Patch 004's
+despite Patch 004's SEDP locator fallback chain being in place. Patch 004's
 Fallback 1 (`m_metatrafficMulticastLocatorList`) was intended to direct SEDP
 to 239.255.0.1:8650, but the field was silently empty every run.
 
@@ -607,9 +358,9 @@ bool UdpDriver::isMulticastAddress(ip4_addr_t addr) {
 ```
 
 assumes `addr.addr` is in host byte order with the first octet in the MSB.
-lwIP's `transformIP4ToU32()` stores `ip4_addr_t` in **little-endian network
-order**: the first (most-significant) IP octet is placed in the LSB of the
-`uint32_t`.  For 239.255.0.1 on the STM32 (a little-endian ARM Cortex-M7):
+lwIP's `transformIP4ToU32()` stores `ip4_addr_t` in little-endian network
+order: the first (most-significant) IP octet is placed in the LSB of the
+`uint32_t`. For 239.255.0.1 on the STM32 (a little-endian ARM Cortex-M7):
 
 ```
 transformIP4ToU32(239, 255, 0, 1) = (1<<24)|(0<<16)|(255<<8)|239 = 0x0100FFEF
@@ -658,7 +409,7 @@ if ((ret && full_length_locator.isSameSubnet()) ||
 ```
 
 With Bug A making `isMulticastAddress()` always return `false`, the locator
-was only stored when `ret && isSameSubnet()`.  For the multicast address
+was only stored when `ret && isSameSubnet()`. For the multicast address
 239.255.0.1, `isSameSubnet()` returns `false` (it is not on the same /24
 subnet as the board's IP), so the `PID_METATRAFFIC_MULTICAST_LOCATOR` from
 FastDDS's SPDP was silently discarded by the `else { return true; }` branch.
@@ -704,15 +455,15 @@ These are per-board `platform/rtps/config.h` values changed from defaults:
 
 | Parameter | Old value | New value | Rationale |
 |-----------|-----------|-----------|-----------|
-| `MAX_NUM_PARTICIPANTS` | 20 | 1 | STM32 creates exactly 1 local participant; original value wasted ~212 KB BSS |
-| `SPDP_MAX_NUMBER_FOUND_PARTICIPANTS` | 19 | 30 | 16 nodes + 3 ROS2 daemons + `ros2` CLI ephemeral participants; original caused MemoryPool overflow (runs 016–018) |
+| `MAX_NUM_PARTICIPANTS` | 15 | 1 | STM32 creates exactly 1 local participant; original value wasted BSS the board doesn't have |
+| `SPDP_MAX_NUMBER_FOUND_PARTICIPANTS` | 14 | 30 | 12 D5 application nodes + daemons + `ros2` CLI ephemeral participants; original caused MemoryPool overflow (runs 016–018) |
 | `NUM_WRITER_PROXIES_PER_READER` | 15 | 30 | 1 proxy per remote participant; 30 matches SPDP_MAX |
 | `NUM_READER_PROXIES_PER_WRITER` | 15 | 30 | Same |
 | `MAX_NUM_UNMATCHED_REMOTE_WRITERS` | 20 | 2 | Unused on static topology; reduced to save BSS |
 | `MAX_NUM_UNMATCHED_REMOTE_READERS` | 20 | 2 | Same |
 | `THREAD_POOL_READER_STACKSIZE` | 4096 | 8192 | 4096 causes HardFault during deep SEDP burst call chains |
 | `THREAD_POOL_WORKLOAD_QUEUE_LENGTH` | 20 | 40 | Absorb discovery burst; 3 Linux nodes join simultaneously |
-| `SF_WRITER_HB_PERIOD_MS` | 4000 | 1000 | Faster SEDP convergence; reduces worst-case re-delivery latency |
+| `SF_WRITER_HB_PERIOD_MS` | 2000 | 1000 | Faster SEDP convergence; reduces worst-case re-delivery latency |
 | `SPDP_RESEND_PERIOD_MS` | 1000 | 500 | Faster initial discovery |
 | `HISTORY_SIZE_STATEFUL` | 64 | 5 | Reduced; STM32 app topics have low throughput and low subscriber count |
 
@@ -733,10 +484,32 @@ These are per-board `platform/rtps/config.h` values changed from defaults:
 | 004: SEDP immediate resend | +24 | +0 |
 | 005: isMulticastAddress fix | ~−8 | +0 (smaller code) |
 | 005: readLocatorIntoList precedence | +0 | +0 (comment-only logic change) |
-| **config.h MAX_NUM_PARTICIPANTS 20→1** | +0 | **−212,000 BSS** |
-| **config.h pool/queue tuning** | +0 | −1,600 BSS (unmatched 20→2 ×2) |
+| **config.h MAX_NUM_PARTICIPANTS 15→1** | +0 | **large BSS reduction (see STM32_RTPS_MEMORY_CALCULATION.md)** |
+| **config.h pool/queue tuning** | +0 | net reduction (unmatched 20→2 ×2) |
 | **Total patch net** | **~+580** | **~+6,100** |
-| **Total with config changes** | **~+580** | **~−208,000 (net savings)** |
+| **Total with config changes** | **~+580** | **net savings — see STM32_RTPS_MEMORY_CALCULATION.md for the full budget** |
+
+---
+
+## Build integration
+
+Patches are applied in `build.bash` after `git -C mros2 submodule update --init`:
+
+```bash
+if [ -d platform/patches ] && [ -d mros2/embeddedRTPS ]; then
+  for p in platform/patches/*.patch; do
+    [ -f "$p" ] || continue
+    abspath="$(cd "$(dirname "$p")" && pwd)/$(basename "$p")"
+    if ! git -C mros2/embeddedRTPS apply --check --reverse "$abspath" 2>/dev/null; then
+      git -C mros2/embeddedRTPS apply "$abspath" && echo "INFO: applied patch $(basename $p)"
+    fi
+  done
+fi
+```
+
+- `--reverse` check makes the loop idempotent (safe to re-run)
+- `abspath` conversion is required because `git -C` changes CWD
+- Patches apply to a clean `embeddedRTPS` clone; patching a dirty tree will fail
 
 ---
 
@@ -761,3 +534,7 @@ After flashing, check `raw_serial_*.log` for:
   'dst host 239.255.0.1 and udp port 8650' -nn` should show packets from both
   192.168.1.2 and 192.168.1.6 with length > 200 bytes (those are SEDP DATA)
 - `ros2 topic info /tpc_chassis_imu` Publisher count: 1 (was 0 in runs 019–022)
+
+---
+
+**See Also:** [STM32_CHANGES_SUMMARY.md](STM32_CHANGES_SUMMARY.md) · [RTPS_CONFIG_REFERENCE.md](RTPS_CONFIG_REFERENCE.md) · [STM32_RTPS_MEMORY_CALCULATION.md](STM32_RTPS_MEMORY_CALCULATION.md)

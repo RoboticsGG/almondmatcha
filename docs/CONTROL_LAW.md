@@ -214,7 +214,7 @@ is published as `data[1]` of `tpc_rover_ctrl_cmd`.
 
 | Param | Value | Role |
 |---|---|---|
-| `speed_ref` | 50 % | nominal cruise duty when lane detected |
+| `speed_ref` | 16 % | nominal cruise duty when lane detected |
 | `speed_lost_ratio` | 0.5 | caution-speed multiplier while lane briefly lost |
 | `detection_timeout_sec` | 10.0 s | time lost before full stop |
 
@@ -297,17 +297,20 @@ $$
 > `ṅ_max` makes it limit-cycle — measured speed reads above full scale, duty is
 > driven to 0, the wheels stop, measured falls to 0, duty is driven back up: a
 > ~2 Hz stop-and-spin judder at the encoder rate. So the run begins in open
-> loop, `ṅ_max` is learned from the flat opening stretch (§2.5), and the
+> loop, `ṅ_max` is learned from the flat opening stretch (see the
+> auto-calibration parameters in §2.4, `chassis_speed_control_params.yaml`), and the
 > controller switches itself on when that succeeds. The switch is bumpless
 > because the feedforward term is the commanded duty: at zero error the loop
 > outputs exactly what open-loop was already sending.
 >
 > **Cap and target must differ.** `spd_limit_cap` clamps the loop's *output*,
 > not just the incoming request, so setting the cap equal to the target speed
-> leaves the controller no authority to correct for load at all. The rover runs
-> a 20 % target under a 40 % cap — the 20-point gap is the headroom the loop
-> uses to climb. Simulated on a ramp that costs 45 % of tractive effort, duty
-> rises 20 % → 36 % and holds the commanded speed, staying inside the cap.
+> leaves the controller no authority to correct for load at all. There must be
+> a gap between the target and the cap for the loop to have headroom to climb.
+> For illustration, a 20 % target under a 40 % cap (a 20-point gap, not the
+> rover's current 16 % `speed_ref`) was simulated on a ramp that costs 45 % of
+> tractive effort: duty rises 20 % → 36 % and holds the commanded speed,
+> staying inside the cap.
 
 **Fallback:** if `tpc_chassis_sensors` goes stale (`> sensor_timeout_sec`)
 or `use_closed_loop_speed = false`, the loop drops to open-loop passthrough
@@ -350,8 +353,17 @@ flowchart LR
 | `speed_kd` | 0.0 | derivative — left off; the ~4 Hz encoder feed is too coarse to differentiate cleanly |
 | `speed_integral_limit` | 100.0 | anti-windup clamp (%·s) → `k_i × limit` = ±50 % duty of trim authority |
 | `speed_max_duty_step_pct` | 15.0 | slew limit: max change in commanded duty per encoder update (≈60 %/s) |
-| `max_ticks_per_sec` | 1000.0 | **placeholder** — needs flat-ground 100%-duty calibration from encoder logs |
+| `max_ticks_per_sec` | 1000.0 | placeholder full-scale calibration, overwritten automatically once auto-calibration succeeds |
 | `sensor_timeout_sec` | 1.0 s | stale-feed fallback threshold |
+| `auto_calibrate_max_ticks` | true | estimate `max_ticks_per_sec` from observed duty→tick-rate ratio during a flat-ground opening window |
+| `autocal_min_duty_pct` | 13.0 | ignore samples below this duty (below the rover's ~15–16 % cruise band; near the deadband the ratio is meaningless) |
+| `autocal_min_samples` | 40 | steady samples required (~10 s at 4 Hz) before the estimate is trusted |
+| `autocal_window_sec` | 60.0 | learning window length from first movement; must stay shorter than the flat opening stretch of the course |
+| `auto_enable_closed_loop` | true | switch to closed-loop automatically once calibration succeeds |
+| `stall_detect_enabled` | true | latch a stop if wheels aren't turning despite real duty being applied |
+| `stall_min_duty_pct` | 30.0 | only judge a stall above this duty — below it, "not turning fast" is under-power, not a fault |
+| `stall_min_ticks_per_sec` | 10.0 | below this counts as "not turning" |
+| `stall_timeout_sec` | 2.0 s | how long the stall condition must persist before stopping |
 
 Gains were chosen by simulating the loop at the 4 Hz encoder rate across
 no-load / light / moderate / heavy load and a range of drivetrain lags:
@@ -378,14 +390,13 @@ bottleneck, not the control loop.
 
 ## 4. Known limitations
 
-- `max_ticks_per_sec` is still a placeholder and **must** be calibrated from
-  a flat-ground 100 %-duty run before the closed loop is trusted. It defines
-  what "100 % speed" means to the loop, so calibrating it from a no-load
-  bench run (wheels off the ground, which spin faster than under load) makes
-  the whole speed scale no-load-referenced and the loop will push extra duty
-  on the ground chasing a target it can't reach. A bench run is still the
-  right way to verify encoder wiring, left/right symmetry, duty→speed
-  linearity, and the motor deadband — just not to set this constant.
+- `max_ticks_per_sec` ships as a placeholder, but `auto_calibrate_max_ticks`
+  now estimates it automatically from the observed duty→tick-rate ratio
+  during a flat-ground opening window, and freezes the estimate before later
+  terrain (ramps, load) can drag it down. A no-load bench run (wheels off
+  the ground) still reads higher than an on-ground run and is not a
+  substitute for the automatic on-ground calibration — it remains useful for
+  verifying encoder wiring, left/right symmetry, and duty→speed linearity.
 - `speed_kp/ki/kd` are simulation-derived starting values, not field-tuned.
 - The speed loop's setpoint/error live entirely in the 0–100 % duty
   abstraction (via `max_ticks_per_sec`), not physical units (m/s). Note the

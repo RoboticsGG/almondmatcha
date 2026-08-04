@@ -2,81 +2,105 @@
 
 ## Overview
 
-Base station for rover mission control (Domain 5 - Unified Architecture).
+Base station for rover mission control — dual-domain, not unified.
 
 ```
-BASE STATION (D5) ←─ Direct DDS ─→ ROVER (D5)
+BASE STATION (D5) ─ command/action/service ─→ ROVER (D5)
+BASE STATION (D4) ←─ telemetry relay ────────── ROVER (D5, via RPi relay)
 ```
 
-**No Bridge Needed:** All systems communicate directly on Domain 5. Actions and services work natively without relay nodes.
+`mission_command_node` participates directly in Domain 5 alongside the rest
+of the rover's control nodes. `mission_monitoring_node_pc` participates only
+in Domain 4 and never joins Domain 5 — it has no STM32 memory cost and no
+direct visibility into rover-side D5 topics; it reads a single aggregated
+relay topic instead.
 
 ## Nodes
 
-### 1. mission_command_node
+### 1. mission_command_node (Domain 5)
+
 Generates mission goals and speed limits.
 
-**Config** (`config/params.yaml`):
+**Config** (`config/params.yaml` / node parameter defaults):
 ```yaml
-rover_spd: 15      # Speed (0-100%)
-des_lat: 500.0     # Latitude
-des_long: 500.0    # Longitude
+rover_spd: 15                        # Speed (0-100%)
+des_lat: 8.007286                    # Latitude
+des_long: 101.90203                  # Longitude
+action_watchdog_timeout_sec: 20.0    # Cancel goal if no feedback this long
+mission_retry_sec: 5.0               # Retry interval until the mission is established (code default)
 ```
 
-**Publishes:**
-- `/des_data` - Navigation action
-- `/spd_limit` - Speed service
+**Calls:**
+- `/des_data` — `DesData` action (navigation goal, to `gnss_mission_monitor_node` on the RPi)
+- `/srv_spd_limit` — `SpdLimit` service (speed cap, to `chassis_controller_node` on the RPi)
 
-**Flow:** Load params → Send speed → Send goal → Monitor feedback
+**Flow:** load params → set speed limit → send navigation goal → retry on a
+timer (`mission_retry_sec`) until accepted → monitor action feedback, cancel
+if it stalls past `action_watchdog_timeout_sec`.
 
-### 2. mission_monitoring_node
-Displays rover telemetry @ 1 Hz.
+### 2. mission_monitoring_node_pc (Domain 4)
+
+Displays rover telemetry as it arrives (event-driven, not polled).
 
 **Subscribes:**
-- `tpc_gnss_spresense` - Position
-- `tpc_gnss_mission_active` - Status
-- `tpc_gnss_mission_remain_dist` - Distance
-- `tpc_chassis_cmd` - Commands
-- `tpc_rover_dest_coordinate` - Target
+- `tpc_telemetry_relay` (`TelemetryRelay.msg`) — the only topic this node
+  reads; aggregates GNSS, chassis command/sensor/IMU state, lane and
+  destination fields, published by `mission_monitoring_node_rpi` on the RPi
+  at 5 Hz.
 
 ## Stack
 
 ```
-App:  mission_command | mission_monitoring
+App:  mission_command_node (D5) | mission_monitoring_node_pc (D4)
 ROS2: rclcpp | actions | services | topics
-DDS:  Cyclone DDS (RTPS)
+DDS:  FastDDS (RTPS)
 Net:  Gigabit Ethernet (switch, 192.168.1.0/24)
 ```
 
 ## Domain Architecture
 
-**Unified Domain 5:**
-- **ws_rpi**: GNSS, Chassis, Sensors (5 nodes)
-- **ws_base**: Mission Command, Monitoring (2 nodes)
-- **ws_jetson**: Vision Navigation (3 nodes)
-- **STM32 Boards**: Chassis + GNSS (mROS2)
+**Dual-domain, not unified:**
+- **Domain 5** (control): ws_rpi (8 nodes), ws_base (`mission_command_node`),
+  ws_jetson (`rover_kinematic_control`, D5-side context), STM32 chassis +
+  sensors boards — 12 participants total.
+- **Domain 4** (telemetry): `mission_monitoring_node_pc` (base) and
+  `rover_local_monitoring_node` (Jetson) — both read-only subscribers to
+  `tpc_telemetry_relay`, no STM32 participation.
 
-**Direct Communication:**
-- **Actions:** `/des_data` (BASE→ROVER navigation goals)
-- **Services:** `/srv_spd_limit` (BASE→ROVER speed limits)
-- **Topics:** All telemetry topics visible to all nodes
-- **Discovery:** Native DDS/RTPS - no relay needed
+**Communication:**
+- **Actions:** `/des_data` (base → RPi navigation goals) — Domain 5
+- **Services:** `/srv_spd_limit` (base → RPi speed limits) — Domain 5
+- **Topics:** rover-side D5 telemetry topics are visible to other D5
+  participants directly; the base station's monitoring node deliberately
+  does not join D5 and instead reads the aggregated D4 relay
+- **Discovery:** native DDS/RTPS within each domain; domains do not discover
+  each other — `mission_monitoring_node_rpi` on the RPi is the only node
+  that bridges D5 data onto D4, by explicitly re-publishing it
+
+See [../../docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md) and
+[../../docs/DOMAINS.md](../../docs/DOMAINS.md) for the full system-level
+picture.
 
 ## Structure
 
 ```
 ws_base/
 ├── src/
-│   ├── common_ifaces/      # Interfaces
-│   └── mission_control/    # Nodes
+│   ├── common_ifaces/      # Interfaces (symlinked)
+│   └── mission_control/    # mission_command_node, mission_monitoring_node_pc
 └── docs/                   # Documentation
 ```
 
 ## Message Flow
 
 ```
-command_node → /spd_limit → ROVER
-             → /des_data  →   ↓
-                         tpc_* topics
-                              ↓
-                     monitoring_node
+mission_command_node ─/srv_spd_limit→ chassis_controller_node (RPi, D5)
+                      ─/des_data────→ gnss_mission_monitor_node (RPi, D5)
+                                              │
+                                     RPi D5 topics aggregated by
+                                     mission_monitoring_node_rpi
+                                              │
+                                    tpc_telemetry_relay (D4, 5 Hz)
+                                              │
+                                  mission_monitoring_node_pc (base, D4)
 ```

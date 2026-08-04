@@ -6,10 +6,10 @@
 
 This directory contains shared interface packages (messages, actions, services) that are used by multiple workspaces in the rover system. By centralizing interface definitions, we ensure:
 
-- ✅ **Consistency**: All nodes use identical message structures
-- ✅ **Maintainability**: Update once, apply everywhere
-- ✅ **Version control**: Single point of interface versioning
-- ✅ **No duplication**: Eliminates drift between workspace copies
+- **Consistency**: All nodes use identical message structures
+- **Maintainability**: Update once, apply everywhere
+- **Version control**: Single point of interface versioning
+- **No duplication**: Eliminates drift between workspace copies
 
 ## Structure
 
@@ -20,7 +20,9 @@ common_ifaces/
 │   │   ├── ChassisCtrl.msg       Chassis control commands (steering, speed)
 │   │   ├── ChassisIMU.msg        IMU sensor data (accel, gyro)
 │   │   ├── ChassisSensors.msg    Encoder and battery telemetry
-│   │   └── SpresenseGNSS.msg     GNSS position data
+│   │   ├── SpresenseGNSS.msg     GNSS position data (Sony Spresense)
+│   │   ├── UbloxGNSS.msg         RTK GNSS position data (u-blox SimpleRTK2b)
+│   │   └── TelemetryRelay.msg    Aggregated D5→D4 telemetry relay
 │   ├── CMakeLists.txt
 │   └── package.xml
 │
@@ -122,6 +124,29 @@ float64 longitude        # Longitude in decimal degrees
 float64 altitude         # Altitude above mean sea level (meters)
 ```
 
+#### UbloxGNSS.msg
+RTK GNSS position data from the u-blox SimpleRTK2b, parsed from NMEA.
+```
+string date                  # Date, YYYYMMDD
+string time                  # UTC time, HHMMSS
+float64 latitude             # Latitude in decimal degrees
+float64 longitude            # Longitude in decimal degrees
+float64 altitude             # Altitude in meters above sea level
+int32 satellites_tracked     # Number of satellites being tracked
+string fix_quality           # Fix quality: Auto, DGPS, Float, RTK Fixed
+float32 snr                  # Signal-to-Noise Ratio (dB)
+float64 speed                # Speed in m/s
+float32 centimeter_error     # Position error in centimeters
+```
+
+#### TelemetryRelay.msg
+Aggregated Domain 5 → Domain 4 telemetry relay, published by
+`mission_monitoring_node_rpi` at 5 Hz and subscribed by
+`mission_monitoring_node_pc` and `rover_local_monitoring_node`. Bundles
+mission status, both GNSS sources, chassis command/sensor/IMU state, lane
+detection flags, and destination coordinates into one message — see
+`msgs_ifaces/msg/TelemetryRelay.msg` for the full field list.
+
 ### Actions (action_ifaces)
 
 #### DesData.action
@@ -147,7 +172,7 @@ Speed limit configuration service.
 uint8 rover_spd  # Speed limit (0-100%)
 ---
 # Response
-# (acknowledgment)
+string spd_result  # Result message
 ```
 
 ## Build Order

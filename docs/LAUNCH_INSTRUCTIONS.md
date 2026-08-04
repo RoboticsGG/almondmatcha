@@ -4,7 +4,13 @@ Complete guide to launching the Almondmatcha rover system across all platforms.
 
 ## Quick Launch Summary
 
-**Recommended tmux-based launch (organized terminal sessions):**
+**Recommended: single-command field launch from the base PC.** `ws_base/launch_field.sh`
+runs pre-flight checks, then starts RPi, Jetson, and (unless `--skip-base`) the
+base station in sequence over SSH, each via the tmux scripts below. Ctrl-C in
+that terminal is an emergency stop across all three machines. See its header
+comment for usage and flags.
+
+**Manual per-machine launch (what `launch_field.sh` automates):**
 
 1. **STM32 boards:** power on and wait for network readiness
 2. **Raspberry Pi (ws_rpi):** `./launch_rover_tmux.sh` → 8 active panes + 1 spare
@@ -245,6 +251,14 @@ minicom -D /dev/ttyACM0
 
 ## Shutdown
 
+**Emergency stop:** `bash ws_base/emergency_stop.sh` (aliasable as `rover-stop`) kills
+tmux sessions and ros2 processes on base, RPi, and Jetson, then publishes a zeroed
+`ChassisCtrl` from the RPi. The STM32 has no command watchdog — it holds the last
+commanded duty until a node sends a new one — so a stop must kill the publishing
+nodes before zeroing the command, which is the order this script uses. If launched
+via `launch_field.sh`, Ctrl-C in that terminal runs the same stop.
+
+**Manual shutdown:**
 ```bash
 tmux kill-session -t jetson_vision   # Jetson
 tmux kill-session -t rover           # RPi

@@ -12,7 +12,7 @@ Distributed ROS2 outdoor autonomous rover with vision-based lane following, cent
 - Cross-domain telemetry relay: RPi aggregates D5 topics, publishes to D4 at 5 Hz
 - Dual CSV logging: RPi per-topic at native rates, Jetson aggregated from D4
 - Base station dual-domain: command/action on D5, monitoring on D4
-- STM32 memory optimized: 11 D5 participants, ~60% free RAM
+- STM32 memory optimized: 12 D5 participants, ~60% free RAM
 
 **Production Policy (`main` branch):**
 - Keep tri-domain runtime architecture (D4/D5/D6)
@@ -301,6 +301,17 @@ bash ws_base/launch_field.sh
 `launch_field.sh` SSH-launches rover nodes on RPi, vision nodes on Jetson, then starts
 base station nodes locally — in the correct order with proper startup delays.
 
+**Emergency stop from anywhere on the base PC:**
+
+```bash
+bash ws_base/emergency_stop.sh
+```
+
+Ctrl-C in the `launch_field.sh` terminal already stops the rover; this script
+is the same stop, callable from any other shell (e.g. while attached to a
+tmux pane instead of the launch terminal). Commonly aliased on the base PC —
+see the script header for the `alias` line.
+
 Reconnect to individual machine sessions at any time:
 ```bash
 ssh curry@192.168.1.1 -t 'tmux attach-session -t rover'          # RPi
@@ -521,5 +532,5 @@ See workspace README files for detailed troubleshooting.
 
 ---
 
-**Last Updated:** July 27, 2026
-**Version:** 4.1 (Tri-domain, dual CSV logging, rover_monitoring on Jetson; RPi-side rover_monitoring_node/mission_monitoring_node_rpi split into logger/relay roles)
+**Last Updated:** August 4, 2026
+**Version:** 4.1 (Tri-domain, dual CSV logging, rover_monitoring on Jetson; RPi-side rover_monitoring_node/mission_monitoring_node_rpi split into logger/relay roles; standalone `emergency_stop.sh` on the base PC)

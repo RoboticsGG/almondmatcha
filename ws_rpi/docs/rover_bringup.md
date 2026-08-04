@@ -2,7 +2,7 @@
 
 ## Overview
 
-Centralized launch system for the Almondmatcha rover, managing all 7 ROS2 nodes
+Centralized launch system for the Almondmatcha rover, managing all 8 ROS2 nodes
 on Raspberry Pi across Domain 5 (control network) and Domain 4 (telemetry relay).
 
 ## Architecture
@@ -18,7 +18,8 @@ on Raspberry Pi across Domain 5 (control network) and Domain 4 (telemetry relay)
 │  │   ├─ chassis_controller_node    (Motor coordination) │   │
 │  │   ├─ chassis_imu_node           (IMU data logger)    │   │
 │  │   ├─ chassis_sensors_node       (Encoder/power log)  │   │
-│  │   └─ mission_monitoring_node_rpi (D5 sub + CSV log)  │   │
+│  │   ├─ rover_monitoring_node      (full CSV logger)    │   │
+│  │   └─ mission_monitoring_node_rpi (D5 sub + D4 relay) │   │
 │  └──────────────────────────────────────────────────────┘   │
 │                                                              │
 │  ws_jetson: rover_kinematic_control (dual-context D6/D5)    │
@@ -34,8 +35,10 @@ on Raspberry Pi across Domain 5 (control network) and Domain 4 (telemetry relay)
 └──────────────────────────────────────────────────────────────┘
 ```
 
-`mission_monitoring_node_rpi` runs dual-context: subscribes 10 D5 topics, publishes
-aggregated telemetry to D4 at 5 Hz, and logs 6 per-topic CSV files.
+`mission_monitoring_node_rpi` subscribes 9 D5 topics and publishes aggregated
+telemetry to D4 at 5 Hz — it does not log CSVs locally. `rover_monitoring_node`
+is the separate full-fidelity logger: it subscribes 10 D5 topics (the same
+set plus `tpc_chassis_speed_debug`) and writes 7 per-topic CSV files.
 
 ## Usage
 
@@ -52,10 +55,10 @@ source install/setup.bash
 ros2 launch rover_bringup rover_startup.launch.py
 ```
 
-This launches 7 rover nodes on Domain 5 (+ D4 relay context):
+This launches 8 rover nodes on Domain 5 (+ D4 relay context):
 - gnss_spresense_node, gnss_ublox_node, gnss_mission_monitor_node
 - chassis_controller_node, chassis_imu_node, chassis_sensors_node
-- mission_monitoring_node_rpi
+- rover_monitoring_node, mission_monitoring_node_rpi
 
 ### Launch ws_jetson (Vision System)
 
@@ -95,7 +98,8 @@ source install/setup.bash
 | `chassis_controller_node` | chassis_control | Motor command coordination + closed-loop speed control | Sub: `tpc_rover_ctrl_cmd`, `tpc_gnss_mission_active`, `tpc_chassis_sensors`<br>Pub: `tpc_chassis_cmd`<br>Params: `config/chassis_speed_control_params.yaml` |
 | `chassis_imu_node` | chassis_sensors | IMU data logger | Sub: `tpc_chassis_imu` |
 | `chassis_sensors_node` | chassis_sensors | Encoder/power logger | Sub: `tpc_chassis_sensors` |
-| `mission_monitoring_node_rpi` | rover_monitoring | D5 aggregator → D4 relay + CSV | Sub: 10 D5 topics<br>Pub: D4 `/tpc_telemetry_relay` @ 5 Hz<br>CSV: 6 files in ws_rpi/runs/ |
+| `rover_monitoring_node` | rover_monitoring | Full-fidelity local logger | Sub: 10 D5 topics<br>CSV: 7 files in ws_rpi/runs/ (no D4 publish) |
+| `mission_monitoring_node_rpi` | rover_monitoring | D5 aggregator → D4 relay | Sub: 9 D5 topics<br>Pub: D4 `/tpc_telemetry_relay` @ 5 Hz<br>No local CSV logging |
 
 **`chassis_controller_node` closed-loop speed control:** holds target speed against
 `tpc_chassis_sensors` encoder feedback (~4 Hz) instead of applying `spd_msg` PWM duty
@@ -152,6 +156,7 @@ ros2 node list
 #   /chassis_controller_node
 #   /chassis_imu_node
 #   /chassis_sensors_node
+#   /rover_monitoring_node
 #   /mission_monitoring_node_rpi
 ros2 topic hz /tpc_chassis_imu      # ~10 Hz
 ros2 topic hz /tpc_gnss_spresense   # ~10 Hz
@@ -201,4 +206,4 @@ ros2 service list       # Should show /srv_spd_limit
 ## Author
 
 Almondmatcha Development Team  
-Last updated: February 26, 2026
+Last updated: August 4, 2026
