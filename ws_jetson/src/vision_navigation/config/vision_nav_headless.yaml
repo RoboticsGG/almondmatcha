@@ -64,3 +64,10 @@ lane_detection_node:
     min_window_pixels: 50
     min_lane_pixels: 50
     search_band_px: 45.0
+
+    # Absolute bound on the fitted offset. search_band_px limits per-frame
+    # movement but permits a steady walk; a field log shows b creeping from
+    # -46 to -230 px over 19 frames and settling 1.9 line spacings away, still
+    # reporting "Detected". 100 px = 0.50 m = the downstream clamp, beyond
+    # which the value cannot reach the controller unsaturated anyway.
+    max_abs_b_px: 100.0

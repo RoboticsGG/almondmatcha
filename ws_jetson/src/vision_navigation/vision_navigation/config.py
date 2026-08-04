@@ -110,6 +110,21 @@ class LaneDetectionConfig:
     # refuses to start.
     SEARCH_BAND_PX = 45.0
 
+    # Absolute plausibility bound on the fitted offset, in BEV pixels.
+    #
+    # SEARCH_BAND_PX limits how far the tracked line may move BETWEEN frames,
+    # but it does not stop a steady walk: at 45 px/frame the search can travel
+    # 900 px in 20 frames while every individual step looks legal. A field log
+    # shows exactly that -- b ran from -46 px to -230 px over 19 frames
+    # (-9.7 px/frame average) and settled 1.9 line spacings away, outside the
+    # ROI entirely, with the detector still reporting "Detected" throughout.
+    #
+    # 100 px = 0.50 m, which is also the downstream clamp in
+    # rover_kinematic_control. Past it the value cannot reach the controller
+    # unsaturated, so it is not a usable measurement whatever its true cause,
+    # and continuing to track it only steers hard over on a bogus lock.
+    MAX_ABS_B_PX = 100.0
+
     # ===== Perspective Transform =====
     # ROI (Region of Interest) points for bird eye view (1280x720 base).
     #

@@ -128,6 +128,7 @@ class LaneDetectionNode(Node):
         self.declare_parameter('bev_width_px', LaneDetectionConfig.BEV_WIDTH_PX)
         self.declare_parameter('bev_height_px', LaneDetectionConfig.BEV_HEIGHT_PX)
         self.declare_parameter('search_band_px', LaneDetectionConfig.SEARCH_BAND_PX)
+        self.declare_parameter('max_abs_b_px', LaneDetectionConfig.MAX_ABS_B_PX)
 
         roi_flat = [float(v) for v in self.get_parameter('roi_base_points').value]
         if len(roi_flat) != 8:
@@ -147,6 +148,7 @@ class LaneDetectionNode(Node):
         self.bev_width_px: int = int(self.get_parameter('bev_width_px').value)
         self.bev_height_px: int = int(self.get_parameter('bev_height_px').value)
         self.search_band_px: float = float(self.get_parameter('search_band_px').value)
+        self.max_abs_b_px: float = float(self.get_parameter('max_abs_b_px').value)
 
         # ===== Tracked lane position (wrong-line protection) =====
         # Column the lane was found at last frame, in warped-canvas pixels.
@@ -224,6 +226,23 @@ class LaneDetectionNode(Node):
             search_center=self._search_center,
             search_band=self.search_band_px,
         )
+
+        # ===================== Reject an implausible lock =====================
+        # The per-frame search band stops jumps but permits a steady walk, so
+        # the tracker can creep off the line it is following and settle on a
+        # neighbouring one -- or on off-track content in the canvas margin --
+        # while still reporting "detected" every frame. Bound the result in
+        # absolute terms: past max_abs_b_px the lane is further away than any
+        # real cross-track error on this track, so treat it as lost and let the
+        # seed reset re-acquire from the centre rather than keep tracking it.
+        if detected and math.isfinite(b) and abs(b) > self.max_abs_b_px:
+            self.get_logger().warn(
+                f"Rejecting implausible lane offset b={b:.1f} px "
+                f"(limit +-{self.max_abs_b_px:.0f}) — re-acquiring from centre",
+                throttle_duration_sec=2.0,
+            )
+            detected = False
+            curvature = theta = b = float('nan')
 
         # ===================== Track the lane across frames =====================
         # `b` is the fitted offset from the canvas centre at the canvas bottom
