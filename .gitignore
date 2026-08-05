@@ -30,3 +30,6 @@ __pycache__/
 
 # Production main policy: keep local POC/tracing outputs untracked
 ws_base/tools/
+
+# D415 capture utility output (Windows laptop tool, not workspace-scoped)
+tools/videocapture/
