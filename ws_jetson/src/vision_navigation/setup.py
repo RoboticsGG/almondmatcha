@@ -32,6 +32,7 @@ setup(
             'camera_recorder_node = vision_navigation.camera_recorder_node:main',
             'demo_lane = vision_navigation.demo_lane:main',
             'regenerate_roi = vision_navigation.regenerate_roi:main',
+            'capture_roi_debug = vision_navigation.capture_roi_debug:main',
         ],
     },
 )
