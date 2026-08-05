@@ -63,7 +63,7 @@ Published Topics:
   - theta: Heading error from lane center (real degrees, positive = right)
   - b: Lateral offset from lane center (pixels at 200 px/m -- 100 px = 50 cm, positive = right)
 
-  All three are measured at a 1.23 m lookahead ahead of the front axle, not at the rover.
+  All three are measured at a 1.22 m lookahead ahead of the front axle, not at the rover.
   - detected: Detection flag (1.0 = valid, 0.0 = not detected)
 
 Parameters:

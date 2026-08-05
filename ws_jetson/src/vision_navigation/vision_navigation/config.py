@@ -147,17 +147,21 @@ class LaneDetectionConfig:
     #
     # Derived from the physical camera mount rather than hand-authored, so the
     # warp is a true ground-plane rectification:
-    #     D415 colour stream, 50 cm above the ground, tilted 20 deg down,
-    #     mounted front-centre, 7 cm behind the front axle.
+    #     D415 colour stream, 50 cm above the ground, tilted 15 deg down
+    #     (+-3 deg mounting tolerance -- the numbers below use the nominal
+    #     15 deg), mounted on the lateral centreline, 8 cm behind the front
+    #     axle.
     # These four points are the image projection of the ground rectangle
     #     X = -0.90 .. +0.90 m (lateral),  Z = 1.30 .. 3.00 m (forward, from
-    #     the camera) = 1.23 .. 2.93 m ahead of the front axle.
-    # Regenerate these if the camera height, tilt, or lens changes.
+    #     the camera) = 1.22 .. 2.92 m ahead of the front axle.
+    # Regenerate these with `regenerate_roi.py` (same package) if the camera
+    # height, tilt, mount position, or lens changes -- do not hand-recompute;
+    # see docs/VISION_PIPELINE.md "Regenerating the ROI".
     ROI_BASE_POINTS = [
-        [43, 377],       # Bottom-left   (X=-0.90 m, Z=1.30 m)
-        [1237, 377],     # Bottom-right  (X=+0.90 m, Z=1.30 m)
-        [918, 188],      # Top-right     (X=+0.90 m, Z=3.00 m)
-        [362, 188]       # Top-left      (X=-0.90 m, Z=3.00 m)
+        [39, 458],       # Bottom-left   (X=-0.90 m, Z=1.30 m)
+        [1241, 458],     # Bottom-right  (X=+0.90 m, Z=1.30 m)
+        [915, 270],      # Top-right     (X=+0.90 m, Z=3.00 m)
+        [365, 270]       # Top-left      (X=-0.90 m, Z=3.00 m)
     ]
     ROI_BASE_WIDTH = 1280.0   # Reference resolution ROI_BASE_POINTS were authored against
     ROI_BASE_HEIGHT = 720.0
@@ -211,10 +215,10 @@ class ControlConfig:
     # reacting only after heading/offset error (PID feedback) builds up.
     # With a metric bird's-eye view this is derivable, not a guess:
     #     A = 1/(2*R*S)  and  delta = atan(L/R)  =>  K_FF = 2*S*L*(180/pi)
-    # L = 0.50 m wheelbase, S = LaneDetectionConfig.BEV_PX_PER_M = 200 -> 11459.
+    # L = 0.4875 m wheelbase, S = LaneDetectionConfig.BEV_PX_PER_M = 200 -> 11172.7.
     # Shipped at 0.0: on this track the correct feedforward is <1 deg, below
     # the curvature fit's noise floor. See rover_kinematic_control_params.yaml.
-    K_FF = 0.0         # Feedforward gain on filtered curvature (derived: 11459.0)
+    K_FF = 0.0         # Feedforward gain on filtered curvature (derived: 11172.7)
 
     # ===== Error Weights =====
     # Combined error: e_total = k_e1*theta + k_e2*b

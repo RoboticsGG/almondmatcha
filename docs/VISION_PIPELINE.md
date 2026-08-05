@@ -9,6 +9,8 @@ domain topology see [ARCHITECTURE.md](ARCHITECTURE.md).
 `ws_jetson/src/vision_navigation/vision_navigation/lane_detector.py` (the
 pipeline itself, pure functions, no ROS) and `lane_detection_node.py` (the ROS
 wrapper: parameters, frame-to-frame state, publishing, CSV logging).
+`regenerate_roi.py` recomputes the §0/§1 geometry from the physical mount —
+run it, don't hand-recompute, whenever the mount changes.
 **Config:** `config/vision_nav_headless.yaml` / `config/vision_nav_gui.yaml`.
 
 ---
@@ -42,10 +44,10 @@ first thing to re-check if the rover is rebuilt.
 |---|---|
 | Camera | Intel RealSense D415, **colour** stream (`rs.stream.color`) |
 | Height above ground | 0.50 m |
-| Tilt | 20° down from horizontal |
-| Lateral position | front-centre, on the rover centreline |
-| Longitudinal position | 7 cm **behind** the front axle |
-| Wheelbase | 0.50 m |
+| Tilt | 15° down from horizontal (±3° mounting tolerance — the geometry below uses the nominal 15°) |
+| Lateral position | on the rover's lateral centreline |
+| Longitudinal position | 8 cm **behind** the front axle |
+| Wheelbase | 0.4875 m |
 | Capture resolution | 1280 × 720 (16:9, so the full sensor FOV is used) |
 
 A pixel `(u, v)` maps to a ground point `(X, Z)` — `X` lateral, `Z` forward
@@ -63,16 +65,26 @@ t = \frac{h}{d_y}
 $$
 
 giving `X = t·(u−c_x)/f_x` and `Z = t·d_z`, with `h = 0.50 m` and
-`φ = 20°`. The horizon (where `d_y = 0`) sits at row **23 of 720** — nearly
-the entire frame is ground.
+`φ = 15°`. The horizon (where `d_y = 0`) sits at row **112 of 720** — the
+lower ~78% of the frame is ground (at the previous 20° mount this was row 23;
+the shallower tilt pushes the horizon further down the frame).
 
-What the camera actually covers:
+What the camera actually covers (recomputed with `regenerate_roi.py`; see
+that script for the exact formulas used for this table):
 
 | | row | distance ahead | ground width visible |
 |---|---|---|---|
-| bottom of frame | 720 | 0.57 m | 0.98 m |
-| **ROI near edge** | 377 | **1.30 m** | 1.43 m |
-| **ROI far edge** | 188 | **3.00 m** | 3.85 m |
+| bottom of frame | 720 | 0.68 m | 1.09 m |
+| **ROI near edge** | 458 | **1.30 m** | 1.92 m |
+| **ROI far edge** | 270 | **3.00 m** | 4.19 m |
+
+> **Correction (2026-08-04):** the previous version of this table listed
+> 1.43 m / 3.85 m for the ROI near/far edge widths. Those numbers belonged to
+> a different distance (0.92 m — see the near-field example below) and were
+> never valid for the actual ROI edges; the "why the ROI starts 1.30 m out"
+> reasoning immediately below this table already used the correct **±0.96 m**
+> figure (1.92 m total) for the near edge, so the two were self-contradictory.
+> Recomputed and re-verified against the ROI corner pixel positions below.
 
 > **Intrinsics caveat.** `f_x ≈ 924`, `f_y ≈ 925` at 1280×720 are derived from
 > the datasheet FOV (69.4° × 42.5°), **not** read from the device.
@@ -94,10 +106,10 @@ of a ground **rectangle**:
 ```
 X = -0.90 .. +0.90 m   (lateral, 1.80 m wide)
 Z =  1.30 ..  3.00 m   (forward from the camera, 1.70 m deep)
-     = 1.23 .. 2.93 m ahead of the front axle
+     = 1.22 .. 2.92 m ahead of the front axle
 ```
 
-which projects to `[43, 377, 1237, 377, 918, 188, 362, 188]`.
+which projects to `[39, 458, 1241, 458, 915, 270, 365, 270]`.
 
 Because the source region is a true ground rectangle, the warp in
 [§3](#3-perspective-transform--metric-birds-eye) is a genuine rectification:
@@ -110,16 +122,36 @@ Unlike lowering the capture resolution, cropping does not reduce pixel density
 inside the ROI, so it costs no fitting accuracy.
 
 > **Why the ROI starts 1.30 m out rather than at the rover.** Near-field
-> width is FOV-limited: at 0.92 m the camera sees only 1.43 m across, which
-> leaves ±11 cm of drift before an outer painted line falls outside the ROI.
+> width is FOV-limited: at 0.92 m the camera sees only 1.41 m across, which
+> leaves ±9.5 cm of drift before an outer painted line falls outside the ROI.
 > Moving the near edge to 1.30 m widens that to ±0.96 m of coverage and
 > ±35 cm of drift budget, at no CPU cost. The price is that the reported
 > geometry is a **lookahead** measurement (see [§5](#5-lane-fit)).
+>
+> These widths barely move with the mount's tilt angle (they were 1.43 m /
+> 1.93 m respectively at the previous 20° tilt) — horizontal FOV is nearly
+> independent of vertical pitch. What moves substantially with tilt is
+> *which row* these distances land on (see the horizon-row and coverage-table
+> changes above), which is why the ROI corner pixels needed recomputing even
+> though the practical drift-budget conclusion barely changed.
 
 ### Regenerating the ROI
 
-If the camera height, tilt, or lens changes, project the four ground corners
-back into the image with the inverse of the §0 mapping:
+If the camera height, tilt, mount position, or lens changes, **run
+`ros2 run vision_navigation regenerate_roi` (or
+`python3 vision_navigation/regenerate_roi.py` directly)** — do not
+hand-recompute. It takes the physical mount as CLI arguments (defaults to
+the currently-shipped geometry) and prints the ROI corners, `k_ff`, the
+horizon row, and the coverage table above, ready to paste into `config.py`
+and both `vision_nav_*.yaml` files.
+
+This replaced a hand-computation process: the ROI corners used to be
+recomputed with a calculator and hand-typed into three files every time the
+mount changed, which is exactly the kind of arithmetic that silently drifts
+out of sync (see the corrected coverage-table numbers above — a
+transcription error from an earlier hand-computation went unnoticed until
+this pass cross-checked it against the script). The script implements the
+same math the manual process used:
 
 $$
 u = c_x + f_x\frac{X}{h\sin\phi + Z\cos\phi}
@@ -127,8 +159,10 @@ u = c_x + f_x\frac{X}{h\sin\phi + Z\cos\phi}
 v = c_y + f_y\frac{h\cos\phi - Z\sin\phi}{h\sin\phi + Z\cos\phi}
 $$
 
-in the corner order `[bottom-left, bottom-right, top-right, top-left]`, then
-scale to the 1280×720 authoring base.
+applied to the four ground corners in order
+`[bottom-left, bottom-right, top-right, top-left]`, at the 1280×720
+authoring base — see `ground_to_pixel()` / `compute_roi_points()` in the
+script for the runnable version.
 
 ---
 
@@ -304,7 +338,7 @@ frame into a full-scale left steering command.
 ### `b` is a lookahead measurement
 
 `y = 0` is the **near edge of the ROI**, which is 1.30 m ahead of the camera
-= **1.23 m ahead of the front axle** — not the rover itself. So `b` is the
+= **1.22 m ahead of the front axle** — not the rover itself. So `b` is the
 cross-track error at a point ahead of the rover, which on a curve is non-zero
 even when the rover is perfectly on the line.
 
@@ -342,7 +376,7 @@ kept in sync.
 
 | Parameter | Value | Notes |
 |---|---|---|
-| `roi_base_points` | `[43,377, 1237,377, 918,188, 362,188]` | Derived from the mount — regenerate, don't hand-edit |
+| `roi_base_points` | `[39,458, 1241,458, 915,270, 365,270]` | Derived from the mount — regenerate with `regenerate_roi.py`, don't hand-edit |
 | `roi_base_width` / `_height` | 1280 / 720 | Authoring base for the above |
 | `crop_margin_px` | 20.0 | Trims unwanted surroundings, in base units |
 | `bev_width_px` / `bev_height_px` | 720 / 340 | Fixes the scale at 200 px/m |
@@ -356,6 +390,15 @@ kept in sync.
 ---
 
 ## Verification
+
+> **Needs re-running against the current mount.** The results below were
+> measured against a ground-truth render built from the *previous* geometry
+> (50 cm height, 20° tilt, 7 cm behind the front axle). The mount has since
+> moved to 15°±3° tilt, 8 cm behind the front axle (§0) — the render, and
+> everything in this section, should be redone against the new geometry
+> before being trusted as a validation of the current ROI. The pipeline
+> logic itself (§§1–5) did not change, only the physical constants, so the
+> *method* here is still correct; only the specific numbers below are stale.
 
 Measured against a ground-truth render built from the §0 geometry — lines
 placed at known ground coordinates, then projected into the image:
@@ -377,7 +420,9 @@ placed at known ground coordinates, then projected into the image:
   line. The seed resets on every lost frame, so a lost-then-reacquire while
   badly off-centre is the exposure. At ±30 cm the failure is safe (*not
   detected*); beyond ±40 cm it can acquire the wrong line. Start the rover
-  within ~20 cm of the centre line.
+  within ~20 cm of the centre line. Measured at the previous 20° mount; since
+  the near-field ground width barely changes with tilt (see §1), this is
+  likely still close, but hasn't been re-measured at the current 15° mount.
 - **Intrinsics are assumed, not measured** (§0). The highest-value
   pre-run check is to launch with `vision_nav_gui.yaml` and confirm the ROI
   trapezoid lands on the track with all three lines inside it — that

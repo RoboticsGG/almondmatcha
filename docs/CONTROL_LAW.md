@@ -65,7 +65,7 @@ curve before heading/offset error alone would build up enough to react.
 
 All three are physical quantities, not canvas-dependent numbers — the
 bird's-eye view is isotropic. See [VISION_PIPELINE.md](VISION_PIPELINE.md)
-for how they are produced. Note that `b` and `κ` are measured at a **1.23 m
+for how they are produced. Note that `b` and `κ` are measured at a **1.22 m
 lookahead ahead of the front axle**, not at the rover, so they encode partly
 the same information; tune `k_p` on `θ` first, then `k_e2`, then `k_ff`.
 | `detected` | detected_flag | Raw vision detection validity |
@@ -158,7 +158,7 @@ flowchart LR
 | `k_p` | 4.0 | proportional |
 | `k_i` | 0.01 | integral |
 | `k_d` | 0.01 | derivative |
-| `k_ff` | 0.0 | feedforward on curvature — **derived value 11459**, see below |
+| `k_ff` | 0.0 | feedforward on curvature — **derived value 11172.7**, see below |
 | `ema_alpha` | 0.05 | filter smoothing |
 | `steer_max_deg` | ±60° | output saturation |
 | `steer_when_lost` | 0.0° | safety default, straight |
@@ -172,19 +172,24 @@ so for small `δ`:
 
 $$
 k_{ff} = 2 S L \frac{180}{\pi}
-       = 2 \times 200 \times 0.50 \times 57.2958
-       = 11459
+       = 2 \times 200 \times 0.4875 \times 57.2958
+       = 11172.7
 $$
 
-with `S = 200 px/m` and wheelbase `L = 0.50 m`. Checked against exact
-Ackermann: `R` = 10 m → 2.86° (exact 2.86), 20 m → 1.43° (exact 1.43),
-36.5 m → 0.78° (exact 0.78).
+with `S = 200 px/m` and wheelbase `L = 0.4875 m` (48.75 cm). Checked against
+exact Ackermann: `R` = 10 m → 2.79° (exact 2.79), 20 m → 1.40° (exact 1.40),
+36.5 m → 0.77° (exact 0.76).
 
 **Shipped at 0.0.** On a 400 m running track (bend radius ≈ 36.5 m) the
-correct feedforward contribution is only 0.78°, while a momentarily bad
-curvature fit multiplied by 11459 would inject a large steering kick.
-Feedback alone covers this track. Raise toward 11459 only once the logs show
-`curvature_ema` is clean and stable through the bends.
+correct feedforward contribution is only ~0.77°, while a momentarily bad
+curvature fit multiplied by 11172.7 would inject a large steering kick.
+Feedback alone covers this track. Raise toward 11172.7 only once the logs
+show `curvature_ema` is clean and stable through the bends.
+
+> Recomputed 2026-08-04 for the corrected wheelbase (48.75 cm, was
+> documented as 50 cm). Run `regenerate_roi.py` (in
+> `ws_jetson/src/vision_navigation/vision_navigation/`) to redo this if the
+> wheelbase or `BEV_PX_PER_M` changes again — see its `compute_k_ff()`.
 
 ---
 

@@ -30,10 +30,11 @@ lane_detection_node:
     show_window: false     # No visualization
     # ROI trapezoid [x0,y0,...,x3,y3] authored at roi_base_width x roi_base_height,
     # scaled to the actual camera_stream resolution at runtime. Derived from
-    # the physical camera mount (50 cm high, 20 deg tilt, front-centre, 7 cm
-    # behind the front axle) -- see the source comment for the ground-plane
-    # rectangle these points project.
-    roi_base_points: [43.0, 377.0, 1237.0, 377.0, 918.0, 188.0, 362.0, 188.0]
+    # the physical camera mount (50 cm high, 15 deg tilt +-3 deg tolerance,
+    # lateral centreline, 8 cm behind the front axle) -- see the source
+    # comment for the ground-plane rectangle these points project, and
+    # regenerate_roi.py to recompute if the mount changes.
+    roi_base_points: [39.0, 458.0, 1241.0, 458.0, 915.0, 270.0, 365.0, 270.0]
     roi_base_width: 1280.0
     roi_base_height: 720.0
     crop_margin_px: 20.0   # Margin around the ROI bounding box before cropping
@@ -76,10 +77,10 @@ rover_kinematic_control:
     k_p: 4.0               # Proportional gain
     k_i: 0.01              # Integral gain
     k_d: 0.01              # Derivative gain
-    # Derivable from the metric bird's-eye view (k_ff = 2*S*L*(180/pi) = 11459
-    # for this rover's wheelbase). Shipped at 0.0: on this track the correct
-    # feedforward is under 1 deg, below the curvature fit's noise floor, while
-    # a bad fit times 11459 would inject a large steering kick.
+    # Derivable from the metric bird's-eye view (k_ff = 2*S*L*(180/pi) = 11172.7
+    # for this rover's 48.75 cm wheelbase). Shipped at 0.0: on this track the
+    # correct feedforward is under 1 deg, below the curvature fit's noise
+    # floor, while a bad fit times 11172.7 would inject a large steering kick.
     k_ff: 0.0
     ema_alpha: 0.05        # EMA smoothing (0.0-1.0)
     # Target cruise duty (0-100% PWM) when the lane is detected. 16 is the
@@ -238,7 +239,7 @@ Edit `rover_kinematic_control_params.yaml`:
 ```yaml
 k_ff: 1500.0            # Raise if the rover steers in late on curves;
                          # lower if it steers in before the curve is there
-                         # (derived full value for this rover is 11459 -- see
+                         # (derived full value for this rover is 11172.7 -- see
                          # docs/CONTROL_LAW.md §1.7)
 ```
 

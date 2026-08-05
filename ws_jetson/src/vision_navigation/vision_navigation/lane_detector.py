@@ -337,8 +337,8 @@ def compute_lane_params(
     error) afterward.
 
     NOTE: y=0 is the NEAR EDGE OF THE ROI, not the rover. With the shipped
-    camera geometry that is 1.30 m ahead of the camera, i.e. 1.23 m ahead of
-    the front axle and 1.73 m ahead of the rear axle. So `b` is a lookahead
+    camera geometry that is 1.30 m ahead of the camera, i.e. 1.22 m ahead of
+    the front axle and 1.71 m ahead of the rear axle. So `b` is a lookahead
     cross-track error, not the error at the rover: on a curve it is non-zero
     even when the rover is perfectly on the line. That is a usable
     (pure-pursuit-like) signal, but it overlaps with `curvature`, so k_e2 and
