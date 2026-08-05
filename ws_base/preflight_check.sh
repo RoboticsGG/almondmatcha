@@ -20,17 +20,34 @@
 # builds there, so probing them here only bought a duplicate password prompt
 # for information that arrives seconds later regardless. Everything below runs
 # locally: no SSH, no prompts, no waiting.
+#
+# ONE OPT-IN EXCEPTION: --check-roi
+#     bash ws_base/preflight_check.sh --check-roi
+# SSHes to the Jetson, runs capture_roi_debug.py, and scp's the resulting
+# PNGs back here for a look before a field trip. Not run by default and not
+# run by launch_field.sh (which calls this script with no arguments) --
+# it needs a human to actually look at the images, so it can't be folded
+# into the scriptable PASS/FAIL checks below, and it's a mount-sanity check
+# you'd run occasionally (after touching the camera mount), not every launch.
 
 set -uo pipefail
 
 WORKSPACE="${WORKSPACE:-$HOME/almondmatcha}"
 RPI_IP="192.168.1.1"
 JETSON_IP="192.168.1.5"
+JETSON_USER="yupi"
 STM32_CHASSIS_IP="192.168.1.2"
 STM32_SENSORS_IP="192.168.1.6"
 EXPECTED_DOMAIN=5
 SPDP_MCAST="239.255.0.1"
 PROFILE="$WORKSPACE/ws_base/fastdds_base.xml"
+
+CHECK_ROI=0
+for arg in "$@"; do
+    case "$arg" in
+        --check-roi) CHECK_ROI=1 ;;
+    esac
+done
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
@@ -275,6 +292,51 @@ else
                 && pass "  STM32 topic $t present" \
                 || warn "  STM32 topic $t NOT seen (board down, or SPDP multicast not arriving)"
         done
+    fi
+fi
+
+# ============================================================================
+# 7. Camera ROI sanity check (opt-in: --check-roi). SSH, by exception -- see
+#    the header comment for why this doesn't run by default.
+# ============================================================================
+if [[ $CHECK_ROI -eq 1 ]]; then
+    hdr "7. Camera ROI sanity check (--check-roi)"
+
+    LOCAL_ROI_DIR="$WORKSPACE/ws_base/roi_debug_captures"
+    mkdir -p "$LOCAL_ROI_DIR"
+
+    SSH_OUT=$(ssh -o ConnectTimeout=5 -o BatchMode=yes "$JETSON_USER@$JETSON_IP" \
+        'cd ~/almondmatcha/ws_jetson/src/vision_navigation/vision_navigation && python3 capture_roi_debug.py' \
+        2>&1)
+    SSH_STATUS=$?
+
+    if [[ $SSH_STATUS -ne 0 ]]; then
+        warn "Could not capture on the Jetson (ssh/script exit $SSH_STATUS)"
+        echo "$SSH_OUT" | sed 's/^/        /'
+        fix "check the Jetson is reachable and camera_stream_node is not already holding the D415"
+    else
+        REMOTE_PATHS=$(echo "$SSH_OUT" | grep -oE '/[^ ]+\.png')
+        if [[ -z "$REMOTE_PATHS" ]]; then
+            warn "capture_roi_debug.py ran but no output PNG paths were found in its output"
+            echo "$SSH_OUT" | sed 's/^/        /'
+        else
+            FETCHED=0
+            while IFS= read -r remote_path; do
+                [[ -z "$remote_path" ]] && continue
+                if scp -o ConnectTimeout=5 -q "$JETSON_USER@$JETSON_IP:$remote_path" "$LOCAL_ROI_DIR/" 2>/dev/null; then
+                    FETCHED=$((FETCHED+1))
+                fi
+            done <<< "$REMOTE_PATHS"
+
+            if [[ $FETCHED -gt 0 ]]; then
+                pass "Fetched $FETCHED image(s) to $LOCAL_ROI_DIR"
+                echo "        Open them and check: all three painted lines inside the green"
+                echo "        trapezoid (raw/overlay image); lines roughly straight and parallel"
+                echo "        (bev image). This script cannot judge that for you."
+            else
+                warn "Capture succeeded on the Jetson but scp back to this PC failed"
+            fi
+        fi
     fi
 fi
 
