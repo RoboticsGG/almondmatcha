@@ -59,6 +59,7 @@ import cv2
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+from rclpy.time import Time
 
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float32MultiArray
@@ -81,9 +82,20 @@ class LaneDetectionNode(Node):
         super().__init__('lane_detection_node')
 
         # ===================== QoS Configuration =====================
-        # Sensor data: low latency, best effort delivery
+        # Sensor data: low latency, best effort delivery.
+        #
+        # depth=1, matching camera_stream_node's publisher: this node must
+        # always act on the newest available frame, not work through a
+        # backlog. With KEEP_LAST(1), a frame arriving before the previous
+        # one is taken simply replaces it at the DDS layer -- dropped, not
+        # queued. At depth=5 (the old value), a processing hiccup (CPU spike,
+        # thermal throttle, GC pause) let up to 5 frames back up, and the
+        # single-threaded executor (rclpy.spin) drains them oldest-first: the
+        # node would fall further behind instead of catching up, so the
+        # steering command could be reacting to lane geometry from several
+        # frames -- and several rover-dynamics changes -- in the past.
         qos = QoSProfile(
-            depth=5,
+            depth=1,
             reliability=ReliabilityPolicy.BEST_EFFORT,
             history=HistoryPolicy.KEEP_LAST
         )
@@ -129,6 +141,7 @@ class LaneDetectionNode(Node):
         self.declare_parameter('bev_height_px', LaneDetectionConfig.BEV_HEIGHT_PX)
         self.declare_parameter('search_band_px', LaneDetectionConfig.SEARCH_BAND_PX)
         self.declare_parameter('max_abs_b_px', LaneDetectionConfig.MAX_ABS_B_PX)
+        self.declare_parameter('max_frame_age_sec', LaneDetectionConfig.MAX_FRAME_AGE_SEC)
 
         roi_flat = [float(v) for v in self.get_parameter('roi_base_points').value]
         if len(roi_flat) != 8:
@@ -149,6 +162,7 @@ class LaneDetectionNode(Node):
         self.bev_height_px: int = int(self.get_parameter('bev_height_px').value)
         self.search_band_px: float = float(self.get_parameter('search_band_px').value)
         self.max_abs_b_px: float = float(self.get_parameter('max_abs_b_px').value)
+        self.max_frame_age_sec: float = float(self.get_parameter('max_frame_age_sec').value)
 
         # ===== Tracked lane position (wrong-line protection) =====
         # Column the lane was found at last frame, in warped-canvas pixels.
@@ -199,10 +213,28 @@ class LaneDetectionNode(Node):
     def _on_rgb_frame(self, msg: Image) -> None:
         """
         Process incoming RGB frame and publish lane parameters.
-        
+
         Args:
             msg: ROS Image message (bgr8 encoding)
         """
+        # ===================== Reject a stale frame =====================
+        # Defense-in-depth on top of the depth=1 QoS above: that QoS stops a
+        # backlog from *accumulating*, but a frame already in flight when a
+        # slowdown hits can still be old by the time it reaches here (e.g. a
+        # single slow process_frame() call, or scheduling jitter between the
+        # DDS callback firing and this line running). camera_stream_node
+        # stamps msg.header.stamp at capture time, so age is measured against
+        # that, not against when the callback happened to run. Checked first,
+        # before the CvBridge conversion, so a stale frame costs nothing.
+        age_sec = (self.get_clock().now() - Time.from_msg(msg.header.stamp)).nanoseconds / 1e9
+        if age_sec > self.max_frame_age_sec:
+            self.get_logger().warn(
+                f"Dropping stale frame: {age_sec * 1000:.0f} ms old "
+                f"(limit {self.max_frame_age_sec * 1000:.0f} ms)",
+                throttle_duration_sec=2.0,
+            )
+            return
+
         # Convert ROS image message to OpenCV BGR format
         try:
             bgr_frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')

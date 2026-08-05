@@ -125,6 +125,23 @@ class LaneDetectionConfig:
     # and continuing to track it only steers hard over on a bogus lock.
     MAX_ABS_B_PX = 100.0
 
+    # Oldest a frame may be (seconds, measured from camera_stream_node's
+    # capture-time header.stamp) before this node drops it instead of
+    # detecting on it.
+    #
+    # The QoS depth=1 on the subscription already stops a backlog from
+    # accumulating -- a new frame replaces an unconsumed old one at the DDS
+    # layer -- but a frame already in flight when a slowdown hits (a single
+    # slow process_frame() call, scheduling jitter) can still be stale by the
+    # time this node acts on it. This is the second layer: reject on
+    # measured age, independent of queueing behaviour.
+    #
+    # 0.1 s is a few multiples of one camera period at 30 FPS (~33 ms), loose
+    # enough that normal frame-to-frame jitter never trips it, tight enough
+    # that a real hiccup gets caught and logged rather than silently steering
+    # on old geometry while the rover has kept moving.
+    MAX_FRAME_AGE_SEC = 0.1
+
     # ===== Perspective Transform =====
     # ROI (Region of Interest) points for bird eye view (1280x720 base).
     #

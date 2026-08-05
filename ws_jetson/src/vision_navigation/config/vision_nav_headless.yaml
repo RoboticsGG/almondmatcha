@@ -71,3 +71,10 @@ lane_detection_node:
     # reporting "Detected". 100 px = 0.50 m = the downstream clamp, beyond
     # which the value cannot reach the controller unsaturated anyway.
     max_abs_b_px: 100.0
+
+    # Oldest a frame (by camera_stream_node's capture-time header.stamp) may
+    # be before this node drops it rather than steering on outdated geometry.
+    # The subscription QoS (depth=1) already stops a backlog from building
+    # up; this catches a frame that was already stale by the time a single
+    # slow detection pass or scheduling jitter let it through.
+    max_frame_age_sec: 0.1
