@@ -331,9 +331,9 @@ Source: `lane_detection_node` — one row per processed camera frame.
 | Column | Type | Unit | Description |
 |--------|------|------|-------------|
 | `timestamp` | ISO8601 string | — | Wall-clock time the frame finished processing |
-| `curvature` | float | — | Parabola coefficient A (`x = A*y² + B*y + C`), rover-centered frame |
+| `curvature` | float | 1/px | Parabola coefficient A (`x = A*y² + B*y + C`), rover-centered frame, BEV pixels -- not converted to a real 1/m arc |
 | `theta` | float | ° | Heading error angle (+ = turn right) |
-| `b` | float | px | Lateral offset from lane center |
+| `b` | float | m | Lateral offset from lane center |
 | `detected` | float | 0/1 | `1.0` = lane detected, `0.0` = not detected |
 | `fps` | float | frames/s | Rolling-window achieved throughput over the last 30 processed frames — measures actual image-processing rate, not the camera's configured capture target. `0.0` until the window has ≥2 samples. |
 
@@ -344,7 +344,7 @@ Source: `rover_kinematic_control` — one row per `tpc_rover_nav_lane` message r
 |--------|------|------|-------------|
 | `time_sec` | float | s | `time.time()` at the control update |
 | `theta_ema` | float | ° | EMA-filtered heading error |
-| `b_ema` | float | px | EMA-filtered lateral offset |
+| `b_ema` | float | m | EMA-filtered lateral offset |
 | `curvature_ema` | float | — | EMA-filtered curvature (feedforward input) |
 | `pid_u` | float | — | PID feedback output (`u_pid`) |
 | `e_sum` | float | — | Combined error fed to the PID (`k_e1*theta_ema + k_e2*b_ema`) |

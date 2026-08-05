@@ -56,7 +56,7 @@ camera_stream_node --ros-args -p enable_depth:=True
 - `sliding_windows` (int, default: 9), `window_margin` (int, default: 40)
 - `min_window_pixels` (int, default: 50), `min_lane_pixels` (int, default: 50)
 - `search_band_px` (float, default: 45.0): per-frame search/jump limit around the last-known lane position
-- `max_abs_b_px` (float, default: 100.0): absolute plausibility bound on the fitted lateral offset — beyond this the reading is rejected rather than reported as a detection
+- `max_abs_b_m` (float, default: 0.50): absolute plausibility bound on the fitted lateral offset (metres) — beyond this the reading is rejected rather than reported as a detection
 
 **CSV Logging**: `lane_detection.csv` — columns (timestamp, curvature, theta, b, detected, fps), written on a background thread
 
@@ -85,7 +85,7 @@ lane_detection_node --ros-args -p show_window:=True
 
 **Parameters**:
 - `k_e1` (float, default: 1.0): Weight on heading error (theta)
-- `k_e2` (float, default: 0.1): Weight on lateral offset (b)
+- `k_e2` (float, default: 20.0): Weight on lateral offset (b, metres)
 - `k_p` (float, default: 4.0): Proportional gain
 - `k_i` (float, default: 0.0): Integral gain
 - `k_d` (float, default: 0.0): Derivative gain

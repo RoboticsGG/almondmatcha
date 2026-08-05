@@ -48,8 +48,9 @@ from vision_navigation.config import CameraConfig, LaneDetectionConfig
 from vision_navigation.lane_detector import (
     get_scaled_roi_points,
     crop_to_roi,
-    preprocess_frame,
+    segment_track_colors,
     perspective_transform,
+    filter_line_candidates_bev,
 )
 
 try:
@@ -124,9 +125,11 @@ def draw_roi_overlay(frame_bgr: np.ndarray, roi_points: np.ndarray) -> np.ndarra
 
 
 def build_bev_debug(frame_bgr: np.ndarray, roi_points: np.ndarray) -> np.ndarray:
-    """Crop -> preprocess -> warp, same pipeline lane_detection_node runs,
-    so the operator can see whether the painted lines come out straight and
-    parallel in the warped view (a correct rectification keeps them so)."""
+    """Crop -> segment colors -> warp -> shape-filter, same pipeline
+    lane_detection_node runs, so the operator can see whether the painted
+    lines come out straight and parallel in the warped view (a correct
+    rectification keeps them so) AND whether the shape filter is keeping the
+    real lines rather than a glare patch or curb speckle."""
     h, w = frame_bgr.shape[:2]
     cropped, x_off, y_off = crop_to_roi(
         frame_bgr, roi_points,
@@ -134,11 +137,12 @@ def build_bev_debug(frame_bgr: np.ndarray, roi_points: np.ndarray) -> np.ndarray
         margin_y=LaneDetectionConfig.CROP_MARGIN_PX * h / LaneDetectionConfig.ROI_BASE_HEIGHT,
     )
     roi_in_crop = roi_points - np.float32([x_off, y_off])
-    binary = preprocess_frame(cropped)
-    warped, _, _ = perspective_transform(
-        binary, (cropped.shape[1], cropped.shape[0]), roi_in_crop,
-        bev_size=(LaneDetectionConfig.BEV_WIDTH_PX, LaneDetectionConfig.BEV_HEIGHT_PX),
+    _red_track_mask, white_candidates = segment_track_colors(cropped)
+    bev_size = (LaneDetectionConfig.BEV_WIDTH_PX, LaneDetectionConfig.BEV_HEIGHT_PX)
+    warped_white, _, _ = perspective_transform(
+        white_candidates, (cropped.shape[1], cropped.shape[0]), roi_in_crop, bev_size=bev_size,
     )
+    warped = filter_line_candidates_bev(warped_white, bev_height=bev_size[1])
     # Binary mask (0/1) -> viewable grayscale
     return (warped * 255).astype(np.uint8)
 

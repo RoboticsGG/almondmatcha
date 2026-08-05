@@ -166,37 +166,103 @@ script for the runnable version.
 
 ---
 
-## 2. Preprocessing → binary mask
+## 2. Adaptive color segmentation → shape-filtered line mask
 
-**`preprocess_frame()`** — operates on the cropped BGR frame, returns a
-`uint8` mask of 0/1.
+Replaced a fixed-threshold LAB-green-removal + Sobel-gradient + `gray > 180`
+white pipeline (see "History" below) after auditing it against a phone photo
+of the actual track: it does no positive red-surface segmentation at all
+(the background-removal step only zeroes *green*, so anything non-green —
+sky, sunlit concrete, water glare — passes straight through to the gradient
+stage), and a sun-glare patch on the red surface reads at almost the same
+HSV brightness/saturation as real white paint, so a fixed brightness
+threshold cannot tell them apart regardless of where the cutoff is set.
 
-Tuned for the operating environment: a **red track surface with white painted
-lines, surrounded by green**.
+**`segment_track_colors()`** — operates on the cropped BGR frame, returns
+`(red_track_mask, white_mask)`, both `uint8` 0/1.
 
 | Step | Operation | Purpose |
 |---|---|---|
-| 1 | `BGR → LAB`, zero pixels where `A < 120 & B > 130` | Removes green (grass, trees). Without it the background dominates the gradient signal. |
-| 2 | `LAB → RGB → grayscale` | Gradient input, with green already suppressed |
-| 3 | Sobel x and y, `CV_32F`, k=3 | Edge response |
-| 4 | `gradx`, `grady`: keep `50 ≤ \|S\| ≤ 100` | Directional edges of the right strength |
-| 5 | `cv2.cartToPolar` → magnitude + direction | Magnitude and angle in one pass |
-| 6 | `mag_binary`: normalise to 0–255, keep `30 ≤ m ≤ 100` | Edge strength band |
-| 7 | `dir_binary`: keep `0.7 ≤ θ ≤ 1.3` rad | Roughly-vertical edges (lines run away from the camera) |
-| 8 | `white_binary`: `gray > 180` | Direct white-paint detection — carries most of the signal |
-| 9 | Combine: `(gradx & grady) \| (mag_binary & dir_binary) \| white_binary` | Union of the three cues |
-| 10 | 3×3 `MORPH_OPEN` | Speckle removal |
+| 1 | `BGR → LAB` | `A` (red↔green) for the red split, chroma distance from neutral for the white split |
+| 2 | Otsu threshold on `A` | Red-vs-not-red, re-fit **per frame** — see "Why adaptive" below |
+| 3 | `MORPH_CLOSE` then `MORPH_OPEN`, 9×9 ellipse | Bridge shadow/gravel-texture gaps, then drop speckle |
+| 4 | Dilate red mask ×2 → `near_track` | Restrict the white histogram to pixels on/near the track, so bright grass or a dirt-bank highlight elsewhere in the ROI can't shift the cut |
+| 5 | `chroma = sqrt((A-128)² + (B-128)²)`, Otsu threshold (inverted) within `near_track` | White-vs-red, by **desaturation toward gray**, not brightness — see below |
+| 6 | Corridor = largest connected component of `(red \| white)` | Rejects unrelated red/white objects elsewhere in frame — **must** union red and white before taking "largest", see bug note below |
+| 7 | `red_track_mask = corridor & red & ~white`, `white_mask = corridor & white` | Final split |
 
-**On step 10:** this replaced an older per-contour `contourArea < 100` filter.
-They are not equivalent — the old test filtered on *area* (deleting compact
-blobs up to ~11×11 while keeping thin lines), the opening filters on
-*thickness* (keeping any blob ≥3×3 while deleting anything thinner than 3 px).
-It is safe here because a 5 cm painted line images ~12 px wide even at the far
-edge of the ROI (3.0 m), so the opening cannot erode it. **On a track with
-narrower paint, re-check this.**
+**Why adaptive, not fixed constants (steps 2, 5):** a threshold tuned against
+one camera's color pipeline — its white balance, saturation curve, JPEG
+compression — does not transfer to a different sensor looking at the same
+physical track. Otsu re-fits both splits to whatever the current frame's own
+histogram looks like instead of a number hand-picked from one test image.
+This does not, by itself, fix a color collision *within* one frame (nothing
+operating on a single pixel's color can) — that is what the BEV shape filter
+below is for.
 
-`LaneDetectionConfig.MIN_CONTOUR_AREA` is retained only as a record of the old
-threshold; nothing reads it.
+**Why chroma, not brightness, for white (step 5):** brightness (`L*`) was
+tried first and rejected — the red track spans a huge `L*` range under
+directional sun (deep shadow to glare highlight) that overlaps or exceeds
+real white paint's brightness, so Otsu-on-`L*` just split the track into "its
+brighter half" and "its darker half," misclassifying a sunlit far-field
+section of plain red track as much candidate area as the real lines. White
+paint desaturates toward neutral gray at whatever brightness it happens to
+be; the track stays visibly red-shifted even when very bright. Otsu on chroma
+distance from neutral has an actual bimodal split to find (clearly-red vs.
+gone-gray) where Otsu on raw brightness did not.
+
+**Corridor bug (step 6):** taking "the single largest red-only blob" breaks
+because the white centre line cuts the track into a left half and a right
+half — connectivity on red alone silently kept only the larger of the two and
+reported the other as background. Fixed by unioning red and white before
+computing connected components, then splitting them back out afterward.
+
+**`filter_line_candidates_bev()`** — runs downstream, in the metric BEV
+canvas (§3), not here. Chroma/brightness alone cannot separate a sun-glare
+patch from real paint when the two happen to be genuinely close in color —
+confirmed empirically (HSV ~S=55-60, V=185-195 for both, on the audit photo).
+The white mask from this step is deliberately over-inclusive; shape is what
+rejects the false positives:
+
+1. **Per-row run-width prune.** Opening with a purely horizontal
+   `(max_width_px+1) × 1` kernel keeps only pixels belonging to a run at
+   least that wide *in their own row*; subtracting that from the original
+   mask removes exactly the too-wide runs. This matters because a glare
+   patch touching a real line with no color gap between them 8-connects into
+   ONE component with it — a whole-component width test would then keep or
+   reject the glare pixels *and* the genuine line pixels together. The
+   per-row test only removes the actually-wide part of the run, so a line
+   that briefly touches a wider blob keeps its own thin rows instead of
+   losing the whole component.
+2. **Depth persistence + aspect, on what survives step 1.** A real line runs
+   the length of the ROI (tall) and stays within its true width start-to-end
+   (narrow); reject anything that doesn't clear `min_height_frac × bev_height`
+   and `min_aspect`. This drops isolated speckle that happens to be
+   thin-at-a-single-row but doesn't form an actual line.
+
+This is a **geometric** test evaluated in the metric top-down view, not a
+color one — it holds regardless of which camera or lighting produced the
+color-stage candidates above. It must run in BEV, not the raw camera frame:
+in the raw perspective, lines converge and shrink with distance, so a fixed
+width/aspect rule can't tell "thin far line" from "thick near glare" — they
+overlap in raw pixel dimensions.
+
+**Known gap, pending real-camera validation:** the sample used to design this
+section was a mobile-phone photo of the track, not the D415. The
+*architecture* (adaptive per-frame splits, chroma-based white test, BEV shape
+filter) is camera-independent by construction, but it has not yet been
+validated against real D415 footage under a spread of lighting conditions —
+capture some with `camera_recorder_node.py` / `capture_roi_debug.py` and
+re-run this audit before trusting it unattended on the rover.
+
+### History
+
+The previous pipeline used a fixed LAB green mask + Sobel gradient +
+`gray > 180` white threshold (`preprocess_frame()`, since removed).
+`MIN_CONTOUR_AREA` was already dead by that point (a 3×3 morphological
+opening had replaced the per-contour area filter it recorded) and has been
+removed along with the rest of the fixed-threshold constants (`LAB_GREEN_*`,
+`LAB_RED_*`, `GRADIENT_SOBEL_*`, `MAGNITUDE_*`, `DIRECTION_*`,
+`WHITE_THRESHOLD`) — none were read anywhere outside `config.py` itself.
 
 ---
 
@@ -224,12 +290,12 @@ changed silently whenever the ROI or the resolution was edited. With
 | Signal | Physical meaning |
 |---|---|
 | `theta` | real heading angle, degrees |
-| `b` | real cross-track offset — **100 px = 50 cm** |
-| `curvature` | real arc: `A = 1/(2·R·S)`, so `R = 1/(2·A·S)` |
+| `b` | real cross-track offset, **metres** (converted from the fit's native BEV pixels by dividing by `BEV_PX_PER_M` at the point `compute_lane_params()` produces it) |
+| `curvature` | arc in the fit's native BEV pixels (1/px), NOT converted here — `A = 1/(2·R·S)`, so `R = 1/(2·A·S)`; consumers needing a real radius fold `S` into their own formula |
 
 This is also what makes the downstream clamps in `rover_kinematic_control`
-meaningful: `θ ∈ [−35°, 35°]` is now ±35 real degrees, and
-`b ∈ [−100, 100] px` is ±50 cm.
+meaningful: `θ ∈ [−35°, 35°]` is now ±35 real degrees, and `b ∈ [−0.50, 0.50] m`
+is ±50 cm.
 
 The canvas extends to ±1.8 m of ground even though the ROI spans ±0.9 m —
 the homography is valid across the whole ground plane, so the extra margin
@@ -251,15 +317,24 @@ but only within `search_band_px` of `search_center`, which
 `lane_detection_node` supplies as the previous frame's result:
 
 ```python
-search_center = bev_width_px / 2 + b_previous     # detected frame
-search_center = None  ->  canvas centre           # lost frame, or startup
+search_center = bev_width_px / 2 + b_previous_m * BEV_PX_PER_M   # detected frame
+search_center = None  ->  canvas centre                          # lost frame, or startup
 ```
+
+`b` is metres (see §5); `search_center` is a BEV pixel column, so the
+conversion back to pixels here is not optional — mixing the two units
+directly would seed the next frame's search a few centimetres of canvas away
+instead of the intended offset.
 
 ### Why the search is bounded
 
 This is the single most important constraint in the pipeline. The track has
-**three parallel painted lines** — two lane edges and a centre line, 0.61 m
-apart for a 1.22 m lane. The detector has no concept of *which* line it is
+**three parallel painted lines** — two lane edges and a centre line. Measured:
+2.50 m red-edge-to-red-edge, lines 5 cm wide, centre line offset **±0.50 m**
+from the track's own midpoint — not centred, and which side depends on the
+rover's heading, so it cannot be assumed fixed. That makes the two
+adjacent-line gaps **asymmetric**: 0.75 m on the near side, 1.75 m on the far
+side (or the reverse). The detector has no concept of *which* line it is
 looking at; an unrestricted `argmax` simply picks whichever carries the most
 pixels that frame.
 
@@ -267,43 +342,52 @@ Measured on a ground-truth render with the rover perfectly centred on the
 middle line, the three histogram peaks came out at **35.2% / 32.5% / 32.3%** —
 a 2.7-point margin deciding which line the rover follows. Lighting, paint
 wear, or the rover's own drift flips it, and each flip is a step change in `b`
-of one line spacing (measured: **222 px from a 15 px real movement**), which
-saturates the downstream `clamp(b, ±100)` into a hard steering command. No
-low-pass filter can absorb it, because it is a genuine step and not noise.
+of one line spacing (measured: **222 px from a 15 px real movement**, back
+when `b` was still reported in BEV pixels), which saturated the downstream
+clamp into a hard steering command. No low-pass filter can absorb it, because
+it is a genuine step and not noise.
 
 ### Two hard constraints
 
 Both are ceilings, not preferences. Both scale with `BEV_PX_PER_M`.
 
 ```
-line spacing at 200 px/m  =  0.61 m × 200  =  122 px
+adjacent-line gaps (asymmetric) = 0.75 m and 1.75 m
+binding constraint = the SMALLER one, always, since the offset direction
+                      is not fixed -> 0.75 m x 200 px/m = 150 px
 
-window_margin   < 61   (half the spacing)   -> shipped: 40
-search_band_px  < 61   (half the spacing)   -> shipped: 45
+window_margin   < 75   (half the smaller gap)   -> shipped: 40
+search_band_px  < 75   (half the smaller gap)   -> shipped: 45
 ```
 
-- **`window_margin` above half the spacing** lets one window capture two lines
-  at once; `current_x = mean(x)` then lands in the empty gap between them and
-  the fit is polluted by both.
-- **`search_band_px` above half the spacing** lets the start-of-search
+(Supersedes an earlier 0.61 m / 122 px / 61 px derivation that assumed a
+single, symmetric 1.22 m lane — that figure was never a real measurement of
+this track; both shipped values remain valid, and now safer, under the
+corrected ceiling.)
+
+- **`window_margin` above half the smaller gap** lets one window capture two
+  lines at once; `current_x = mean(x)` then lands in the empty gap between
+  them and the fit is polluted by both.
+- **`search_band_px` above half the smaller gap** lets the start-of-search
   histogram reach a neighbouring line, which is the wrong-line failure above.
 
 `search_band_px` doubles as a rate limiter: the tracked line can appear to
 move at most 45 px (22 cm) per frame, i.e. 6.7 m/s of lateral tracking at
 30 fps.
 
-> **If the lane width changes, recompute both.** They are the only two
+> **If the track geometry changes, recompute both.** They are the only two
 > parameters in the pipeline with a hard correctness ceiling rather than a
 > tuning range.
 
-**`max_abs_b_px` (absolute plausibility bound, 100 px).** The per-frame
-rate limit above stops jumps but not a steady walk: a field log showed `b`
-creeping from -46 to -230 px over 19 frames while `detected` stayed true
-throughout, ending 1.9 line spacings off and outside the ROI. `lane_detection_node`
-now rejects any frame where `|b| > max_abs_b_px` — forcing `detected = false`
-and letting the seed reset re-acquire from the canvas centre — since 100 px
-(0.50 m) is also the downstream `rover_kinematic_control` clamp, past which
-the value cannot reach the controller unsaturated regardless of cause.
+**`max_abs_b_m` (absolute plausibility bound, 0.50 m).** The per-frame rate
+limit above stops jumps but not a steady walk: a field log showed `b`
+creeping from -46 to -230 px (under the old px-based reporting) over 19
+frames while `detected` stayed true throughout, ending 1.15 m off the
+rover's centreline and outside the ROI. `lane_detection_node` now rejects
+any frame where `|b| > max_abs_b_m` — forcing `detected = false` and letting
+the seed reset re-acquire from the canvas centre — since 0.50 m is also the
+downstream `rover_kinematic_control` clamp, past which the value cannot
+reach the controller unsaturated regardless of cause.
 
 ---
 
@@ -325,9 +409,9 @@ step:
 
 | Output | From | Meaning |
 |---|---|---|
-| `curvature` | `A` | arc of the lane, `R = 1/(2·A·S)` |
+| `curvature` | `A` | arc of the lane, BEV pixels (1/px); `R = 1/(2·A·S)` |
 | `theta` | `degrees(arctan(B))` | heading angle of the lane |
-| `b` | `C` | cross-track offset, px (200 px/m) |
+| `b` | `C / BEV_PX_PER_M` | cross-track offset, **metres** (the fit's native `C` is BEV pixels; divided by `BEV_PX_PER_M` before being returned — `theta` needs no such conversion since `arctan` of a dimensionless slope is already a real angle) |
 | `detected` | `len(x) ≥ min_lane_pixels` | validity |
 
 `detected = False` publishes `curvature = theta = b = 0.0`. **NaN is never put
@@ -355,9 +439,9 @@ and feedforward terms fight each other.
 Jetson-localhost only):
 
 ```
-[0] curvature   float32   A coefficient, 1/(2·R·200)
+[0] curvature   float32   A coefficient, BEV pixels (1/px), 1/(2·R·200)
 [1] theta       float32   degrees
-[2] b           float32   pixels, 200 px/m
+[2] b           float32   metres
 [3] detected    float32   1.0 / 0.0
 ```
 
@@ -381,11 +465,11 @@ kept in sync.
 | `crop_margin_px` | 20.0 | Trims unwanted surroundings, in base units |
 | `bev_width_px` / `bev_height_px` | 720 / 340 | Fixes the scale at 200 px/m |
 | `sliding_windows` | 9 | Window height = 340/9 ≈ 38 px |
-| `window_margin` | 40 | **Hard ceiling 61** — half the line spacing |
-| `search_band_px` | 45.0 | **Hard ceiling 61** — half the line spacing |
+| `window_margin` | 40 | **Hard ceiling 75** — half the smaller adjacent-line gap (0.75 m) |
+| `search_band_px` | 45.0 | **Hard ceiling 75** — half the smaller adjacent-line gap (0.75 m) |
 | `min_window_pixels` | 50 | Recenter threshold |
 | `min_lane_pixels` | 50 | Validity threshold |
-| `max_abs_b_px` | 100.0 | Absolute plausibility bound on fitted `b`; past it the frame is rejected (`detected` forced false) and the seed resets |
+| `max_abs_b_m` | 0.50 | Absolute plausibility bound on fitted `b` (metres); past it the frame is rejected (`detected` forced false) and the seed resets |
 
 ---
 
@@ -432,6 +516,23 @@ placed at known ground coordinates, then projected into the image:
   degrade gracefully under occlusion, but is not implemented.
 - **`demo_lane.py` is not this pipeline.** It carries its own independent
   `process_frame` and homography and does not reflect node behaviour.
-- **Thresholds in §2 are environment-specific.** The LAB green mask and the
-  `gray > 180` white threshold assume a red track, white paint, green
-  surroundings, and outdoor lighting.
+- **§2's color splits still assume a red track / white paint scene.** They
+  are adaptive (Otsu, re-fit per frame) rather than fixed, but still need
+  *something* red and *something* white-on-red to split against — a
+  different track color scheme would need re-deriving which channel
+  discriminates it, not just new numbers.
+- **§2 has not been validated against the D415.** It was designed and tested
+  against a mobile-phone photo of the track (no D415 footage existed at the
+  time); the phone's color pipeline (white balance, saturation, compression)
+  differs from the D415's, so re-run the same audit against real D415
+  captures before trusting it unattended.
+- **A sun-glare patch on the track can still cost partial detection.** The
+  color stage cannot separate a bright, desaturated glare reflection from
+  real white paint when the two are genuinely close in color — confirmed on
+  the audit photo (HSV ~S=55-60, V=185-195 for both). The BEV shape filter
+  rejects the glare's own broad shape, but where glare directly overlaps the
+  line's pixels with no color gap between them, that stretch of the line is
+  correctly dropped rather than guessed at, leaving a gap in that frame's
+  detected points. `min_lane_pixels` and the sliding-window hold-position
+  behavior are what keep a partial gap from becoming a lost frame; a glare
+  patch large enough to blank out most of the ROI's depth still would.

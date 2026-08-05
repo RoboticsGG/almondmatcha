@@ -69,15 +69,15 @@ data: [curvature, theta, b, detected]
 ```
 
 **Data Array:**
-- `data[0]` - **curvature:** Parabola coefficient A (`x = A*y² + B*y + C`), rover-centered frame
+- `data[0]` - **curvature:** Parabola coefficient A (`x = A*y² + B*y + C`), BEV pixels (1/px), rover-centered frame — NOT converted to a real 1/m arc on the wire
 - `data[1]` - **theta (degrees):** Heading error angle
   - Positive: lane on right (need to turn right)
   - Negative: lane on left (need to turn left)
   - Range: typically -30° to +30°
-- `data[2]` - **b (pixels):** Lateral offset from center
+- `data[2]` - **b (metres):** Lateral offset from center (converted from the fit's native BEV pixels before publishing)
   - Positive: camera right of lane center
   - Negative: camera left of lane center
-  - Range: -640 to +640 (half of image width)
+  - Range: -0.50 to +0.50 (past this, `lane_detection_node` rejects the reading as implausible -- see `max_abs_b_m`)
 - `data[3]` - **detected (0 or 1):** Lane detection confidence
   - 1.0: Lane detected successfully
   - 0.0: No lane detected

@@ -59,11 +59,11 @@ Subscribed Topics:
 
 Published Topics:
 - `/tpc_rover_nav_lane` (std_msgs/Float32MultiArray): [curvature, theta, b, detected]
-  - curvature: Parabola coefficient A (x = A*y^2 + B*y + C); metric, radius R = 1/(2*A*200); positive = curves right ahead, negative = curves left ahead
+  - curvature: Parabola coefficient A (x = A*y^2 + B*y + C); BEV pixels (1/px), NOT converted to a real 1/m arc on the wire -- radius R = 1/(2*A*200); positive = curves right ahead, negative = curves left ahead
   - theta: Heading error from lane center (real degrees, positive = right)
-  - b: Lateral offset from lane center (pixels at 200 px/m -- 100 px = 50 cm, positive = right)
+  - b: Lateral offset from lane center, **metres** (converted from the fit's native BEV pixels before publishing; positive = right)
 
-  All three are measured at a 1.22 m lookahead ahead of the front axle, not at the rover.
+  theta and b are measured at a 1.22 m lookahead ahead of the front axle, not at the rover.
   - detected: Detection flag (1.0 = valid, 0.0 = not detected)
 
 Parameters:
@@ -73,9 +73,9 @@ Parameters:
 - `crop_margin_px` (float, default 20.0): margin around the ROI bounding box before cropping (in roi_base_width/height units, scaled to actual frame size)
 - `bev_width_px` / `bev_height_px` (int, default 720 / 340): fixed bird's-eye canvas, sets the 200 px/m metric scale
 - `sliding_windows` (int, default 9): number of vertical search windows
-- `window_margin` (int, default 40): search window half-width in pixels. **Hard ceiling 61** -- half the 122 px painted-line spacing
-- `search_band_px` (float, default 45.0): how far from the previous frame's result the search may start. **Hard ceiling 61** -- stops the detector locking onto a neighbouring painted line
-- `max_abs_b_px` (float, default 100.0): absolute plausibility bound on the fitted lateral offset (100 px = 0.50 m, matching the downstream clamp in rover_kinematic_control) -- a fit beyond this is rejected instead of reported as a detection
+- `window_margin` (int, default 40): search window half-width in pixels. **Hard ceiling 75** -- half the smaller adjacent-line gap (measured track: 2.50 m wide, lines 5 cm, centre line offset ±0.50 m from the track's own midpoint -> asymmetric gaps of 0.75 m / 1.75 m -> 150 px at 200 px/m)
+- `search_band_px` (float, default 45.0): how far from the previous frame's result the search may start. **Hard ceiling 75**, same basis as `window_margin` -- stops the detector locking onto a neighbouring painted line
+- `max_abs_b_m` (float, default 0.50): absolute plausibility bound on the fitted lateral offset in metres, matching the downstream clamp in rover_kinematic_control -- a fit beyond this is rejected instead of reported as a detection
 - `min_window_pixels` (int, default 50): minimum pixels to recenter a search window
 - `min_lane_pixels` (int, default 50): minimum total detected pixels required for a valid fit
 
@@ -83,14 +83,11 @@ CSV Output: columns [timestamp, curvature, theta, b, detected, fps]. Written on 
 
 Processing Pipeline:
 1. Crop frame to the ROI bounding box (plus margin) -- cuts CPU on the steps below without reducing pixel density inside the ROI
-2. LAB color space filtering (green background removal)
-3. Sobel gradient edge detection (CV_32F + cv2.cartToPolar for magnitude/direction)
-4. White pixel detection
-5. Combined binary image creation
-6. Morphological opening (vectorized noise-blob removal)
-7. Perspective transform (bird's-eye view)
-8. 2nd-degree polyfit lane boundary detection (parabola, not a straight line)
-9. Curvature, theta, and b parameter calculation (lookahead-centered frame)
+2. Adaptive (per-frame Otsu) red-track / white-line color segmentation -- LAB a* for red, chroma distance from neutral for white; see `segment_track_colors()`
+3. Perspective transform (bird's-eye view)
+4. Shape filter on line candidates in BEV -- rejects broad/short blobs (e.g. sun glare) that pass the color stage but aren't shaped like a painted line; see `filter_line_candidates_bev()`
+5. 2nd-degree polyfit lane boundary detection (parabola, not a straight line)
+6. Curvature, theta, and b parameter calculation (lookahead-centered frame)
 
 See [docs/VISION_PIPELINE.md](../../../docs/VISION_PIPELINE.md) for the full
 derivation: camera geometry, why the ROI is what it is, the metric bird's-eye
@@ -111,7 +108,7 @@ Published Topics:
 
 Parameters:
 - `k_e1` (float, default 1.0): Weight on heading error (theta)
-- `k_e2` (float, default 0.1): Weight on lateral offset (b)
+- `k_e2` (float, default 20.0): Weight on lateral offset (b, metres -- 20.0 = the old 0.1 rescaled by BEV_PX_PER_M so the combined error is numerically unchanged for the same physical offset)
 - `k_p` (float, default 4.0): Proportional gain
 - `k_i` (float, default 0.0): Integral gain
 - `k_d` (float, default 0.0): Derivative gain
@@ -184,13 +181,13 @@ Launch file automatically reads defaults from config.py, enabling:
 Smooth lane following (gentle turns):
 ```bash
 ros2 launch vision_navigation vision_navigation.launch.py \
-  k_e1:=0.8 k_e2:=0.05 k_p:=3.0 steer_max_deg:=45
+  k_e1:=0.8 k_e2:=10.0 k_p:=3.0 steer_max_deg:=45
 ```
 
 Aggressive tracking (sharp turns):
 ```bash
 ros2 launch vision_navigation vision_navigation.launch.py \
-  k_e1:=1.5 k_e2:=0.2 k_p:=5.0 steer_max_deg:=60
+  k_e1:=1.5 k_e2:=40.0 k_p:=5.0 steer_max_deg:=60
 ```
 
 With integral/derivative control (steady-state correction and damping):
@@ -306,13 +303,14 @@ Functions:
 ### lane_detector.py
 
 Lane detection pipeline functions:
-- `preprocess_frame()`: Color filtering and edge detection
+- `segment_track_colors()`: Adaptive (per-frame Otsu) red-track / white-line color segmentation
+- `filter_line_candidates_bev()`: Shape filter (tall & narrow) that rejects glare/blob false positives in the warped BEV view
 - `get_scaled_roi_points()`: Scale ROI corners from base to actual frame resolution
 - `crop_to_roi()`: Crop frame to the ROI bounding box before preprocessing
 - `perspective_transform()`: Bird's-eye view transformation
 - `find_center_line()`: Sliding window lane tracking
 - `compute_lane_params()`: Curvature, theta, and b parameter calculation (2nd-degree fit)
-- `process_frame()`: Complete lane detection pipeline (crop -> preprocess -> transform -> detect -> params)
+- `process_frame()`: Complete lane detection pipeline (crop -> segment colors -> transform to BEV -> shape-filter -> detect -> params)
 - `plot_lane_lines()`: Visualization (for debugging)
 
 ### helpers.py
@@ -456,6 +454,50 @@ vision_navigation/
 ```
 
 ## Version History
+
+### v1.2.0 (August 5, 2026)
+
+Replaces `preprocess_frame()` (fixed LAB green mask + Sobel gradient +
+`gray > 180` white threshold) after an audit against a mobile-phone photo of
+the actual track found it did no positive red-surface segmentation at all,
+and that a sun-glare patch on the track reads at nearly the same HSV
+brightness/saturation as real white paint, so no fixed brightness threshold
+can separate them.
+
+- `segment_track_colors()` added: red-vs-background and white-vs-red splits
+  are computed per frame with Otsu's method (LAB `a*` for red, chroma
+  distance from neutral for white) instead of fixed constants, so the split
+  re-fits to whatever the current camera/lighting produced rather than one
+  hand-picked number. Fixes a real bug found while building it: taking "the
+  single largest red blob" silently dropped half the track, because the
+  white centre line cuts it into two disconnected halves — connectivity is
+  now computed on `(red | white)` together first.
+- `filter_line_candidates_bev()` added: color alone cannot separate a
+  sun-glare patch from real paint when they're genuinely close in color, so
+  this rejects candidates by shape instead, in the metric bird's-eye view —
+  real lines are tall and narrow and persist over the ROI's depth; glare
+  blobs are not. Uses a per-row run-width prune (not just a whole-component
+  test) so a glare patch touching a real line doesn't drag the line's own
+  pixels down with it when rejected.
+- `perspective_transform()` now warps with `INTER_NEAREST`: linear
+  interpolation was blending 0/1 mask values into fractional pixels at
+  edges, which the new shape filter's connected-component analysis needs to
+  not happen.
+- Removed dead config constants that the old pipeline never read outside
+  `config.py` itself: `LAB_GREEN_A_MAX`, `LAB_GREEN_B_MIN`, `LAB_RED_A_MIN`,
+  `LAB_RED_B_MAX`, `GRADIENT_SOBEL_*`, `MAGNITUDE_*`, `DIRECTION_*`,
+  `WHITE_THRESHOLD`, `MIN_CONTOUR_AREA`. Removed the resulting unused
+  `matplotlib` import from `lane_detector.py`.
+- `capture_roi_debug.py` updated to exercise the new pipeline (it calls the
+  segmentation and shape-filter functions directly, not through
+  `process_frame()`, so it needed its own update to stay representative of
+  node behavior).
+- **Not yet validated against the D415.** Designed and tested against a
+  phone photo only (no D415 footage existed at the time) — the architecture
+  (adaptive per-frame splits, BEV shape filter) is camera-independent by
+  construction, but needs re-running against real D415 captures across a
+  spread of lighting before being trusted unattended. See
+  `docs/VISION_PIPELINE.md` section 2.
 
 ### v1.1.0 (July 23, 2026)
 

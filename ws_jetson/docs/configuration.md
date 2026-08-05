@@ -40,23 +40,28 @@ lane_detection_node:
     crop_margin_px: 20.0   # Margin around the ROI bounding box before cropping
     # Bird's-eye output canvas -- fixed size, not the crop size, so both axes
     # carry the same metres-per-pixel (200 px/m). This is what makes theta a
-    # real heading angle, b a real cross-track offset, and curvature a real 1/m arc.
+    # real heading angle and curvature a real 1/m arc; b is converted from
+    # this scale to metres before it leaves lane_detector.py.
     bev_width_px: 720
     bev_height_px: 340
     sliding_windows: 9     # Tied to the cropped canvas size -- retune if ROI/resolution change
-    # MUST stay below half the spacing between adjacent painted lines (61 px
-    # on this track), or a window captures two lines at once.
+    # MUST stay below half the SMALLER adjacent-line gap. Measured track:
+    # 2.50 m wide, lines 5 cm, centre line offset +-0.50 m from the track's
+    # own midpoint (side depends on rover heading) -> asymmetric gaps of
+    # 0.75 m / 1.75 m -> ceiling is half of 0.75 m = 150 px / 2 = 75 px.
     window_margin: 40
     min_window_pixels: 50
     min_lane_pixels: 50
     # Bounds where the search may start relative to last frame -- stops the
-    # detector locking onto the wrong painted line. Also the per-frame jump limit.
+    # detector locking onto the wrong painted line. Also the per-frame jump
+    # limit. Same 75 px ceiling as window_margin.
     search_band_px: 45.0
-    # Absolute plausibility bound on the fitted offset (100 px = 0.50 m, the
-    # same clamp used downstream in rover_kinematic_control). Past it, the
-    # reading can't be a real measurement -- reject the lock instead of
-    # reporting "Detected" on a bogus value.
-    max_abs_b_px: 100.0
+    # Absolute plausibility bound on the fitted offset, in METRES (b itself
+    # is metres, not the BEV pixels it used to be) -- 0.50 m, the same clamp
+    # used downstream in rover_kinematic_control. Past it, the reading can't
+    # be a real measurement -- reject the lock instead of reporting
+    # "Detected" on a bogus value.
+    max_abs_b_m: 0.50
 ```
 
 **For GUI mode (debugging/testing)**: `vision_nav_gui.yaml` uses the same
@@ -73,7 +78,10 @@ Keep this separate for easy tuning without changing system config:
 rover_kinematic_control:
   ros__parameters:
     k_e1: 1.0              # Weight on heading error (theta)
-    k_e2: 0.1              # Weight on lateral offset (b)
+    # b is metres, not the BEV pixels it used to be -- 20.0 = the old 0.1
+    # rescaled by BEV_PX_PER_M (200) so the combined error is numerically
+    # unchanged for the same physical offset.
+    k_e2: 20.0             # Weight on lateral offset (b, metres)
     k_p: 4.0               # Proportional gain
     k_i: 0.01              # Integral gain
     k_d: 0.01              # Derivative gain
@@ -207,7 +215,7 @@ ros2 param get /rover_kinematic_control k_p
 Edit `rover_kinematic_control_params.yaml`:
 ```yaml
 k_e1: 0.8              # Reduce heading error weight
-k_e2: 0.05             # Reduce offset weight
+k_e2: 10.0             # Reduce offset weight
 k_p: 3.0               # Lower proportional gain
 steer_max_deg: 45      # Reduce max angle
 ema_alpha: 0.05        # Keep default smoothing
@@ -218,7 +226,7 @@ ema_alpha: 0.05        # Keep default smoothing
 Edit `rover_kinematic_control_params.yaml`:
 ```yaml
 k_e1: 1.5              # Increase heading error weight
-k_e2: 0.2              # Increase offset weight
+k_e2: 40.0             # Increase offset weight
 k_p: 5.0               # Higher proportional gain
 steer_max_deg: 60      # Increase max angle
 ema_alpha: 0.02        # Reduce smoothing (faster response)
@@ -250,7 +258,7 @@ k_ff: 1500.0            # Raise if the rover steers in late on curves;
 - `crop_margin_px`: margin around the ROI bounding box before cropping
 - `bev_width_px` / `bev_height_px`: bird's-eye canvas size (keep both axes at the same px/m scale)
 - `sliding_windows` / `window_margin` / `min_window_pixels` / `min_lane_pixels`: sliding-window search tuning -- these are tied to the cropped canvas size, so retune them if you change `roi_base_points`, `crop_margin_px`, or the camera resolution
-- `search_band_px` / `max_abs_b_px`: per-frame jump limit and absolute plausibility bound on the fitted lateral offset
+- `search_band_px` / `max_abs_b_m`: per-frame jump limit (pixels) and absolute plausibility bound (metres) on the fitted lateral offset
 
 **Via code (requires rebuild)** -- edit thresholds in `vision_navigation/lane_detector.py` `preprocess_frame()`:
 - `green_mask` thresholds: Filter out green background

@@ -37,9 +37,9 @@ directory per launch, shared across nodes in that run.
 
 ### Lane Detection
 - **Lane parameters**: `std_msgs/Float32MultiArray` with [curvature, theta, b, detected]
-  - `curvature`: Parabola coefficient A (x = A*y^2 + B*y + C), rover-centered warped frame
+  - `curvature`: Parabola coefficient A (x = A*y^2 + B*y + C), rover-centered warped frame, BEV pixels (1/px) -- not converted to a real 1/m arc on the wire
   - `theta`: Heading error from lane center (degrees)
-  - `b`: Lateral offset from lane center (pixels)
+  - `b`: Lateral offset from lane center (metres)
   - `detected`: Detection flag (1.0 = valid, 0.0 = not detected)
 
 ### Steering Control
@@ -52,18 +52,16 @@ directory per launch, shared across nodes in that run.
 
 - **Steering Angle**: Positive = RIGHT, Negative = LEFT (degrees)
 - **Heading Error (theta)**: Positive = lane RIGHT (turn right), Negative = lane LEFT (turn left)
-- **Lateral Offset (b)**: Positive = camera RIGHT of center, Negative = camera LEFT of center (pixels)
+- **Lateral Offset (b)**: Positive = camera RIGHT of center, Negative = camera LEFT of center (metres)
 
 ## Lane Detection Pipeline
 
 1. Crop frame to the ROI bounding box (plus margin) before the steps below
-2. LAB color space filtering (green background removal)
-3. Sobel gradient edge detection (CV_32F + cv2.cartToPolar)
-4. Binary image creation
-5. Morphological opening (noise removal)
-6. Perspective transform (bird's-eye view)
-7. 2nd-degree polyfit lane boundary detection (parabola)
-8. Curvature, theta, and b parameter calculation (rover-centered frame)
+2. Adaptive (per-frame Otsu) red-track / white-line color segmentation (LAB a* for red, chroma distance from neutral for white)
+3. Perspective transform (bird's-eye view)
+4. Shape filter on line candidates in BEV (rejects glare/blob false positives that pass the color stage)
+5. 2nd-degree polyfit lane boundary detection (parabola)
+6. Curvature, theta, and b parameter calculation (rover-centered frame)
 
 ## Control Algorithm
 

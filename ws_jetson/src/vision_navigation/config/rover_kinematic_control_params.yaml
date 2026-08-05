@@ -6,7 +6,11 @@ rover_kinematic_control:
   ros__parameters:
     # Error weights (combined error: e = k_e1*theta + k_e2*b)
     k_e1: 1.0                    # Weight on heading error (theta)
-    k_e2: 0.1                    # Weight on lateral offset (b)
+    # `b` (lateral offset) is metres, not the BEV pixels it used to be --
+    # 20.0 = the old 0.1 rescaled by BEV_PX_PER_M (200) so e stays
+    # numerically the same as before for the same physical offset. Rescale
+    # again if BEV_PX_PER_M ever changes.
+    k_e2: 20.0                   # Weight on lateral offset (b, metres)
     
     # PID gains (control law: u_pid = kp*e + ki*∫e*dt + kd*de/dt)
     k_p: 4.0                     # Proportional gain

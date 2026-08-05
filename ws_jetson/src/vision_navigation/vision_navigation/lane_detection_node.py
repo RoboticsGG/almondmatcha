@@ -14,9 +14,9 @@ Topics Subscribed:
 
 Topics Published:
     /tpc_rover_nav_lane (std_msgs/Float32MultiArray) - Lane parameters [curvature, theta, b, detected]
-        curvature: Parabola coefficient A (x = A*y^2 + B*y + C), rover-centered frame
+        curvature: Parabola coefficient A (x = A*y^2 + B*y + C), BEV pixels (1/px), rover-centered frame
         theta: Steering angle error (degrees)
-        b: Lateral offset from lane center
+        b: Lateral offset from lane center, metres
         detected: Boolean flag (1.0 = detected, 0.0 = not detected)
 
 Parameters:
@@ -24,9 +24,9 @@ Parameters:
 
 Algorithm:
     1. Frame capture from camera topic
-    2. Color filtering and edge detection (LAB color space)
-    3. Gradient analysis and morphological operations
-    4. Perspective transform to bird's-eye view
+    2. Adaptive (per-frame Otsu) red-track / white-line color segmentation
+    3. Perspective transform to bird's-eye view
+    4. Shape filter on line candidates (rejects glare/blob false positives)
     5. Lane detection using 2nd-degree polyfit (curve fitting)
     6. Parameter calculation (curvature, theta, b)
     7. Publish results; log to CSV asynchronously (background thread)
@@ -140,7 +140,7 @@ class LaneDetectionNode(Node):
         self.declare_parameter('bev_width_px', LaneDetectionConfig.BEV_WIDTH_PX)
         self.declare_parameter('bev_height_px', LaneDetectionConfig.BEV_HEIGHT_PX)
         self.declare_parameter('search_band_px', LaneDetectionConfig.SEARCH_BAND_PX)
-        self.declare_parameter('max_abs_b_px', LaneDetectionConfig.MAX_ABS_B_PX)
+        self.declare_parameter('max_abs_b_m', LaneDetectionConfig.MAX_ABS_B_M)
         self.declare_parameter('max_frame_age_sec', LaneDetectionConfig.MAX_FRAME_AGE_SEC)
 
         roi_flat = [float(v) for v in self.get_parameter('roi_base_points').value]
@@ -161,7 +161,7 @@ class LaneDetectionNode(Node):
         self.bev_width_px: int = int(self.get_parameter('bev_width_px').value)
         self.bev_height_px: int = int(self.get_parameter('bev_height_px').value)
         self.search_band_px: float = float(self.get_parameter('search_band_px').value)
-        self.max_abs_b_px: float = float(self.get_parameter('max_abs_b_px').value)
+        self.max_abs_b_m: float = float(self.get_parameter('max_abs_b_m').value)
         self.max_frame_age_sec: float = float(self.get_parameter('max_frame_age_sec').value)
 
         # ===== Tracked lane position (wrong-line protection) =====
@@ -264,13 +264,13 @@ class LaneDetectionNode(Node):
         # the tracker can creep off the line it is following and settle on a
         # neighbouring one -- or on off-track content in the canvas margin --
         # while still reporting "detected" every frame. Bound the result in
-        # absolute terms: past max_abs_b_px the lane is further away than any
+        # absolute terms: past max_abs_b_m the lane is further away than any
         # real cross-track error on this track, so treat it as lost and let the
         # seed reset re-acquire from the centre rather than keep tracking it.
-        if detected and math.isfinite(b) and abs(b) > self.max_abs_b_px:
+        if detected and math.isfinite(b) and abs(b) > self.max_abs_b_m:
             self.get_logger().warn(
-                f"Rejecting implausible lane offset b={b:.1f} px "
-                f"(limit +-{self.max_abs_b_px:.0f}) — re-acquiring from centre",
+                f"Rejecting implausible lane offset b={b:.3f} m "
+                f"(limit +-{self.max_abs_b_m:.2f}) — re-acquiring from centre",
                 throttle_duration_sec=2.0,
             )
             detected = False
@@ -280,11 +280,18 @@ class LaneDetectionNode(Node):
         # `b` is the fitted offset from the canvas centre at the canvas bottom
         # row, which is exactly where the next frame's first search window
         # starts -- so it is the correct seed, with no re-derivation needed.
+        # search_center is a BEV PIXEL column, but `b` (as of the metres
+        # conversion) is a physical distance -- convert back to pixels here,
+        # at the one place that needs canvas coordinates, rather than leaving
+        # `b` in pixels throughout just for this. Mixing the two units
+        # directly (adding metres to a pixel count) would silently seed the
+        # next frame's search a few centimetres of canvas away instead of
+        # the intended offset.
         # On a lost frame the seed is dropped rather than held: a stale seed
         # after a long gap is more likely to be wrong than the centre, and the
         # rover runs centred on the middle line.
         if detected and b is not None and math.isfinite(b):
-            self._search_center = (self.bev_width_px / 2.0) + b
+            self._search_center = (self.bev_width_px / 2.0) + (b * LaneDetectionConfig.BEV_PX_PER_M)
         else:
             self._search_center = None
 
@@ -439,7 +446,7 @@ class LaneDetectionNode(Node):
 
         # ===== Draw Status Text =====
         status_color = (0, 255, 0) if detected else (0, 0, 255)
-        status_text = f"theta={theta:.2f} deg, b={b:.1f}, detected={detected}"
+        status_text = f"theta={theta:.2f} deg, b={b:.3f} m, detected={detected}"
         cv2.putText(
             vis, status_text,
             (30, 40),

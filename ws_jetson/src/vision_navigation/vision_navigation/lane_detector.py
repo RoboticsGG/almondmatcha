@@ -14,84 +14,183 @@ Date: February 27, 2026
 import cv2
 import numpy as np
 from typing import Tuple
-import matplotlib.pyplot as plt
 
 from vision_navigation.config import LaneDetectionConfig
 
 # ================================
-# 1. Threshold + Preprocess
+# 1. Adaptive color segmentation
 # ================================
-def preprocess_frame(frame_bgr: np.ndarray) -> np.ndarray:
+def segment_track_colors(
+    frame_bgr: np.ndarray,
+    morph_kernel_px: int = LaneDetectionConfig.SEGMENTATION_MORPH_KERNEL_PX,
+) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Preprocess frame: color filtering and edge detection.
+    Split the cropped ROI frame into red track surface / white line
+    candidates / background, using Otsu's method to re-fit both splits every
+    frame instead of a fixed threshold.
 
-    Removes green background (trees) via LAB color-space masking -- the
-    track surface is red with white lane lines against green surroundings,
-    so this segmentation is required for a clean edge signal, not optional.
-    Gradient magnitude/direction use cv2.cartToPolar (replaces the slower
-    np.sqrt / np.arctan2 calls), and small noise blobs are removed with a
-    vectorized morphological opening instead of a per-contour Python loop.
+    A fixed cutoff tuned against one camera's color pipeline (its white
+    balance, saturation curve, JPEG compression) does not transfer to a
+    different sensor looking at the same physical track. Confirmed against a
+    phone photo of the actual track: a sun-glare patch on the red surface
+    reads almost identically to real white paint in HSV brightness and
+    saturation (both ~S=55-60, V=185-195), so a fixed HSV threshold cannot
+    tell them apart regardless of what the cutoff is set to. Otsu instead
+    finds wherever red-vs-not-red and white-vs-not splits fall in THIS
+    frame's own histogram, which at least tracks whatever global exposure
+    and white balance the current camera/lighting produced -- it does not by
+    itself fix local color collisions like the glare patch (nothing operating
+    on a single pixel's color can); that is what filter_line_candidates_bev
+    is for.
+
+    Red uses LAB a* (the green<->red axis): track red sits well above grass,
+    water, and concrete on this axis regardless of overall brightness, which
+    plain HSV saturation does not guarantee (saturation is measured relative
+    to brightness, so a bright-but-still-reddish pixel can misleadingly read
+    as "desaturated"). White uses LAB L* (lightness), Otsu-thresholded only
+    among pixels already on/near the red blob -- restricting the histogram
+    this way keeps sunlit grass or a dirt-bank highlight elsewhere in the ROI
+    from shifting the white cut point.
+
+    The white center line splits the track into a left half and a right
+    half. Taking "the single largest red blob" would silently keep only one
+    half and report the other as background -- a bug that showed up in
+    testing as the rover trusting only one side of the lane. Fixed here by
+    running connectivity on (red | white) TOGETHER before splitting them
+    back into separate masks.
 
     Args:
-        frame_bgr: Input BGR image from camera
+        frame_bgr: Cropped ROI frame (see crop_to_roi), BGR
+        morph_kernel_px: Structuring element size for the close/open passes
 
     Returns:
-        Binary image with detected lane markers
+        Tuple of (red_track_mask, white_mask), both uint8 0/1, same size as
+        frame_bgr. white_mask is NOT yet shape-filtered -- callers doing lane
+        finding should warp it to BEV and pass it through
+        filter_line_candidates_bev() first.
     """
-    # Convert to LAB color space for filtering. Operates directly on
-    # frame_bgr -- the previous BGR->RGB blur/median-blur pass here was
-    # computed but never consumed by the rest of the pipeline.
-    lab = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2LAB)
-    A = lab[:, :, 1]
-    B = lab[:, :, 2]
+    lab = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2LAB).astype(np.float32)
+    A, B = lab[:, :, 1], lab[:, :, 2]
 
-    # Remove green pixels (tree/background) from the LAB image
-    green_mask = (A < 120) & (B > 130)
-    lab_no_green = lab.copy()
-    lab_no_green[green_mask] = 0
+    A_u8 = lab[:, :, 1].astype(np.uint8)
+    _, red_otsu = cv2.threshold(A_u8, 0, 1, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    red_raw = red_otsu.astype(np.uint8)
 
-    # Convert back to RGB for gradient computation
-    img_rgb_no_green = cv2.cvtColor(lab_no_green, cv2.COLOR_LAB2RGB)
-    gray = cv2.cvtColor(img_rgb_no_green, cv2.COLOR_RGB2GRAY)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (morph_kernel_px, morph_kernel_px))
+    red_closed = cv2.morphologyEx(red_raw, cv2.MORPH_CLOSE, kernel)
+    red_closed = cv2.morphologyEx(red_closed, cv2.MORPH_OPEN, kernel)
 
-    # Sobel x, y (CV_32F required by cv2.cartToPolar)
-    sobel_x = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
-    sobel_y = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
-    abs_sobel_x = np.absolute(sobel_x).astype(np.float32)
-    abs_sobel_y = np.absolute(sobel_y).astype(np.float32)
+    # White vs. red is a CHROMA distinction, not a brightness one: the red
+    # track spans a huge L* range under directional sun (deep shadow to
+    # glare highlight) that overlaps or exceeds true white paint's
+    # brightness, so Otsu-on-L just splits the track into "its brighter
+    # half" and "its darker half" -- confirmed empirically, it mislabeled a
+    # sunlit far-field section of plain red track as much white candidate
+    # area as the real lines. White paint desaturates toward neutral gray
+    # (a*, b* -> 128) at whatever brightness it happens to be; the track
+    # stays visibly red-shifted even when very bright. Otsu on chroma
+    # distance from neutral therefore has a real bimodal split to find
+    # (clearly-red vs. gone-gray) where Otsu on brightness did not.
+    near_track = cv2.dilate(red_closed, kernel, iterations=2).astype(bool)
+    white_raw = np.zeros_like(red_raw)
+    if np.count_nonzero(near_track) >= 50:
+        chroma = np.sqrt((A - 128.0) ** 2 + (B - 128.0) ** 2)
+        chroma_u8 = np.clip(chroma, 0, 255).astype(np.uint8)
+        c_samples = chroma_u8[near_track].reshape(-1, 1)
+        # THRESH_BINARY_INV: Otsu's cut separates low-chroma (white, below
+        # the cut) from high-chroma (still red, above it); we want the
+        # low-chroma side, hence the inverted sense vs. the red_otsu split
+        # above where we want the high side.
+        _, white_otsu = cv2.threshold(c_samples, 0, 1, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        white_raw[near_track] = white_otsu.reshape(-1)
 
-    gradx = np.zeros_like(gray, dtype=np.uint8)
-    grady = np.zeros_like(gray, dtype=np.uint8)
-    gradx[(abs_sobel_x >= 50) & (abs_sobel_x <= 100)] = 1
-    grady[(abs_sobel_y >= 50) & (abs_sobel_y <= 100)] = 1
+    corridor_raw = (red_closed.astype(bool) | white_raw.astype(bool)).astype(np.uint8)
+    corridor_closed = cv2.morphologyEx(corridor_raw, cv2.MORPH_CLOSE, kernel)
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(corridor_closed, connectivity=8)
+    if num_labels > 1:
+        largest_label = 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])
+        corridor_mask = (labels == largest_label).astype(np.uint8)
+    else:
+        corridor_mask = corridor_closed
 
-    # Magnitude + direction in one optimized call (replaces np.sqrt / np.arctan2)
-    mag_f, dir_f = cv2.cartToPolar(abs_sobel_x, abs_sobel_y, angleInDegrees=False)
-    mag = cv2.normalize(mag_f, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-    mag_binary = np.zeros_like(mag)
-    mag_binary[(mag >= 30) & (mag <= 100)] = 1
+    red_track_mask = (corridor_mask.astype(bool) & red_closed.astype(bool) & ~white_raw.astype(bool)).astype(np.uint8)
+    white_mask = (corridor_mask & white_raw).astype(np.uint8)
 
-    # Direction
-    dir_binary = np.zeros_like(gray, dtype=np.uint8)
-    dir_binary[(dir_f >= 0.7) & (dir_f <= 1.3)] = 1
+    return red_track_mask, white_mask
 
-    # White pixel detection (emphasize white lane lines)
-    white_binary = np.zeros_like(gray, dtype=np.uint8)
-    white_binary[gray > 180] = 1
 
-    # Combined binary mask
-    combined = np.zeros_like(gray, dtype=np.uint8)
-    combined[((gradx == 1) & (grady == 1)) |
-             ((mag_binary == 1) & (dir_binary == 1)) |
-             (white_binary == 1)] = 1
+def filter_line_candidates_bev(
+    warped_white: np.ndarray,
+    bev_height: int,
+    max_width_px: float = LaneDetectionConfig.LINE_MAX_WIDTH_PX,
+    min_height_frac: float = LaneDetectionConfig.LINE_MIN_DEPTH_FRAC,
+    min_aspect: float = LaneDetectionConfig.LINE_MIN_ASPECT,
+    min_area_px: int = LaneDetectionConfig.MIN_LINE_COMPONENT_AREA_PX,
+) -> np.ndarray:
+    """
+    Keep only white-candidate blobs shaped like a painted line; reject
+    broad/short blobs such as a sun-glare patch on the track.
 
-    # Noise filtering: vectorized morphological opening (replaces the
-    # per-contour Python loop). Small 3x3 kernel clears speckle noise
-    # without eroding away thin lane-line strokes.
-    noise_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-    combined = cv2.morphologyEx(combined, cv2.MORPH_OPEN, noise_kernel)
+    Must run AFTER warping to the metric bird's-eye view, not on the raw
+    camera frame: in the raw perspective, lines converge and shrink with
+    distance, so a fixed width/aspect rule can't tell "thin far line" from
+    "thick near glare" -- they overlap in raw pixel dimensions. In the BEV
+    canvas (fixed px/metre in both axes), a real line has near-constant
+    physical width and runs the full depth of the ROI (tall, narrow -> high
+    height/width ratio); a glare or reflection blob is localized and does
+    not persist over that depth range (short, comparatively wide -> low
+    ratio). This is a geometric test, not a color one, so it holds
+    regardless of which camera or lighting produced the color-stage
+    candidates in segment_track_colors().
 
-    return combined
+    Args:
+        warped_white: White-candidate mask (uint8 0/1) already warped to the
+            BEV canvas
+        bev_height: Height of the BEV canvas in pixels
+        max_width_px: Reject components wider than this (a real line stays
+            under it; a merged line+glare or line+curb blob does not)
+        min_height_frac: Reject components spanning less than this fraction
+            of bev_height (a real line persists across most of the ROI's
+            depth; a localized blob or a fragment of gravel-texture speckle
+            does not)
+        min_aspect: Reject components with height/width below this
+        min_area_px: Drop components smaller than this before the shape test
+
+    Returns:
+        uint8 0/1 mask, same size as warped_white, containing only the
+        components that passed the shape test
+    """
+    # Pass 1 -- prune per-ROW, not per-component. A glare patch that happens
+    # to touch a real line (no color gap between them, e.g. the glare washes
+    # out right up to the paint) 8-connects into ONE component with it; a
+    # whole-component width/aspect test then either keeps or rejects the
+    # glare pixels AND the genuine line pixels together, since it cannot see
+    # that only part of the blob is line-shaped. Opening with a purely
+    # horizontal (kw x 1) kernel is a per-row run-length test: a run
+    # narrower than the kernel is erased entirely, a run at least that wide
+    # survives untouched -- so subtracting the opened result from the
+    # original leaves exactly the pixels that belonged to a too-wide run in
+    # their own row, regardless of what a taller neighbouring blob does.
+    # This turns "glare merged with the real line" into "glare erased, real
+    # line's own thin rows survive", instead of losing the whole component.
+    kw = int(max_width_px) + 1
+    row_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kw, 1))
+    too_wide = cv2.morphologyEx(warped_white, cv2.MORPH_OPEN, row_kernel)
+    thin_only = (warped_white.astype(bool) & ~too_wide.astype(bool)).astype(np.uint8)
+
+    # Pass 2 -- of what's left, keep components that persist over enough of
+    # the ROI's depth and are tall/narrow overall (rejects isolated speckle
+    # that happens to be thin at any single row but doesn't form a line).
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(thin_only, connectivity=8)
+    keep = np.zeros_like(warped_white)
+    for label in range(1, n):
+        _, _, bw, bh, area = stats[label]
+        if area < min_area_px:
+            continue
+        aspect = bh / max(bw, 1)
+        if bh >= min_height_frac * bev_height and aspect >= min_aspect:
+            keep[labels == label] = 1
+    return keep
 
 
 # ================================
@@ -214,7 +313,12 @@ def perspective_transform(
     M = cv2.getPerspectiveTransform(roi_points, dst)
     M_inv = cv2.getPerspectiveTransform(dst, roi_points)
 
-    warped = cv2.warpPerspective(binary, M, (w, h))
+    # INTER_NEAREST: `binary` is a 0/1 mask, both callers of this function
+    # feed it into connected-component analysis downstream. Linear
+    # interpolation blends 0/1 neighbours into fractional values that
+    # truncate back to 0 on cast, thinning or dropping thin lines right where
+    # the shape filter most needs the true width preserved.
+    warped = cv2.warpPerspective(binary, M, (w, h), flags=cv2.INTER_NEAREST)
 
     return warped, M, M_inv
 
@@ -362,9 +466,14 @@ def compute_lane_params(
 
     Returns:
         Dictionary with keys:
-            - curvature: Parabola coefficient A (x = A*y^2 + B*y + C), NaN if not detected
+            - curvature: Parabola coefficient A (x = A*y^2 + B*y + C), in
+              BEV pixels (1/px) -- NOT converted to metres here; consumers
+              that need a real radius fold BEV_PX_PER_M into their own
+              formula (see rover_kinematic_control's k_ff derivation).
+              NaN if not detected
             - theta: Steering angle (degrees) at the fit origin, NaN if not detected
-            - b: Lateral offset from center (pixels) at the fit origin, NaN if not detected
+            - b: Lateral offset from center, in METRES, at the fit origin,
+              NaN if not detected
             - detected: Boolean flag indicating valid detection
     """
     x_coords, y_coords = find_center_line(
@@ -389,9 +498,16 @@ def compute_lane_params(
         coeff_a, coeff_b, coeff_c = np.polyfit(y_shifted, x_shifted, 2)
 
         # At y_shifted = 0 (the rover's position), the fit coefficients are
-        # directly the heading slope (B) and lateral offset (C).
+        # directly the heading slope (B) and lateral offset (C). C comes out
+        # of the fit in BEV pixels (the fit runs in the warped canvas's pixel
+        # coordinates); convert to metres here, at the single point `b` is
+        # produced, so every consumer (the ROS topic, CSV logs, the control
+        # law's k_e2 weight) gets a physical distance rather than a value
+        # that silently means something different if BEV_PX_PER_M ever
+        # changes. theta needs no such conversion -- arctan of a dimensionless
+        # slope is already a real angle regardless of pixel scale.
         theta = np.degrees(np.arctan(coeff_b))
-        b_centered = coeff_c
+        b_centered = coeff_c / LaneDetectionConfig.BEV_PX_PER_M
 
         result = {
             "curvature": coeff_a,
@@ -421,13 +537,19 @@ def process_frame(
     search_band: float = LaneDetectionConfig.SEARCH_BAND_PX,
 ) -> Tuple[float, float, float, bool]:
     """
-    Complete lane detection pipeline: crop -> preprocess -> transform -> detect -> compute params.
+    Complete lane detection pipeline: crop -> segment colors -> transform to
+    BEV -> shape-filter -> detect -> compute params.
 
     Crops to the ROI's bounding box (plus margin) before the expensive
     per-pixel preprocessing runs, so CPU cost scales with the ROI area the
     perspective transform actually uses rather than the full camera frame,
     without reducing pixel density inside the ROI the way a sensor-level
     resolution cut would.
+
+    The white-candidate mask is warped to BEV BEFORE the line-shape filter
+    runs (not after, and not filtered in camera view) -- see
+    filter_line_candidates_bev()'s docstring for why the shape test only
+    makes sense in the metric top-down view.
 
     Args:
         frame_bgr: Input BGR frame from camera
@@ -446,15 +568,18 @@ def process_frame(
             bev_width this fixes the bird's-eye scale, so the reported values
             are physical rather than crop-size-dependent.
         search_center: Column the lane is expected at in the warped canvas,
-            normally `bev_width/2 + b` from the previous detected frame.
-            Defaults to the canvas centre.
+            normally `bev_width/2 + b * LaneDetectionConfig.BEV_PX_PER_M`
+            from the previous detected frame -- `b` is in metres, this is a
+            pixel column, the conversion is not optional. Defaults to the
+            canvas centre.
         search_band: Half-width of the search band around `search_center`
 
     Returns:
         Tuple of (curvature, theta, b, detected):
-            - curvature: Parabola coefficient A (x = A*y^2 + B*y + C)
+            - curvature: Parabola coefficient A (x = A*y^2 + B*y + C), BEV
+              pixels (1/px), not converted to a real 1/m arc here
             - theta: Steering angle error (degrees)
-            - b: Lateral offset (pixels)
+            - b: Lateral offset, metres
             - detected: Boolean detection flag
     """
     if roi_base_points is None:
@@ -477,10 +602,11 @@ def process_frame(
     # Re-express the ROI corners relative to the cropped frame's new origin
     roi_points_cropped = roi_points_full - np.float32([x_offset, y_offset])
 
-    binary = preprocess_frame(cropped_frame)
-    warped, M, M_inv = perspective_transform(
-        binary, (crop_width, crop_height), roi_points_cropped, bev_size=(bev_width, bev_height)
+    _red_track_mask, white_candidates = segment_track_colors(cropped_frame)
+    warped_white, M, M_inv = perspective_transform(
+        white_candidates, (crop_width, crop_height), roi_points_cropped, bev_size=(bev_width, bev_height)
     )
+    warped = filter_line_candidates_bev(warped_white, bev_height=bev_height)
     params = compute_lane_params(
         warped,
         sliding_windows=sliding_windows,
@@ -511,7 +637,7 @@ def plot_lane_lines(
         warped: Bird eye view binary image
         M_inv: Inverse perspective transformation matrix
         theta: Steering angle (degrees)
-        b: Lateral offset (pixels)
+        b: Lateral offset, metres
         detected: Detection flag
     """
     height, width = warped.shape[:2]
@@ -519,8 +645,12 @@ def plot_lane_lines(
     # Generate y-coordinates
     y_vals = np.linspace(0, height - 1, num=height)
     if detected:
+        # b arrives in metres; this function draws entirely in the BEV
+        # canvas's pixel coordinates, so convert back here rather than
+        # mixing units in the line below.
+        b_px = b * LaneDetectionConfig.BEV_PX_PER_M
         slope = np.tan(np.radians(theta))
-        x_vals = slope * y_vals + (b + width // 2)
+        x_vals = slope * y_vals + (b_px + width // 2)
     else:
         x_vals = np.array([])
         y_vals = np.array([])

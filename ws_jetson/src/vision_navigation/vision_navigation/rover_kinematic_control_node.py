@@ -166,7 +166,10 @@ class RoverKinematicControlNode(Node):
 
         # ===================== Steering PID Gains =====================
         self.declare_parameter('k_e1', 1.0)    # Heading error weight
-        self.declare_parameter('k_e2', 0.1)    # Lateral offset weight
+        # `b` (lateral offset) is metres, not the BEV pixels it used to be --
+        # 20.0 = the old 0.1 rescaled by BEV_PX_PER_M (200) so e_total is
+        # numerically the same as before for the same physical offset.
+        self.declare_parameter('k_e2', 20.0)   # Lateral offset weight (b is metres)
         self.declare_parameter('k_p', 4.0)     # Proportional gain
         self.declare_parameter('k_i', 0.0)     # Integral gain
         self.declare_parameter('k_d', 0.0)     # Derivative gain
@@ -299,9 +302,9 @@ class RoverKinematicControlNode(Node):
             self.get_logger().warn("tpc_rover_nav_lane message has fewer than 4 fields — skipping")
             return
 
-        curvature = float(msg.data[0])  # Parabola coefficient A (x = A*y^2 + B*y + C)
+        curvature = float(msg.data[0])  # Parabola coefficient A (x = A*y^2 + B*y + C), BEV px (1/px)
         theta     = float(msg.data[1])  # Heading error in degrees (+ = needs right turn)
-        b         = float(msg.data[2])  # Lateral pixel offset from lane center
+        b         = float(msg.data[2])  # Lateral offset from lane center, metres
         detected  = bool(msg.data[3])   # Raw detection flag from vision
 
         # ===== Reject non-finite geometry =====
@@ -318,7 +321,7 @@ class RoverKinematicControlNode(Node):
         if detected:
             # ===== Input saturation (prevent filter spikes) =====
             theta = clamp(theta, -35.0, 35.0)
-            b     = clamp(b, -100.0, 100.0)
+            b     = clamp(b, -0.50, 0.50)   # metres (was +-100.0 px)
 
             # ===== EMA low-pass filtering =====
             theta_ema     = self.ema_theta.update(theta)
@@ -383,7 +386,7 @@ class RoverKinematicControlNode(Node):
         # ===== Terminal output =====
         status = "DETECTED" if detected_valid else "LOST"
         self.get_logger().info(
-            f"[KIN] θ={theta_ema:.1f}° b={b_ema:.1f}px curv={curvature_ema:.5f} "
+            f"[KIN] θ={theta_ema:.1f}° b={b_ema:.3f}m curv={curvature_ema:.5f} "
             f"u_pid={u_pid:.2f} u_ff={u_ff:.2f} | steer={steer_angle:.1f}° spd={speed_cmd} [{status}]"
         )
 

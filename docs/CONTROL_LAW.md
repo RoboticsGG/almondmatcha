@@ -59,11 +59,11 @@ curve before heading/offset error alone would build up enough to react.
 
 | Symbol | Field | Meaning |
 |---|---|---|
-| `κ` | curvature | Parabola coefficient A of the fitted lane, `x = A·y² + B·y + C`. Metric: `R = 1/(2·A·S)`, `S` = 200 px/m |
+| `κ` | curvature | Parabola coefficient A of the fitted lane, `x = A·y² + B·y + C`, in the fit's native BEV pixels (1/px) — NOT converted to a real 1/m arc on the wire. Metric: `R = 1/(2·A·S)`, `S` = 200 px/m |
 | `θ` | theta_deg | Heading error, real degrees (+ = needs right turn) |
-| `b` | b_offset | Lateral offset from lane center, px at 200 px/m (**100 px = 50 cm**) |
+| `b` | b_offset | Lateral offset from lane center, **metres** (converted from the fit's native BEV pixels by `lane_detector.py` before publishing — unlike `κ`, which is left in pixels for consumers to convert) |
 
-All three are physical quantities, not canvas-dependent numbers — the
+`θ` and `b` are physical quantities, not canvas-dependent numbers — the
 bird's-eye view is isotropic. See [VISION_PIPELINE.md](VISION_PIPELINE.md)
 for how they are produced. Note that `b` and `κ` are measured at a **1.22 m
 lookahead ahead of the front axle**, not at the rover, so they encode partly
@@ -71,7 +71,7 @@ the same information; tune `k_p` on `θ` first, then `k_e2`, then `k_ff`.
 | `detected` | detected_flag | Raw vision detection validity |
 
 Each raw input is clamped before filtering to keep a single bad frame from
-spiking the low-pass state: `θ ∈ [-35°, 35°]`, `b ∈ [-100, 100] px`.
+spiking the low-pass state: `θ ∈ [-35°, 35°]`, `b ∈ [-0.50, 0.50] m`.
 
 ### 1.1 Low-pass filtering (EMA)
 
@@ -137,7 +137,7 @@ shaping — it only maps sign → turn direction (`fdr_msg`) and forwards
 ```mermaid
 flowchart LR
     theta["θ raw"] --> clampT["clamp ±35°"] --> emaT["EMA α"] --> sumErr(("Σ"))
-    b["b raw"] --> clampB["clamp ±100px"] --> emaB["EMA α"] --> sumErr
+    b["b raw"] --> clampB["clamp ±0.50m"] --> emaB["EMA α"] --> sumErr
     kappa["κ raw"] --> emaK["EMA α"] --> ff["× k_ff"]
 
     sumErr -- "e = k_e1·θ + k_e2·b" --> pid["PID\nkp·e + ki∫e + kd·de/dt"]
@@ -154,7 +154,7 @@ flowchart LR
 | Param | Value | Role |
 |---|---|---|
 | `k_e1` | 1.0 | heading-error weight |
-| `k_e2` | 0.1 | lateral-offset weight |
+| `k_e2` | 20.0 | lateral-offset weight (`b` is metres; 20.0 = the old 0.1 rescaled ×`BEV_PX_PER_M`, so `e` is numerically the same as before for the same physical offset) |
 | `k_p` | 4.0 | proportional |
 | `k_i` | 0.01 | integral |
 | `k_d` | 0.01 | derivative |

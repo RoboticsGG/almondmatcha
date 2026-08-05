@@ -88,7 +88,7 @@ ros2 topic info /tpc_rover_ctrl_cmd
 1. Increase EMA smoothing: `ema_alpha:=0.02`
 2. Reduce proportional gain: `k_p:=2.0`
 3. Add derivative damping: `k_d:=0.05`
-4. Reduce error weights: `k_e1:=0.5 k_e2:=0.05`
+4. Reduce error weights: `k_e1:=0.5 k_e2:=10.0`
 
 ### Steering Too Slow
 
@@ -97,7 +97,7 @@ ros2 topic info /tpc_rover_ctrl_cmd
 **Solutions**:
 1. Increase proportional gain: `k_p:=6.0`
 2. Decrease EMA smoothing: `ema_alpha:=0.1`
-3. Increase error weights: `k_e1:=1.5 k_e2:=0.2`
+3. Increase error weights: `k_e1:=1.5 k_e2:=40.0`
 4. Add integral control: `k_i:=0.1`
 
 ### Steering Reacts Late on Curves

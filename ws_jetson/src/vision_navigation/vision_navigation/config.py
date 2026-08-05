@@ -53,37 +53,54 @@ class CameraConfig:
 
 class LaneDetectionConfig:
     """Lane detection algorithm parameters"""
-    
-    # ===== Color Space Thresholds (LAB) =====
-    # LAB color space ranges for filtering
-    LAB_GREEN_A_MAX = 120
-    LAB_GREEN_B_MIN = 130
-    LAB_RED_A_MIN = 140
-    LAB_RED_B_MAX = 140
-    
-    # ===== Gradient Detection Thresholds =====
-    # Sobel edge detection parameters
-    GRADIENT_SOBEL_MIN = 50
-    GRADIENT_SOBEL_MAX = 100
-    GRADIENT_SOBEL_KERNEL = 3
-    
-    # Magnitude detection
-    MAGNITUDE_MIN = 30
-    MAGNITUDE_MAX = 100
-    
-    # Direction detection
-    DIRECTION_MIN = 0.7
-    DIRECTION_MAX = 1.3
-    
-    # White line detection
-    WHITE_THRESHOLD = 180
-    
-    # ===== Contour Filtering =====
-    # Unused: preprocess_frame now removes speckle with a 3x3 morphological
-    # opening instead of a per-contour area test. Kept only as a record of the
-    # old threshold. Safe for this track: a 5 cm painted line images ~12 px
-    # wide even at the far edge of the ROI (3 m), so the opening cannot erode it.
-    MIN_CONTOUR_AREA = 100  # Pixels, remove smaller contours (legacy, unused)
+
+    # ===== Color Segmentation (adaptive) =====
+    # Red-track / white-line split points are NOT fixed constants. A fixed
+    # cutoff tuned against one camera's color pipeline (its white balance,
+    # saturation curve, compression) does not transfer to a different sensor
+    # looking at the same physical track -- confirmed against a phone photo
+    # of the actual track, where a sun-glare patch on the red surface reads
+    # almost identically to real white paint in HSV brightness/saturation.
+    # segment_track_colors() re-fits both splits per frame with Otsu's method
+    # instead: LAB a* (red-green axis) for red-vs-not-red, then chroma
+    # distance from neutral gray (sqrt((a*-128)^2+(b*-128)^2)) for
+    # white-vs-not, evaluated only on pixels already on/near the red blob so
+    # sunlit grass or dirt elsewhere in the ROI can't skew the white cut.
+    # (Brightness/L* was tried for the white split first and rejected -- the
+    # red track's own L* range under directional sun overlaps real white
+    # paint's, so Otsu-on-L* just split the track into "brighter half" and
+    # "darker half" instead of finding red-vs-white.) See
+    # docs/VISION_PIPELINE.md section 2.
+    #
+    # PLACEHOLDER, not calibrated: this kernel size was picked by eye against
+    # a mobile-phone audit photo, not the D415 -- like a pixel-area count, a
+    # pixel kernel size is ground-sample-distance-sensitive (depends on the
+    # capturing lens/FOV). Re-derive against real D415 footage.
+    SEGMENTATION_MORPH_KERNEL_PX = 9  # Close/open kernel for the color masks
+
+    # ===== Line shape filter (bird's-eye view) =====
+    # Rejects candidate "white" blobs that aren't shaped like a painted line
+    # -- e.g. a sun-glare patch on the track, which is broad and short-lived
+    # in depth, unlike a real line which is a near-constant-width stripe that
+    # runs the length of the ROI. Evaluated in the metric BEV canvas (see
+    # BEV_PX_PER_M below) so these are physical/geometric facts about the
+    # track and camera, not color values -- they hold regardless of which
+    # camera produced the color-stage candidates.
+    # Measured: painted lines are 5 cm wide. 0.10 m (2x measured) leaves
+    # margin for warp/anti-aliasing blowup without opening the door to a
+    # merged line+curb or line+glare blob passing as a single line.
+    LINE_MAX_WIDTH_M = 0.10
+    LINE_MIN_DEPTH_FRAC = 0.35       # Must persist over >=35% of the ROI's warped depth
+    LINE_MIN_ASPECT = 1.5            # height/width in BEV -- a line is tall and narrow
+
+    # PLACEHOLDER, not a calibrated value: picked by eye against a mobile-
+    # phone audit photo (see docs/VISION_PIPELINE.md section 2), not the
+    # D415. Unlike LINE_MAX_WIDTH_M/LINE_MIN_DEPTH_FRAC/LINE_MIN_ASPECT
+    # (dimensionless ratios or a real metre measurement, both intrinsics-
+    # independent), a raw pixel-area count is sensitive to ground-sample-
+    # distance, which depends on the capturing lens/FOV -- the phone's, not
+    # the D415's. Re-derive against real D415 footage before trusting it.
+    MIN_LINE_COMPONENT_AREA_PX = 15  # Drops single-pixel speckle before the shape test
 
     # ===== Lane Finding Parameters =====
     MIN_LANE_PIXELS = 50    # Minimum pixels for valid detection
@@ -93,8 +110,20 @@ class LaneDetectionConfig:
     # Search window half-width. MUST stay below half the spacing between
     # adjacent painted lines, or a window captures two lines at once and
     # `current_x = mean(x)` lands in the empty gap between them.
-    # Running track: 1.22 m lane -> 0.61 m between lines -> 122 px at
-    # BEV_PX_PER_M -> hard ceiling 61. 40 leaves margin.
+    #
+    # Measured track geometry: 2.50 m red-edge-to-red-edge, three 5 cm painted
+    # lines (two edges + one centre), centre line offset +-0.50 m from the
+    # track's own midpoint -- NOT centred, and which side it's offset to
+    # depends on which way the rover is heading, so it cannot be assumed
+    # fixed. That makes the two adjacent-line gaps ASYMMETRIC:
+    #     near gap  = 1.25 - 0.50 = 0.75 m
+    #     far gap   = 1.25 + 0.50 = 1.75 m
+    # Both must be treated as possible on either side, so the binding
+    # constraint is always the SMALLER one -- 0.75 m -- regardless of which
+    # way the rover is facing. 0.75 m -> 150 px at BEV_PX_PER_M -> hard
+    # ceiling 75. 40 leaves margin. (Superseded an earlier, incorrect 0.61 m
+    # /122 px/61 px derivation that assumed a symmetric 1.22 m lane; that
+    # figure was never a real measurement of this track.)
     WINDOW_MARGIN = 40      # Horizontal search margin (±pixels)
 
     # Half-width of the band (around the expected lane position) that the
@@ -102,28 +131,35 @@ class LaneDetectionConfig:
     # detector locking onto the wrong painted line: with three parallel lines
     # in view, an unrestricted argmax picks whichever happens to carry the most
     # pixels, and that choice flips between frames. Must also stay below half
-    # the line spacing (61 px). Doubles as the per-frame jump limiter: the
-    # tracked line can move at most this far between frames.
+    # the smaller adjacent-line gap (75 px -- see WINDOW_MARGIN above).
+    # Doubles as the per-frame jump limiter: the tracked line can move at
+    # most this far between frames.
     # Float, not int: this is the declared default for the ROS parameter, and
     # ROS 2 derives the parameter's type from it. Declared as int, the 45.0 in
     # the params YAML is rejected as DOUBLE-vs-INTEGER and lane_detection_node
     # refuses to start.
     SEARCH_BAND_PX = 45.0
 
-    # Absolute plausibility bound on the fitted offset, in BEV pixels.
+    # Absolute plausibility bound on the fitted offset, in METRES (b itself
+    # is metres -- see compute_lane_params in lane_detector.py).
     #
     # SEARCH_BAND_PX limits how far the tracked line may move BETWEEN frames,
     # but it does not stop a steady walk: at 45 px/frame the search can travel
     # 900 px in 20 frames while every individual step looks legal. A field log
     # shows exactly that -- b ran from -46 px to -230 px over 19 frames
-    # (-9.7 px/frame average) and settled 1.9 line spacings away, outside the
-    # ROI entirely, with the detector still reporting "Detected" throughout.
+    # (-9.7 px/frame average) and settled 1.15 m off the rover's centreline,
+    # outside the ROI entirely, with the detector still reporting "Detected"
+    # throughout. (Previously described as "1.9 line spacings" under the old,
+    # incorrect assumption of a single uniform 0.61 m spacing -- the track's
+    # two adjacent-line gaps are actually asymmetric, 0.75 m and 1.75 m, see
+    # WINDOW_MARGIN above, so "line spacings" is no longer a well-defined
+    # unit here; the absolute distance is what matters anyway.)
     #
-    # 100 px = 0.50 m, which is also the downstream clamp in
-    # rover_kinematic_control. Past it the value cannot reach the controller
-    # unsaturated, so it is not a usable measurement whatever its true cause,
-    # and continuing to track it only steers hard over on a bogus lock.
-    MAX_ABS_B_PX = 100.0
+    # 0.50 m, which is also the downstream clamp in rover_kinematic_control.
+    # Past it the value cannot reach the controller unsaturated, so it is not
+    # a usable measurement whatever its true cause, and continuing to track
+    # it only steers hard over on a bogus lock.
+    MAX_ABS_B_M = 0.50
 
     # Oldest a frame may be (seconds, measured from camera_stream_node's
     # capture-time header.stamp) before this node drops it instead of
@@ -183,6 +219,9 @@ class LaneDetectionConfig:
     BEV_WIDTH_PX = 720
     BEV_HEIGHT_PX = 340
 
+    # Derived: LINE_MAX_WIDTH_M expressed in BEV pixels at BEV_PX_PER_M scale.
+    LINE_MAX_WIDTH_PX = LINE_MAX_WIDTH_M * BEV_PX_PER_M
+
     # Destination margins for warped image
     PERSPECTIVE_LEFT_MARGIN = 0.25   # 25% from left
     PERSPECTIVE_RIGHT_MARGIN = 0.75  # 75% from right
@@ -223,7 +262,12 @@ class ControlConfig:
     # ===== Error Weights =====
     # Combined error: e_total = k_e1*theta + k_e2*b
     K_E1 = 1.0         # Weight on heading error (theta)
-    K_E2 = 0.1         # Weight on lateral offset (b)
+    # `b` used to be BEV pixels; now that lane_detector.py reports it in
+    # metres, this weight is rescaled by BEV_PX_PER_M (200) -- 0.1 -> 20.0 --
+    # to keep e_total numerically identical to before for the same physical
+    # offset. Rescale again if BEV_PX_PER_M ever changes, since this was
+    # tuned assuming the old value, not derived from it.
+    K_E2 = 20.0        # Weight on lateral offset (b), metres
     
     # ===== Filtering =====
     EMA_ALPHA = 0.05   # Exponential moving average smoothing factor
