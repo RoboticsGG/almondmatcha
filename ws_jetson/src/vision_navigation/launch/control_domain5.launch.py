@@ -53,18 +53,12 @@ def generate_launch_description():
     
     # ==================== Launch Arguments ====================
     
-    k_e1 = DeclareLaunchArgument('k_e1', default_value=str(ControlConfig.K_E1),
-                                  description='Heading error weight')
-    k_e2 = DeclareLaunchArgument('k_e2', default_value=str(ControlConfig.K_E2),
-                                  description='Lateral offset weight')
-    k_p = DeclareLaunchArgument('k_p', default_value=str(ControlConfig.K_P),
-                                 description='Proportional gain')
-    k_i = DeclareLaunchArgument('k_i', default_value=str(ControlConfig.K_I),
-                                 description='Integral gain')
-    k_d = DeclareLaunchArgument('k_d', default_value=str(ControlConfig.K_D),
-                                 description='Derivative gain')
-    k_ff = DeclareLaunchArgument('k_ff', default_value=str(ControlConfig.K_FF),
-                                  description='Feedforward gain on filtered curvature')
+    k_lat = DeclareLaunchArgument('k_lat', default_value=str(ControlConfig.K_LAT),
+                                   description='Gain on lateral offset b (deg/metre)')
+    k_head = DeclareLaunchArgument('k_head', default_value=str(ControlConfig.K_HEAD),
+                                    description='Gain on heading error theta (deg/deg)')
+    wheelbase_m = DeclareLaunchArgument('wheelbase_m', default_value=str(ControlConfig.WHEELBASE_M),
+                                         description='Front-to-rear axle distance, metres')
     ema_alpha = DeclareLaunchArgument('ema_alpha', default_value=str(ControlConfig.EMA_ALPHA),
                                        description='EMA smoothing factor')
     steer_max_deg = DeclareLaunchArgument('steer_max_deg', default_value=str(ControlConfig.STEER_MAX_DEGREES),
@@ -94,7 +88,7 @@ def generate_launch_description():
         set_domain_id,
         
         # Declare arguments
-        k_e1, k_e2, k_p, k_i, k_d, k_ff, ema_alpha, steer_max_deg, steer_when_lost,
+        k_lat, k_head, wheelbase_m, ema_alpha, steer_max_deg, steer_when_lost,
         
         # Startup messages
         LogInfo(msg='========================================'),

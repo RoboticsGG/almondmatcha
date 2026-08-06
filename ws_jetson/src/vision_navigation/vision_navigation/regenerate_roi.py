@@ -4,8 +4,11 @@ regenerate_roi.py
 Workspace:  ws_jetson  |  Package: vision_navigation
 
 Recompute the ROI trapezoid (config.LaneDetectionConfig.ROI_BASE_POINTS) and
-the steering feedforward gain (config.ControlConfig.K_FF) from the physical
-camera mount and chassis geometry.
+the linearized steering feedforward gain (k_ff, kept here only as a
+reference/cross-check against the exact Ackermann angle -- the live control
+law now computes atan(wheelbase_m*curvature_m_ema) directly, not this
+linear approximation, so there is no ControlConfig.K_FF to copy this into
+anymore) from the physical camera mount and chassis geometry.
 
 Why this exists: both constants are derived from a hand-projection (see
 docs/VISION_PIPELINE.md §0 and "Regenerating the ROI", and
@@ -27,11 +30,11 @@ Usage:
     python3 regenerate_roi.py --tilt-deg 18 --height-m 0.55
 
 Output is meant to be copied directly into:
-    - vision_navigation/config.py       (ROI_BASE_POINTS, K_FF)
+    - vision_navigation/config.py       (ROI_BASE_POINTS)
     - config/vision_nav_gui.yaml        (roi_base_points)
     - config/vision_nav_headless.yaml   (roi_base_points)
-    - rover_kinematic_control_params.yaml (k_ff, as a starting/reference value --
-      it still ships at 0.0 by default; see docs/CONTROL_LAW.md §1.7 for why)
+    - rover_kinematic_control_params.yaml (wheelbase_m, bev_px_per_m --
+      the k_ff print below is reference-only, not a value to copy anywhere)
 """
 
 import argparse

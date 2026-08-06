@@ -15,7 +15,7 @@ Usage:
 
     # With custom parameters
     ros2 launch vision_navigation vision_nav_headless.launch.py \
-        enable_depth:=true k_p:=5.0
+        enable_depth:=true camera_fps:=15
 
 Author: Vision Navigation System
 Date: November 4, 2025
@@ -97,12 +97,9 @@ def generate_launch_description():
     )
     
     # Control parameters
-    k_e1 = DeclareLaunchArgument('k_e1', default_value=str(ControlConfig.K_E1))
-    k_e2 = DeclareLaunchArgument('k_e2', default_value=str(ControlConfig.K_E2))
-    k_p = DeclareLaunchArgument('k_p', default_value=str(ControlConfig.K_P))
-    k_i = DeclareLaunchArgument('k_i', default_value=str(ControlConfig.K_I))
-    k_d = DeclareLaunchArgument('k_d', default_value=str(ControlConfig.K_D))
-    k_ff = DeclareLaunchArgument('k_ff', default_value=str(ControlConfig.K_FF))
+    k_lat = DeclareLaunchArgument('k_lat', default_value=str(ControlConfig.K_LAT))
+    k_head = DeclareLaunchArgument('k_head', default_value=str(ControlConfig.K_HEAD))
+    wheelbase_m = DeclareLaunchArgument('wheelbase_m', default_value=str(ControlConfig.WHEELBASE_M))
     ema_alpha = DeclareLaunchArgument('ema_alpha', default_value=str(ControlConfig.EMA_ALPHA))
     steer_max_deg = DeclareLaunchArgument('steer_max_deg', default_value=str(ControlConfig.STEER_MAX_DEGREES))
     steer_when_lost = DeclareLaunchArgument('steer_when_lost', default_value=str(ControlConfig.STEER_WHEN_LOST))
@@ -144,7 +141,7 @@ def generate_launch_description():
         # Declare arguments
         camera_width, camera_height, camera_fps,
         enable_depth, video_path, loop_video, json_config,
-        k_e1, k_e2, k_p, k_i, k_d, k_ff, ema_alpha, steer_max_deg, steer_when_lost,
+        k_lat, k_head, wheelbase_m, ema_alpha, steer_max_deg, steer_when_lost,
         
         # Startup messages
         LogInfo(msg='Vision Navigation System starting in HEADLESS MODE...'),

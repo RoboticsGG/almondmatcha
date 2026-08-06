@@ -19,7 +19,7 @@ Date: February 27, 2026
 
 import math
 from collections import deque
-from typing import Deque, Optional, Tuple
+from typing import Deque, Optional
 import numpy as np
 
 
@@ -141,55 +141,3 @@ def clamp(value: float, min_val: float, max_val: float) -> float:
     if math.isnan(value):
         return value
     return max(min_val, min(value, max_val))
-
-
-def pid_controller(
-    error: float,
-    kp: float,
-    ki: float,
-    kd: float,
-    integral_state: float,
-    last_error: float,
-    dt: float,
-    integral_limit: float = 200.0
-) -> Tuple[float, float, float]:
-    """
-    PID controller calculation with anti-windup.
-    
-    Implements standard PID control with integral anti-windup saturation
-    to prevent integrator windup during sustained errors.
-    
-    Control law: u = kp*e + ki*∫e*dt + kd*de/dt
-    
-    Args:
-        error: Current control error
-        kp: Proportional gain (units: output/error)
-        ki: Integral gain (units: output/(error*sec))
-        kd: Derivative gain (units: output*sec/error)
-        integral_state: Accumulated integral term from previous step
-        last_error: Previous error value for derivative calculation
-        dt: Time delta between samples (seconds)
-        integral_limit: Anti-windup saturation limit (default: 200.0)
-        
-    Returns:
-        Tuple of:
-            - control_output (float): PID output signal
-            - new_integral (float): Updated integral state for next step
-            - current_error (float): Current error (for next iteration)
-    """
-    # ===== Integral Term (with anti-windup) =====
-    integral_state += error * dt
-    integral_state = clamp(integral_state, -integral_limit, integral_limit)
-
-    # ===== Derivative Term (with zero-division protection) =====
-    if dt > 1e-6:
-        derivative_term = (error - last_error) / dt
-    else:
-        derivative_term = 0.0
-
-    # ===== PID Control Output =====
-    proportional_term = kp * error
-    integral_term = ki * integral_state
-    control_output = proportional_term + integral_term + (kd * derivative_term)
-
-    return control_output, integral_state, error

@@ -1,44 +1,45 @@
 # Steering Control Parameters
 # Vision Navigation System - Control Tuning Configuration
-# Date: November 4, 2025
+# Date: August 6, 2026
 
 rover_kinematic_control:
   ros__parameters:
-    # Error weights (combined error: e = k_e1*theta + k_e2*b)
-    k_e1: 1.0                    # Weight on heading error (theta)
-    # `b` (lateral offset) is metres, not the BEV pixels it used to be --
-    # 20.0 = the old 0.1 rescaled by BEV_PX_PER_M (200) so e stays
-    # numerically the same as before for the same physical offset. Rescale
-    # again if BEV_PX_PER_M ever changes.
-    k_e2: 20.0                   # Weight on lateral offset (b, metres)
-    
-    # PID gains (control law: u_pid = kp*e + ki*∫e*dt + kd*de/dt)
-    k_p: 4.0                     # Proportional gain
-    k_i: 0.01                     # Integral gain
-    k_d: 0.01                     # Derivative gain
-
-    # Feedforward gain (u_ff = k_ff * curvature_ema; u_total = u_pid + u_ff)
+    # Control law (static-gain feedback + Ackermann feedforward, single-step
+    # MPC form):
+    #   steer = k_lat*b_ema + k_head*theta_ema + atan(wheelbase_m * curvature_m_ema)
     #
-    # Now derivable rather than guessed. The bird's-eye view is metric
-    # (200 px/m, isotropic), so the fitted coefficient A is a real arc:
-    # A = 1/(2*R*S), and Ackermann needs delta = atan(L/R) for radius R.
-    # With wheelbase L = 0.4875 m (48.75 cm) and S = 200 px/m:
-    #     k_ff = 2 * S * L * (180/pi) = 11172.7
-    # Verified against exact Ackermann: R=10 m -> 2.79 deg (exact 2.79),
-    # R=20 m -> 1.40 (exact 1.40), R=36.5 m -> 0.77 (exact 0.76).
+    # Sign: theta, b, and steer_angle all use "+ = correct by steering
+    # right" in this codebase (see rover_kinematic_control_node.py), so both
+    # feedback terms are ADDED, not subtracted. A "-k1*e_lat - k2*e_heading"
+    # form only applies under the opposite steering-angle-positive
+    # convention (e.g. ISO 8855, positive = left) -- do not copy that sign
+    # pattern in here without re-deriving it against this codebase's
+    # convention first.
     #
-    # Held at 0.0 for the first run on the corrected geometry. On a 400 m
-    # track (bend radius ~36.5 m) the correct feedforward is only ~0.77 deg,
-    # which is at or below the noise floor of the curvature fit over a 1.7 m
-    # lookahead -- so it buys almost nothing, while a momentarily bad fit
-    # multiplied by 11172.7 would inject a large steering kick. Feedback alone
-    # covers this track. Raise toward 11172.7 only after the logs show
-    # curvature_ema is clean and stable through the bends.
-    k_ff: 0.0                    # Feedforward gain on filtered curvature (derived value: 11172.7)
+    # Replaces the previous PID (kp*e + ki*integral(e) + kd*de/dt) with a
+    # pure proportional static-gain law -- no integral or derivative term.
+    # k_lat/k_head are a fixed discrete-time LQR solution on the linearized
+    # error model (b_dot = v*theta, theta_dot = -(v/L)*delta; v ~ 0.15-0.20
+    # m/s cruise speed, L = wheelbase_m, dt ~ 1/20 s measured control-loop
+    # period), solved offline and applied as a static gain each step:
+    #   LQR solve: k1 = 3.162 rad/m, k2 = 2.024 rad/rad
+    #   k_lat  = k1 * (180/pi) = 181.17  -- rad->deg (b is metres, steer is degrees)
+    #   k_head = k2             = 2.024  -- unit-invariant (theta and steer are both angles)
+    k_lat: 181.17                # Gain on lateral offset b (deg/metre)
+    k_head: 2.024                # Gain on heading error theta (deg/deg)
 
-    # Filtering
+    # Ackermann feedforward: atan(wheelbase_m * curvature_m_ema)
+    # curvature (from the lane fit) is a BEV-pixel parabola coefficient A
+    # (x = A*y^2 + B*y + C), 1/px, not 1/m. The BEV is metric (isotropic
+    # bev_px_per_m), so real curvature 1/R = 2 * bev_px_per_m * A -- see
+    # rover_kinematic_control_node.py for the derivation.
+    wheelbase_m: 0.4875           # Front-to-rear axle distance, metres
+    bev_px_per_m: 200.0           # BEV pixel scale (LaneDetectionConfig.BEV_PX_PER_M)
+
+    # Filtering (unchanged -- still smooths theta/b/curvature before the
+    # control law runs, independent of the PID-to-static-gain swap above)
     ema_alpha: 0.05              # Exponential moving average smoothing (0-1)
-    
+
     # Speed (0-100% PWM duty). The RPi caps the final duty at spd_limit_cap
     # (40%), which is the hard safety ceiling; this is the target it aims for.
     # The gap between the two is the headroom the closed-loop speed controller
@@ -49,5 +50,16 @@ rover_kinematic_control:
     speed_ref: 16                # Target cruise speed when the lane is detected
 
     # Output saturation
-    steer_max_deg: 60.0          # Maximum steering angle (±degrees)
-    steer_when_lost: 0.0         # Steering when lane not detected
+    # 45.0 (not the full +-60 mechanical limit) as a conservative margin
+    # while this static-gain law is unvalidated on the track. Widen toward
+    # 60.0 only after field testing confirms it behaves.
+    #
+    # NOTE: at k_lat=181.17, even a modest lookahead offset saturates this
+    # clamp on its own (b=0.15m -> 27 deg from the b-term alone, before
+    # adding the theta-term or feedforward) -- expect the commanded angle to
+    # sit at/near the clamp often, not just on sharp turns. If field testing
+    # shows the rover chattering between clamped extremes rather than
+    # settling, that is this gain being too aggressive for the ±45° budget,
+    # not a sign or logic bug.
+    steer_max_deg: 45.0           # Maximum steering angle (±degrees)
+    steer_when_lost: 0.0          # Steering when lane not detected

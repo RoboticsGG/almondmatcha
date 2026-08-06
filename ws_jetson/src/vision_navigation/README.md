@@ -1,6 +1,6 @@
 # Vision Navigation System
 
-Real-time visual navigation system for autonomous rover lane detection and steering control. This system processes Intel RealSense D415 camera data or video files to detect lane boundaries and compute steering commands via closed-loop PID control.
+Real-time visual navigation system for autonomous rover lane detection and steering control. This system processes Intel RealSense D415 camera data or video files to detect lane boundaries and compute steering commands via closed-loop static-gain control.
 
 ## System Overview
 
@@ -8,7 +8,7 @@ The Vision Navigation system consists of three coordinated ROS2 nodes:
 
 1. **Camera Stream Node** - Acquires and publishes RGB/depth frames
 2. **Lane Detection Node** - Detects lane markers and computes steering parameters
-3. **Rover Kinematic Control Node** - Implements PID-based steering + speed control
+3. **Rover Kinematic Control Node** - Implements static-gain steering + speed control
 
 Initialization Sequence: Camera (0s) → Lane Detection (2s) → Steering Control (3s)
 
@@ -95,7 +95,7 @@ scale, and the two parameters with hard correctness ceilings.
 
 #### Rover Kinematic Control Node (rover_kinematic_control)
 
-Implements closed-loop PID steering + speed control based on lane detection parameters.
+Implements closed-loop static-gain steering + speed control based on lane detection parameters.
 
 Subscribed Topics:
 - `/tpc_rover_nav_lane` (std_msgs/Float32MultiArray): Lane parameters [curvature, theta, b, detected]
@@ -107,30 +107,38 @@ Published Topics:
   - detected: Lane detection status flag
 
 Parameters:
-- `k_e1` (float, default 1.0): Weight on heading error (theta)
-- `k_e2` (float, default 20.0): Weight on lateral offset (b, metres -- 20.0 = the old 0.1 rescaled by BEV_PX_PER_M so the combined error is numerically unchanged for the same physical offset)
-- `k_p` (float, default 4.0): Proportional gain
-- `k_i` (float, default 0.0): Integral gain
-- `k_d` (float, default 0.0): Derivative gain
-- `k_ff` (float, default 1000.0): Feedforward gain on filtered curvature -- anticipates the curve ahead instead of waiting for heading/offset error to build up
+- `k_lat` (float, default 181.17): Gain on lateral offset b (deg/metre)
+- `k_head` (float, default 2.024): Gain on heading error theta (deg/deg)
+- `wheelbase_m` (float, default 0.4875): Front-to-rear axle distance, metres (Ackermann feedforward)
+- `bev_px_per_m` (float, default 200.0): BEV pixel scale, converts curvature from 1/px to 1/m
 - `speed_ref` (float, default 50.0): Base speed when lane detected (0–100% duty cycle)
 - `speed_lost_ratio` (float, default 0.5): Speed multiplier when lane temporarily lost
 - `detection_timeout_sec` (float, default 10.0): Seconds before speed drops to 0 on sustained lane loss
 - `ema_alpha` (float, default 0.05): Exponential moving average smoothing (0-1), applied to theta, b, and curvature
-- `steer_max_deg` (float, default 60.0): Maximum steering angle saturation
+- `steer_max_deg` (float, default 45.0): Maximum steering angle saturation (conservative margin below the ±60° mechanical limit)
 - `steer_when_lost` (float, default 0.0): Steering command when lane not detected
 
-Control Algorithm:
+Control Algorithm (static-gain feedback + Ackermann feedforward, single-step
+MPC form -- `k_lat`/`k_head` are a fixed discrete-time LQR solution on the
+linearized error model `b_dot = v*theta, theta_dot = -(v/L)*delta` (v ~
+0.15-0.20 m/s, L = wheelbase_m, dt ~ 1/20 s measured control-loop period),
+solved offline as `k1 = 3.162 rad/m, k2 = 2.024 rad/rad` then converted to
+this codebase's units: `k_lat = k1*(180/pi) = 181.17` (b is metres, steer
+is degrees, so this ratio needs the rad->deg conversion) and `k_head = k2 =
+2.024` (theta and steer are both angles, so the ratio is unit-invariant)):
 ```
-Combined Error:    e       = k_e1 * theta_ema + k_e2 * b_ema
-Feedback (PID):    u_pid   = k_p * e + k_i * integral(e, dt) + k_d * de/dt
-Feedforward:       u_ff    = k_ff * curvature_ema
-Combined Output:   u_total = u_pid + u_ff
+Feedback:          u_fb    = k_lat * b_ema + k_head * theta_ema
+Feedforward:       u_ff    = atan(wheelbase_m * curvature_m_ema)   [curvature_m_ema = 2 * bev_px_per_m * curvature_ema]
+Combined Output:   u_total = u_fb + u_ff
 Steering:          steer   = clamp(u_total, -steer_max_deg, steer_max_deg)
 If not detected:   steer   = steer_when_lost
 ```
+theta, b, and steer_angle all use "+ = correct by steering right" in this
+codebase, so both feedback terms are ADDED. Do not copy a "-k1*e_lat -
+k2*e_heading" form from a textbook without checking its sign convention
+against this one first -- it typically assumes positive steer = left.
 
-CSV Output: columns [time_sec, theta_ema, b_ema, curvature_ema, pid_u, e_sum, steer_angle, speed_cmd, detected]
+CSV Output: columns [time_sec, theta_ema, b_ema, curvature_ema, u_fb, u_ff, steer_angle, speed_cmd, detected]
 
 ## Configuration and Tuning
 
@@ -140,7 +148,7 @@ All system parameters are centralized in `vision_navigation/config.py`:
 
 - CameraConfig: Resolution, FPS, camera modes
 - LaneDetectionConfig: Color thresholds, gradient parameters, window settings
-- ControlConfig: PID gains, error weights, saturation limits
+- ControlConfig: static feedback gains, wheelbase, saturation limits
 - LoggingConfig: File paths, CSV headers
 - TopicConfig: ROS2 topic names (tpc_* convention)
 - SystemConfig: Node names, initialization timing, QoS settings
@@ -155,15 +163,14 @@ Launch file automatically reads defaults from config.py, enabling:
 1. Test parameters during session (no rebuild):
    ```bash
    ros2 launch vision_navigation vision_navigation.launch.py \
-     k_p:=4.5 k_i:=0.1 k_d:=0.15
+     k_lat:=150.0 k_head:=1.5
    ```
 
 2. Save best values to config.py:
    ```python
    class ControlConfig:
-       K_P = 4.5    # Updated from testing
-       K_I = 0.1
-       K_D = 0.15
+       K_LAT = 150.0   # Updated from testing
+       K_HEAD = 1.5
    ```
 
 3. Rebuild:
@@ -178,29 +185,22 @@ Launch file automatically reads defaults from config.py, enabling:
 
 ### Tuning Examples
 
-Smooth lane following (gentle turns):
+Smooth lane following (gentle turns, gentler than the shipped LQR default):
 ```bash
 ros2 launch vision_navigation vision_navigation.launch.py \
-  k_e1:=0.8 k_e2:=10.0 k_p:=3.0 steer_max_deg:=45
+  k_lat:=100.0 k_head:=1.5 steer_max_deg:=30
 ```
 
-Aggressive tracking (sharp turns):
+Aggressive tracking (sharp turns, at/above the shipped LQR default):
 ```bash
 ros2 launch vision_navigation vision_navigation.launch.py \
-  k_e1:=1.5 k_e2:=40.0 k_p:=5.0 steer_max_deg:=60
+  k_lat:=181.17 k_head:=2.5 steer_max_deg:=45
 ```
 
-With integral/derivative control (steady-state correction and damping):
-```bash
-ros2 launch vision_navigation vision_navigation.launch.py \
-  k_p:=4.0 k_i:=0.1 k_d:=0.05 ema_alpha:=0.08
-```
-
-Curve anticipation (raise k_ff if the rover steers in late on curves; lower it if it steers in before the curve is actually there):
-```bash
-ros2 launch vision_navigation vision_navigation.launch.py \
-  k_ff:=1500.0
-```
+There is no integral or derivative term in this control law (pure
+proportional static gain + feedforward) -- steady-state offset and damping
+are addressed by re-tuning `k_lat`/`k_head` or `ema_alpha`, not by adding I/D
+terms.
 
 ## Installation and Build
 
@@ -298,7 +298,6 @@ Classes:
 
 Functions:
 - `clamp()`: Saturate value to [min, max] range
-- `pid_controller()`: PID calculation with anti-windup support
 
 ### lane_detector.py
 
@@ -391,9 +390,9 @@ Example:
 ### Oscillating or Unstable Steering
 
 1. Increase EMA smoothing: `-p ema_alpha:=0.02`
-2. Reduce proportional gain: `-p k_p:=2.0`
-3. Add derivative control: `-p k_d:=0.05`
-4. Adjust error weights: reduce `k_e1` or `k_e2`
+2. Reduce the feedback gains: `-p k_lat:=100.0 -p k_head:=1.0`
+3. Confirm sign convention was not inverted after edits (see Sign Conventions below) --
+   a flipped sign turns feedback into positive feedback, which reads as unbounded oscillation/runaway, not gentle instability
 
 ## Sign Conventions
 
@@ -411,7 +410,7 @@ Example:
 ### Lateral Offset (b)
 - Positive: Camera is displaced to the RIGHT from lane center
 - Negative: Camera is displaced to the LEFT from lane center
-- Units: Pixels
+- Units: Metres
 
 ### Curvature
 - Positive: Lane curves RIGHT ahead (and behind -- it's the coefficient A of a symmetric parabola)
@@ -454,6 +453,39 @@ vision_navigation/
 ```
 
 ## Version History
+
+### v1.3.0 (August 6, 2026)
+
+Replaces the PID steering controller with a static-gain feedback + Ackermann
+feedforward law (single-step MPC form): `steer = k_lat*b_ema + k_head*theta_ema
++ atan(wheelbase_m*curvature_m_ema)`. `k_lat`/`k_head` are a fixed
+discrete-time LQR solution, not re-solved online each step -- solved offline
+against the linearized error model `b_dot = v*theta, theta_dot =
+-(v/L)*delta` (v ~ 0.15-0.20 m/s measured cruise speed, L = wheelbase_m,
+dt ~ 1/20 s measured control-loop period) as `k1 = 3.162 rad/m, k2 = 2.024
+rad/rad`, then converted to this codebase's units: `k_lat = k1*(180/pi) =
+181.17` (b is metres, steer is degrees -- needs the rad->deg conversion),
+`k_head = k2 = 2.024` (theta and steer are both angles -- the ratio is
+unit-invariant, no conversion needed).
+
+- Removed `k_p`/`k_i`/`k_d`/`k_e1`/`k_e2`/`k_ff` and the integral/derivative
+  state; replaced with `k_lat`, `k_head`, `wheelbase_m`, `bev_px_per_m`
+- Feedforward switched from the small-angle linear approximation
+  (`k_ff * curvature_ema`) to the exact Ackermann angle
+  (`atan(wheelbase_m * curvature_m_ema)`) -- numerically near-identical on
+  this track (curvature is small enough that atan(x) ≈ x), but removes the
+  approximation entirely for a negligible extra cost
+- `steer_max_deg` default lowered from 60.0 to 45.0 as a conservative margin
+  while the new law is unvalidated on the track. Note: at `k_lat=181.17`,
+  even a modest lookahead offset saturates this clamp on its own (b=0.15m ->
+  27 deg from the b-term alone) -- expect the commanded angle to sit at/near
+  the clamp often on this track, not only on sharp turns
+- EMA low-pass filtering on theta/b/curvature is unchanged -- only the
+  feedback stage (PID -> static gain) and feedforward form changed
+- theta/b/steer_angle all use "+ = correct by steering right" in this
+  codebase, so both feedback terms are ADDED, not subtracted -- see Sign
+  Conventions below before copying a control law from a source that may
+  assume the opposite convention
 
 ### v1.2.0 (August 5, 2026)
 

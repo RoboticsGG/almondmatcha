@@ -14,7 +14,7 @@ Usage:
 
     # With custom parameters
     ros2 launch vision_navigation vision_nav_gui.launch.py \
-        enable_depth:=true k_p:=5.0
+        enable_depth:=true camera_fps:=15
 
 Author: Vision Navigation System
 Date: November 4, 2025

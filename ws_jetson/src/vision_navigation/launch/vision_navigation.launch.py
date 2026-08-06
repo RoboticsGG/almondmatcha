@@ -4,7 +4,7 @@ Vision Navigation System - ROS2 Launch File
 Launches complete vision navigation system with three coordinated nodes in sequence:
 1. Camera Stream Node - Acquires RGB frames from D415 camera or video file (starts first)
 2. Lane Detection Node - Detects lane markers and computes steering parameters (waits for camera)
-3. Steering Control Node - Computes steering command via PID controller (waits for lane detection)
+3. Steering Control Node - Computes steering command via static-gain controller (waits for lane detection)
 
 Camera Initialization: 2-second delay to allow D415 camera hardware to fully initialize
 before streaming frames to downstream processing nodes.
@@ -17,7 +17,7 @@ Usage:
 
     # Override specific parameters
     ros2 launch vision_navigation vision_navigation.launch.py \
-        camera_width:=640 k_p:=5.0
+        camera_width:=640 k_lat:=90.0
 
 Author: Vision Navigation System
 Date: November 4, 2025
@@ -99,40 +99,22 @@ def generate_launch_description():
     )
     
     # Steering control node parameters
-    k_e1 = DeclareLaunchArgument(
-        'k_e1',
-        default_value=str(ControlConfig.K_E1),
-        description='Weight on heading error (theta) in combined error'
-    )
-    
-    k_e2 = DeclareLaunchArgument(
-        'k_e2',
-        default_value=str(ControlConfig.K_E2),
-        description='Weight on lateral offset (b) in combined error'
-    )
-    
-    k_p = DeclareLaunchArgument(
-        'k_p',
-        default_value=str(ControlConfig.K_P),
-        description='PID proportional gain'
-    )
-    
-    k_i = DeclareLaunchArgument(
-        'k_i',
-        default_value=str(ControlConfig.K_I),
-        description='PID integral gain'
-    )
-    
-    k_d = DeclareLaunchArgument(
-        'k_d',
-        default_value=str(ControlConfig.K_D),
-        description='PID derivative gain'
+    k_lat = DeclareLaunchArgument(
+        'k_lat',
+        default_value=str(ControlConfig.K_LAT),
+        description='Gain on lateral offset b (deg/metre)'
     )
 
-    k_ff = DeclareLaunchArgument(
-        'k_ff',
-        default_value=str(ControlConfig.K_FF),
-        description='Feedforward gain on filtered curvature'
+    k_head = DeclareLaunchArgument(
+        'k_head',
+        default_value=str(ControlConfig.K_HEAD),
+        description='Gain on heading error theta (deg/deg)'
+    )
+
+    wheelbase_m = DeclareLaunchArgument(
+        'wheelbase_m',
+        default_value=str(ControlConfig.WHEELBASE_M),
+        description='Front-to-rear axle distance, metres (Ackermann feedforward)'
     )
 
     ema_alpha = DeclareLaunchArgument(
@@ -194,12 +176,9 @@ def generate_launch_description():
         output='screen',
         emulate_tty=True,
         parameters=[{
-            'k_e1': LaunchConfiguration('k_e1'),
-            'k_e2': LaunchConfiguration('k_e2'),
-            'k_p': LaunchConfiguration('k_p'),
-            'k_i': LaunchConfiguration('k_i'),
-            'k_d': LaunchConfiguration('k_d'),
-            'k_ff': LaunchConfiguration('k_ff'),
+            'k_lat': LaunchConfiguration('k_lat'),
+            'k_head': LaunchConfiguration('k_head'),
+            'wheelbase_m': LaunchConfiguration('wheelbase_m'),
             'ema_alpha': LaunchConfiguration('ema_alpha'),
             'steer_max_deg': LaunchConfiguration('steer_max_deg'),
             'steer_when_lost': LaunchConfiguration('steer_when_lost'),
@@ -231,12 +210,9 @@ def generate_launch_description():
         loop_video,
         json_config,
         lane_visualization,
-        k_e1,
-        k_e2,
-        k_p,
-        k_i,
-        k_d,
-        k_ff,
+        k_lat,
+        k_head,
+        wheelbase_m,
         ema_alpha,
         steer_max_deg,
         steer_when_lost,

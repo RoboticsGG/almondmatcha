@@ -242,63 +242,49 @@ class LaneDetectionConfig:
 
 class ControlConfig:
     """Rover steering control parameters"""
-    
-    # ===== PID Gains =====
-    # Control law: u = kp*e + ki*∫e*dt + kd*de/dt
-    K_P = 4.0          # Proportional gain (primary response)
-    K_I = 0.0          # Integral gain (steady-state correction)
-    K_D = 0.0          # Derivative gain (damping)
 
-    # ===== Feedforward Gain =====
-    # u_ff = K_FF * curvature_ema -- anticipates curves ahead instead of
-    # reacting only after heading/offset error (PID feedback) builds up.
-    # With a metric bird's-eye view this is derivable, not a guess:
-    #     A = 1/(2*R*S)  and  delta = atan(L/R)  =>  K_FF = 2*S*L*(180/pi)
-    # L = 0.4875 m wheelbase, S = LaneDetectionConfig.BEV_PX_PER_M = 200 -> 11172.7.
-    # Shipped at 0.0: on this track the correct feedforward is <1 deg, below
-    # the curvature fit's noise floor. See rover_kinematic_control_params.yaml.
-    K_FF = 0.0         # Feedforward gain on filtered curvature (derived: 11172.7)
+    # ===== Static Feedback Gains =====
+    # Control law (static-gain feedback + Ackermann feedforward, single-step
+    # MPC form):
+    #     steer = K_LAT*b_ema + K_HEAD*theta_ema + atan(WHEELBASE_M*curvature_m_ema)
+    # theta/b/steer_angle all use "+ = correct by steering right" in this
+    # codebase, so both feedback terms are ADDED (see
+    # rover_kinematic_control_node.py for the sign-convention note).
+    #
+    # Replaces the previous PID (kp*e + ki*integral(e) + kd*de/dt) with a
+    # pure proportional law. K_LAT/K_HEAD are a fixed discrete-time LQR
+    # solution on the linearized error model (b_dot = v*theta,
+    # theta_dot = -(v/L)*delta; v ~ 0.15-0.20 m/s, L = WHEELBASE_M,
+    # dt ~ 1/20 s measured control-loop period), solved offline:
+    #   LQR solve: k1 = 3.162 rad/m, k2 = 2.024 rad/rad
+    #   K_LAT  = k1 * (180/pi) = 181.17  -- rad->deg (b is metres, steer is degrees)
+    #   K_HEAD = k2             = 2.024  -- unit-invariant (theta and steer are both angles)
+    K_HEAD = 2.024      # Gain on heading error theta (deg/deg)
+    K_LAT = 181.17       # Gain on lateral offset b (deg/metre)
 
-    # ===== Error Weights =====
-    # Combined error: e_total = k_e1*theta + k_e2*b
-    K_E1 = 1.0         # Weight on heading error (theta)
-    # `b` used to be BEV pixels; now that lane_detector.py reports it in
-    # metres, this weight is rescaled by BEV_PX_PER_M (200) -- 0.1 -> 20.0 --
-    # to keep e_total numerically identical to before for the same physical
-    # offset. Rescale again if BEV_PX_PER_M ever changes, since this was
-    # tuned assuming the old value, not derived from it.
-    K_E2 = 20.0        # Weight on lateral offset (b), metres
-    
+    # ===== Ackermann Feedforward =====
+    # u_ff = atan(WHEELBASE_M * curvature_m_ema). curvature (from the lane
+    # fit) is a BEV-pixel parabola coefficient A, 1/px; real curvature is
+    # 1/R = 2*S*A with BEV scale S = LaneDetectionConfig.BEV_PX_PER_M.
+    WHEELBASE_M = 0.4875   # Front-to-rear axle distance, metres
+
     # ===== Filtering =====
     EMA_ALPHA = 0.05   # Exponential moving average smoothing factor
     # Higher alpha = more responsive to new data
     # Lower alpha = more smoothing
-    
+
     # ===== Output Saturation =====
-    STEER_MAX_DEGREES = 60.0        # Maximum steering angle (±degrees)
+    # 45.0 (not the full +-60 mechanical limit): conservative margin while
+    # this static-gain law is unvalidated on the track.
+    STEER_MAX_DEGREES = 45.0        # Maximum steering angle (±degrees)
     STEER_WHEN_LOST = 0.0           # Steering angle when lane not detected
-    
-    # ===== Integral Anti-Windup =====
-    INTEGRAL_LIMIT = 200.0          # Anti-windup saturation for integral term
-    
-    # ===== Timing =====
-    CONTROL_LOOP_RATE = 50          # Hz (20ms per cycle)
-    
+
     @classmethod
-    def get_pid_gains(cls):
-        """Get PID gains as dict"""
+    def get_static_gains(cls):
+        """Get static feedback gains as dict"""
         return {
-            "kp": cls.K_P,
-            "ki": cls.K_I,
-            "kd": cls.K_D
-        }
-    
-    @classmethod
-    def get_error_weights(cls):
-        """Get error combination weights"""
-        return {
-            "k_e1": cls.K_E1,
-            "k_e2": cls.K_E2
+            "k_lat": cls.K_LAT,
+            "k_head": cls.K_HEAD
         }
 
 
@@ -383,10 +369,10 @@ class SystemConfig:
 def override_from_environment():
     """Override config values from environment variables.
     
-    Pattern: MODULENAME_PARAMNAME (e.g., CAMERA_WIDTH, CONTROL_K_P)
+    Pattern: MODULENAME_PARAMNAME (e.g., CAMERA_WIDTH, CONTROL_K_LAT)
     """
     import os
-    
+
     # Camera overrides
     if "CAMERA_WIDTH" in os.environ:
         CameraConfig.WIDTH = int(os.environ["CAMERA_WIDTH"])
@@ -394,14 +380,12 @@ def override_from_environment():
         CameraConfig.HEIGHT = int(os.environ["CAMERA_HEIGHT"])
     if "CAMERA_FPS" in os.environ:
         CameraConfig.FPS = int(os.environ["CAMERA_FPS"])
-    
+
     # Control overrides
-    if "CONTROL_K_P" in os.environ:
-        ControlConfig.K_P = float(os.environ["CONTROL_K_P"])
-    if "CONTROL_K_I" in os.environ:
-        ControlConfig.K_I = float(os.environ["CONTROL_K_I"])
-    if "CONTROL_K_D" in os.environ:
-        ControlConfig.K_D = float(os.environ["CONTROL_K_D"])
+    if "CONTROL_K_LAT" in os.environ:
+        ControlConfig.K_LAT = float(os.environ["CONTROL_K_LAT"])
+    if "CONTROL_K_HEAD" in os.environ:
+        ControlConfig.K_HEAD = float(os.environ["CONTROL_K_HEAD"])
 
 
 
@@ -416,8 +400,7 @@ if __name__ == "__main__":
     print(f"  Video mode: {CameraConfig.is_video_mode()}")
     
     print(f"\nControl Configuration:")
-    print(f"  PID gains: {ControlConfig.get_pid_gains()}")
-    print(f"  Error weights: {ControlConfig.get_error_weights()}")
+    print(f"  Static gains: {ControlConfig.get_static_gains()}")
     print(f"  Max steering: {ControlConfig.STEER_MAX_DEGREES} degrees")
     
     print(f"\nLogging Configuration:")
