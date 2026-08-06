@@ -52,6 +52,26 @@ def segment_track_colors(
     this way keeps sunlit grass or a dirt-bank highlight elsewhere in the ROI
     from shifting the white cut point.
 
+    L* was chosen over chroma distance from neutral (sqrt((a*-128)^2 +
+    (b*-128)^2)) after validating against real D415 footage of the actual
+    track (see dev/ captures, 1280x720 @ 30 FPS) -- the earlier chroma
+    approach was designed and tuned only against a phone photo, and on the
+    D415 it fails outright: the ROI's a*/b* channels span only ~35-40 levels
+    total on this sensor (vs. the phone's much wider gamut), so Otsu finds no
+    real bimodal structure there and the "white" cut lands near the middle of
+    that narrow band -- in testing this misclassified ~45% of the frame
+    (most of the plain red track) as white candidate, rather than the ~1-5%
+    the actual painted lines cover. L* on the same D415 footage has a clean
+    bimodal split (track ~gray 110-115, paint >~170), consistent with the
+    old pre-Otsu pipeline's hardcoded `gray > 180` cutoff -- Otsu on L* just
+    makes that cutoff adaptive per frame instead of a fixed constant.
+    Confirmed this does NOT reintroduce the sun-glare-reads-as-white problem
+    the phone-photo audit found: restricting the L* histogram to
+    near_track (see below) keeps a glare patch's shape rejected downstream
+    by filter_line_candidates_bev() the same way a chroma-based candidate
+    would be -- this only changes which pixels become white *candidates*,
+    not how glare-shaped blobs get filtered out.
+
     The white center line splits the track into a left half and a right
     half. Taking "the single largest red blob" would silently keep only one
     half and report the other as background -- a bug that showed up in
@@ -70,7 +90,7 @@ def segment_track_colors(
         filter_line_candidates_bev() first.
     """
     lab = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2LAB).astype(np.float32)
-    A, B = lab[:, :, 1], lab[:, :, 2]
+    L = lab[:, :, 0]
 
     A_u8 = lab[:, :, 1].astype(np.uint8)
     _, red_otsu = cv2.threshold(A_u8, 0, 1, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
@@ -80,28 +100,23 @@ def segment_track_colors(
     red_closed = cv2.morphologyEx(red_raw, cv2.MORPH_CLOSE, kernel)
     red_closed = cv2.morphologyEx(red_closed, cv2.MORPH_OPEN, kernel)
 
-    # White vs. red is a CHROMA distinction, not a brightness one: the red
-    # track spans a huge L* range under directional sun (deep shadow to
-    # glare highlight) that overlaps or exceeds true white paint's
-    # brightness, so Otsu-on-L just splits the track into "its brighter
-    # half" and "its darker half" -- confirmed empirically, it mislabeled a
-    # sunlit far-field section of plain red track as much white candidate
-    # area as the real lines. White paint desaturates toward neutral gray
-    # (a*, b* -> 128) at whatever brightness it happens to be; the track
-    # stays visibly red-shifted even when very bright. Otsu on chroma
-    # distance from neutral therefore has a real bimodal split to find
-    # (clearly-red vs. gone-gray) where Otsu on brightness did not.
+    # White vs. red on the D415 is a BRIGHTNESS distinction: L* has a clean
+    # bimodal split on real footage of this track (plain track ~110-115,
+    # painted line >~170; see segment_track_colors' docstring for the
+    # measurements this replaced a chroma-distance split with, and why).
+    # Restricted to near_track for the same reason the old chroma version
+    # was: keeps a bright unrelated patch elsewhere in the ROI (sunlit grass,
+    # a dirt-bank highlight) from shifting the white cut point, since Otsu
+    # only sees the histogram of pixels already on/near the red blob.
     near_track = cv2.dilate(red_closed, kernel, iterations=2).astype(bool)
     white_raw = np.zeros_like(red_raw)
     if np.count_nonzero(near_track) >= 50:
-        chroma = np.sqrt((A - 128.0) ** 2 + (B - 128.0) ** 2)
-        chroma_u8 = np.clip(chroma, 0, 255).astype(np.uint8)
-        c_samples = chroma_u8[near_track].reshape(-1, 1)
-        # THRESH_BINARY_INV: Otsu's cut separates low-chroma (white, below
-        # the cut) from high-chroma (still red, above it); we want the
-        # low-chroma side, hence the inverted sense vs. the red_otsu split
-        # above where we want the high side.
-        _, white_otsu = cv2.threshold(c_samples, 0, 1, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        L_u8 = np.clip(L, 0, 255).astype(np.uint8)
+        l_samples = L_u8[near_track].reshape(-1, 1)
+        # THRESH_BINARY (not _INV): Otsu's cut separates low-L (red track,
+        # below the cut) from high-L (white paint, above it); we want the
+        # high side, same sense as the red_otsu split above.
+        _, white_otsu = cv2.threshold(l_samples, 0, 1, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         white_raw[near_track] = white_otsu.reshape(-1)
 
     corridor_raw = (red_closed.astype(bool) | white_raw.astype(bool)).astype(np.uint8)

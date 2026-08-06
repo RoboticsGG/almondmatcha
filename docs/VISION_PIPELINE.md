@@ -182,11 +182,11 @@ threshold cannot tell them apart regardless of where the cutoff is set.
 
 | Step | Operation | Purpose |
 |---|---|---|
-| 1 | `BGR → LAB` | `A` (red↔green) for the red split, chroma distance from neutral for the white split |
+| 1 | `BGR → LAB` | `A` (red↔green) for the red split, `L*` (lightness) for the white split |
 | 2 | Otsu threshold on `A` | Red-vs-not-red, re-fit **per frame** — see "Why adaptive" below |
 | 3 | `MORPH_CLOSE` then `MORPH_OPEN`, 9×9 ellipse | Bridge shadow/gravel-texture gaps, then drop speckle |
 | 4 | Dilate red mask ×2 → `near_track` | Restrict the white histogram to pixels on/near the track, so bright grass or a dirt-bank highlight elsewhere in the ROI can't shift the cut |
-| 5 | `chroma = sqrt((A-128)² + (B-128)²)`, Otsu threshold (inverted) within `near_track` | White-vs-red, by **desaturation toward gray**, not brightness — see below |
+| 5 | `L*`, Otsu threshold within `near_track` | White-vs-red, by **brightness** — see below |
 | 6 | Corridor = largest connected component of `(red \| white)` | Rejects unrelated red/white objects elsewhere in frame — **must** union red and white before taking "largest", see bug note below |
 | 7 | `red_track_mask = corridor & red & ~white`, `white_mask = corridor & white` | Final split |
 
@@ -199,16 +199,29 @@ This does not, by itself, fix a color collision *within* one frame (nothing
 operating on a single pixel's color can) — that is what the BEV shape filter
 below is for.
 
-**Why chroma, not brightness, for white (step 5):** brightness (`L*`) was
-tried first and rejected — the red track spans a huge `L*` range under
+**Why brightness, not chroma, for white (step 5):** the original design here
+used chroma distance from neutral gray (`sqrt((A-128)²+(B-128)²)`) instead of
+`L*`, on the reasoning that the red track spans a huge `L*` range under
 directional sun (deep shadow to glare highlight) that overlaps or exceeds
-real white paint's brightness, so Otsu-on-`L*` just split the track into "its
-brighter half" and "its darker half," misclassifying a sunlit far-field
-section of plain red track as much candidate area as the real lines. White
-paint desaturates toward neutral gray at whatever brightness it happens to
-be; the track stays visibly red-shifted even when very bright. Otsu on chroma
-distance from neutral has an actual bimodal split to find (clearly-red vs.
-gone-gray) where Otsu on raw brightness did not.
+real white paint's brightness — that Otsu-on-`L*` would just split the track
+into "its brighter half" and "its darker half" rather than finding
+red-vs-white. That reasoning came from the mobile-phone audit photo only (see
+"Known gap" below, as it stood before 2026-08-06). Validated against real
+D415 footage on 2026-08-06 (`dev/` captures, 1280×720 @ 30 FPS) and found
+backwards for this sensor: the D415 ROI's `A`/`B` channels span only ~35-40
+levels total, too narrow for Otsu to find a real bimodal split there, so step
+5 on chroma was misclassifying ~45% of the frame — most of the plain red
+track — as white candidate, rather than the ~1-5% the actual painted lines
+cover (confirmed: on the D415, red-channel Otsu alone already correctly
+covers ~78% of the ROI as track, so the failure was isolated to the white
+sub-step, not the red split in step 2). `L*` on the same footage has a clean
+bimodal split (track ~110-115, paint >~170, close to the old pre-Otsu
+pipeline's hardcoded `gray > 180` cutoff — Otsu-on-`L*` just makes that
+adaptive per frame). `segment_track_colors()` uses `L*` now. This does not
+reintroduce the sun-glare risk the phone audit found: restricting the `L*`
+histogram to `near_track` (step 4) still can't by itself separate a glare
+patch from real paint by color, exactly as chroma couldn't — that is still
+what the BEV shape filter below is for, unchanged.
 
 **Corridor bug (step 6):** taking "the single largest red-only blob" breaks
 because the white centre line cuts the track into a left half and a right
@@ -246,13 +259,23 @@ in the raw perspective, lines converge and shrink with distance, so a fixed
 width/aspect rule can't tell "thin far line" from "thick near glare" — they
 overlap in raw pixel dimensions.
 
-**Known gap, pending real-camera validation:** the sample used to design this
-section was a mobile-phone photo of the track, not the D415. The
-*architecture* (adaptive per-frame splits, chroma-based white test, BEV shape
-filter) is camera-independent by construction, but it has not yet been
-validated against real D415 footage under a spread of lighting conditions —
-capture some with `camera_recorder_node.py` / `capture_roi_debug.py` and
-re-run this audit before trusting it unattended on the rover.
+**Validated against real D415 footage 2026-08-06.** The sample originally
+used to design this section was a mobile-phone photo of the track, not the
+D415, and the white-vs-red test (step 5) did not transfer: see "Why
+brightness, not chroma" above. Validated using
+`test_lane_pipeline_video.py` (same package) against two D415 recordings in
+`dev/` (1280×720 @ 30 FPS, one short clip and one full round-trip lap) —
+before the `L*` fix, detection rate was ~1% of frames; after, ~90% on the
+short clip, with the fitted line visually tracking the painted centre line
+in the overlay output. The *architecture* (adaptive per-frame splits, BEV
+shape filter) held up; only the white sub-step's feature channel needed to
+change. Still open: `SEGMENTATION_MORPH_KERNEL_PX` and
+`MIN_LINE_COMPONENT_AREA_PX` remain picked by eye against the phone photo,
+not re-derived from a D415 measurement (see `config.py`) — they produced
+clean masks in this validation but haven't been swept against a range of
+values. Only one lighting condition (overcast, the conditions the two `dev/`
+recordings were captured in) has been validated; re-check under strong
+directional sun before trusting this unattended.
 
 ### History
 

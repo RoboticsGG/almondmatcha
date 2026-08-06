@@ -62,20 +62,32 @@ class LaneDetectionConfig:
     # of the actual track, where a sun-glare patch on the red surface reads
     # almost identically to real white paint in HSV brightness/saturation.
     # segment_track_colors() re-fits both splits per frame with Otsu's method
-    # instead: LAB a* (red-green axis) for red-vs-not-red, then chroma
-    # distance from neutral gray (sqrt((a*-128)^2+(b*-128)^2)) for
-    # white-vs-not, evaluated only on pixels already on/near the red blob so
-    # sunlit grass or dirt elsewhere in the ROI can't skew the white cut.
-    # (Brightness/L* was tried for the white split first and rejected -- the
-    # red track's own L* range under directional sun overlaps real white
-    # paint's, so Otsu-on-L* just split the track into "brighter half" and
-    # "darker half" instead of finding red-vs-white.) See
-    # docs/VISION_PIPELINE.md section 2.
+    # instead: LAB a* (red-green axis) for red-vs-not-red, then L*
+    # (lightness) for white-vs-not, evaluated only on pixels already on/near
+    # the red blob so sunlit grass or dirt elsewhere in the ROI can't skew
+    # the white cut. See docs/VISION_PIPELINE.md section 2.
+    #
+    # White-vs-not was originally chroma distance from neutral gray
+    # (sqrt((a*-128)^2+(b*-128)^2)) with L* rejected, on the reasoning that
+    # the track's own L* range under directional sun overlaps real white
+    # paint's. That reasoning came from a phone photo audit only. Validated
+    # against real D415 footage 2026-08-06 (dev/ captures) and found
+    # backwards for this sensor: the D415 ROI's a*/b* channels span only
+    # ~35-40 levels total, too narrow for Otsu to find a real bimodal chroma
+    # split, so it was misclassifying ~45% of the frame (most of the plain
+    # track) as white candidate. L* on the same footage has a clean bimodal
+    # split (track ~110-115, paint >~170) and is what segment_track_colors()
+    # uses now. Re-check this if a future camera/mount/lighting change
+    # reintroduces the overlap the phone audit found.
     #
     # PLACEHOLDER, not calibrated: this kernel size was picked by eye against
     # a mobile-phone audit photo, not the D415 -- like a pixel-area count, a
     # pixel kernel size is ground-sample-distance-sensitive (depends on the
-    # capturing lens/FOV). Re-derive against real D415 footage.
+    # capturing lens/FOV). Qualitatively it still produced clean single-pixel
+    # -width line masks in the 2026-08-06 D415 validation above, but that is
+    # not the same as re-deriving it from a real measurement -- do that
+    # before trusting this value far from the footage it was eyeballed
+    # against.
     SEGMENTATION_MORPH_KERNEL_PX = 9  # Close/open kernel for the color masks
 
     # ===== Line shape filter (bird's-eye view) =====
